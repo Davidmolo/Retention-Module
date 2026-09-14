@@ -14,7 +14,7 @@ Built with **Next.js App Router + Tailwind + Framer Motion + Recharts** so the U
 ## Run
 
 ```bash
-cd d:\azfs\driver-retention\frontend
+cd driver-retention\frontend
 npm install
 npm run dev
 ```
@@ -40,4 +40,4 @@ Open http://localhost:3000 → redirects to `/retention`
 | `frontend/src/app/api/` | APIs |
 | `frontend/src/components/admin/` | Dashboard UI |
 
-See `docs/MIGRATION-TO-GP.md` and `docs/10-DAY-PLAN.md`.
+
