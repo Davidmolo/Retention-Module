@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+:root {
+  --xxii-navy: #0b1f3a;
+  --xxii-navy-2: #122b52;
+  --xxii-blue: #2f6fed;
+  --xxii-blue-soft: #e8f0ff;
+  --xxii-sky: #4ea1ff;
+  --xxii-bg: #f4f7fb;
+  --xxii-card: #ffffff;
+  --xxii-text: #12253f;
+  --xxii-muted: #6b7c93;
+  --xxii-line: #e4ebf5;
+  --xxii-good: #16a34a;
+  --xxii-warn: #d97706;
+  --xxii-risk: #dc2626;
+  --xxii-purple: #7c3aed;
+}
+
+@theme inline {
+  --color-background: var(--xxii-bg);
+  --color-foreground: var(--xxii-text);
+  --font-sans: var(--font-plus-jakarta);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--xxii-bg);
+  color: var(--xxii-text);
+  font-family: var(--font-plus-jakarta), "Segoe UI", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c9d5e8;
+  border-radius: 999px;
+}
+
+.xxii-card {
+  background: var(--xxii-card);
+  border: 1px solid var(--xxii-line);
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(15, 36, 70, 0.04);
+}
+
+.xxii-soft {
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-open {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.status-progress {
+  background: #ffedd5;
+  color: #c2410c;
+}
+.status-done {
+  background: #dcfce7;
+  color: #15803d;
+}
