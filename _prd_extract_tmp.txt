@@ -1,0 +1,337 @@
+
+XXII CENTURY
+DRIVER RETENTION MODULE
+Product Requirements & MVP Approval Document
+Version 1.0 | September 2026
+Document purposeThis document converts the approved questionnaire responses into a single product baseline that David and Mantas can review and approve, and that the development and UI/UX teams can use to begin implementation. It separates confirmed business requirements from the few remaining implementation decisions.
+
+Item
+Status
+Business workflow
+Defined
+MVP feature scope
+Defined
+XXII Admin placement
+Defined
+Gross Profit data requirements
+Defined
+Notification routing
+Defined
+SMS provider
+OPEN - Twilio vs SimpleTexting
+Detailed UI/UX
+To be designed from this approved baseline
+
+1. Executive Summary
+The Driver Retention Module will be added to the existing XXII Century Admin Panel, where the Gross Profit module already operates. Its purpose is to identify dissatisfied drivers early, route actionable feedback to the appropriate department, give management visibility into unresolved retention risks, and combine driver sentiment with selected six-week Gross Profit performance indicators.
+Target releaseDavid requested a simple live version within approximately two weeks. All features marked MVP in this document are treated as required for the first release unless the client explicitly approves a scope reduction.
+
+1.1 Business objectives
+Collect recurring driver satisfaction feedback without requiring manual outreach.
+Identify any driver rating 1-3 as At Risk.
+Determine whether dissatisfaction relates to Dispatch, Safety, Accounting, or Maintenance.
+Notify the responsible department promptly and provide James visibility into every low-rating case.
+Track the lifecycle of retention issues from Open to In Progress to Resolved.
+Show rating history together with six-week operational/financial averages from Gross Profit.
+Encourage satisfied drivers (4-5 stars) to leave a public Google review.
+2. Scope and User Groups
+User / Actor
+Role in module
+Driver
+Receives survey, submits ratings/comments, may receive Google review request or resolution follow-up survey.
+XXII Admin user
+Reviews retention records, At Risk drivers, history, comments and GP metrics; manually changes issue status and adds internal notes.
+Department heads
+Receive alerts when low feedback relates to their department.
+James
+Receives every 1-3 overall rating alert; monitors 4-5 feedback in the Admin Panel.
+System
+Schedules outreach, retries non-responses, stores responses, flags At Risk drivers, sends alerts and maintains history.
+2.1 Included driver types
+Company Drivers - included.
+Owner Operators - included.
+Contract Drivers - included.
+Inactive and terminated drivers - excluded.
+Newly hired drivers become survey-eligible after 7 days.
+3. Survey Scheduling Rules
+Driver category / tenure
+Survey frequency
+New drivers (less than 3 months with company)
+Every 2 weeks, beginning after 7 days of employment.
+Established drivers (3 months or more)
+Once per month.
+Owner Operators
+Once per month.
+Survey sends must be staggered rather than sent to all drivers at the same time, to avoid a large response spike.
+An administrator must be able to manually trigger a survey for an eligible driver.
+If a driver does not respond, the system should follow up up to 3 times over the following few days.
+After the final unsuccessful follow-up, the non-response must generate an admin-visible notification/indicator.
+Scheduling detail for developmentThe exact spacing of the 3 reminders (for example, +1 day, +2 days, +3 days) was not specified by the client. Make this configurable rather than hard-coded, with a sensible default proposed during implementation.
+
+4. Driver Feedback Workflow
+Eligible Driver
+SMS Outreach
+Overall 1-5
+4-5 Path
+1-3 Path
+Store & Alert
+XXII Admin
+High-level flow: eligible driver → recurring SMS → overall rating → positive or low-rating branch → response storage/notifications → retention visibility in XXII Admin.
+4.1 Overall rating = 4-5
+Store the overall rating and any optional written comment in the driver's retention history.
+Show a thank-you message.
+Immediately present/send the Google review link with a polite request to leave a review if satisfied.
+Google review URL: https://g.page/r/CVMneYort2cZEBM/review
+Do not send James an email alert for 4-5 ratings; these remain visible in the Admin Panel.
+4.2 Overall rating = 1-3
+Immediately mark the driver as At Risk.
+Require the driver to rate all four departments: Dispatch, Safety, Accounting, and Maintenance.
+Each department uses the same 1-5 rating scale.
+A written comment is required for the low overall-rating flow.
+For every department receiving 3 stars or less, allow a separate department-specific comment.
+Store the overall rating, all department ratings, comments, date/time, and survey occurrence in the driver's history.
+Send the relevant alerts immediately after submission.
+5. Notification & Escalation Rules
+Trigger
+Recipient(s)
+Expected behavior
+Maintenance rating/issue requiring alert
+Ozzy@goxxii.com
+Immediate notification
+Accounting rating/issue requiring alert
+accounting@goxxii.com
+Immediate notification
+Dispatch rating/issue requiring alert
+Art@goxxii.com; Eric@goxxii.com
+Immediate notification
+Safety rating/issue requiring alert
+Safety@goxxii.com
+Immediate notification
+Any overall rating 1-3
+James@goxxii.com
+Immediate notification
+Overall rating 4-5
+No James email alert
+Visible in XXII Admin
+Escalation rule requiring implementation clarificationThe questionnaire confirms that repeated low ratings should trigger a stronger escalation, but it does not define the threshold or recipient. For V1, preserve rating history and visibly flag repeated low ratings. The exact automated escalation rule should remain configurable/pending client confirmation.
+
+6. Issue Follow-up & Resolution
+Each low-rating case must have a status that an admin can change manually: Open, In Progress, Resolved.
+Admins must have a separate internal-notes function to record actions taken. Internal notes are not shown to the driver.
+Previous ratings and comments must remain visible to admins as history.
+The module should show rating history so management can see whether sentiment is improving or worsening.
+After an issue is resolved, the system should support a special resolution follow-up survey asking the driver to rate how quickly, efficiently, and effectively the problem was resolved.
+MVP treatment of resolution surveyThe client requested this capability conceptually but did not define its exact questions, timing, or rating model. The core data model should support it. Final copy and trigger timing can be approved during UI/UX review or treated as a controlled post-MVP enhancement if the two-week deadline is at risk.
+
+7. XXII Century Admin Requirements
+The module must be a new area within the existing XXII Century Admin Panel and should visually follow the existing admin design system/navigation.
+7.1 Retention overview
+Driver list with current retention status.
+At Risk filter/list.
+Latest overall rating and latest survey date.
+Non-response indicator after the final reminder.
+Current issue status (Open / In Progress / Resolved).
+Ability to open a driver retention detail view.
+Manual 'Send Survey' action for admins.
+7.2 Driver retention detail
+Driver identity and active status.
+Driver phone number where available.
+Driver CPM, if a reliable stored source is identified.
+6-week average miles per week.
+6-week average driver payroll.
+6-week average gross margin.
+Overall rating history.
+Department rating history.
+Driver comments and department-specific comments.
+Survey dates and response/non-response history.
+Current At Risk state and case status.
+Internal admin notes.
+Resolution follow-up results when implemented.
+8. Gross Profit Integration
+The retention module must reuse the driver identity already used by XXII Admin/Gross Profit wherever possible rather than create a duplicate driver identity.
+Each driver retention record must be associated with the correct Gross Profit driver record.
+The UI must show 6-week averages for miles/week, driver payroll, and gross margin.
+Driver CPM should be shown only if the team confirms a reliable existing source for this value.
+Gross Profit values should be read from the existing application/data source rather than manually duplicated wherever technically practical.
+DependencyThe source/mapping for driver phone number and CPM still needs to be confirmed during development discovery. This should not block UI construction, database modeling, or the core retention workflow.
+
+9. Messaging Integration
+Dialpad is no longer considered a viable provider for this use case. Mantas reported that using it for recurring survey outreach could risk the account being treated as spam. The implementation must therefore use an alternative SMS provider.
+Provider
+Current position
+Twilio
+Candidate. Official Twilio documentation supports outbound messaging status callbacks and incoming-message webhooks, making it technically suitable for a two-way integration pattern. Final account/compliance setup must still be validated by the developers.
+SimpleTexting
+Candidate raised by Mantas. Mantas reported character/content limitations and required unsubscribe handling. Capabilities must be validated before selection.
+Dialpad
+Excluded from the planned implementation based on client feedback.
+Recommended approval wordingApprove the product requirements independently of the SMS vendor. Authorize the development team to perform a short provider validation and select Twilio or SimpleTexting based on API capability, compliance requirements, cost, delivery tracking, inbound response support, and implementation time. The module should use a provider abstraction so business logic is not tightly coupled to one vendor.
+
+9.1 Messaging behavior required from whichever provider is selected
+Send scheduled outbound survey messages.
+Send up to three follow-up reminders for non-response.
+Support a secure survey link or equivalent response mechanism.
+Track send/delivery status where the provider supports it.
+Respect opt-out/unsubscribe requirements and suppress future automated surveys for opted-out numbers.
+Associate the outbound message/survey with the correct driver.
+Support production-safe credentials and webhook/callback security where applicable.
+10. Recommended Survey Interaction
+For the two-week MVP, the cleanest product flow is to use SMS primarily as the outreach channel and send each driver a unique mobile-friendly survey link. The survey itself is hosted by the XXII application. This keeps the 1-5 rating, department ratings, required comments, Google review branch, and future UI changes under XXII's control rather than depending on SMS message formatting.
+System selects an eligible driver and creates a survey occurrence with a unique secure token.
+SMS provider sends the driver a short message containing the survey link.
+Driver opens the mobile survey page and submits the overall 1-5 rating.
+For 4-5, store response and show thank-you + Google review action.
+For 1-3, collect four department ratings and required comments, then submit.
+Backend stores results, marks At Risk, creates/updates the case, and sends notifications.
+XXII Admin immediately reflects the new response and case state.
+Why this is a product recommendation, not an already-approved client ruleThe questionnaire defines the business behavior but leaves the technical response mechanism unanswered. This link-based flow is the recommended implementation baseline for approval because it is provider-neutral and supports the required UI cleanly.
+
+11. UI/UX Deliverables
+After approval of this document, UI/UX should be prepared for the following screens/states before or in parallel with development:
+Screen / State
+Required content
+Retention Overview
+Driver list, At Risk indicator/filter, latest rating, last survey, case status, non-response state, quick action to send survey.
+Driver Retention Detail
+6-week GP metrics, CPM if available, rating history, department ratings/comments, internal notes, case status/history.
+Mobile Survey - Overall
+Simple 1-5 rating, driver-friendly copy, comment behavior appropriate to rating.
+Mobile Survey - Low Rating
+Ratings for all four departments, required comment, separate comment option for departments rated <=3.
+Positive Result
+Thank-you message + Google review link.
+Submission Confirmation
+Confirmation that feedback was received.
+Resolution Follow-up
+Follow-up experience for resolved issues; exact questions to be finalized.
+Empty/Error/Expired Link States
+Clear message and safe retry/contact behavior.
+Design must remain consistent with the existing XXII Century Admin Panel.
+Mobile survey must be optimized for phone use with minimal steps.
+UI should clearly distinguish At Risk drivers without relying only on color.
+Design should include loading, no-data, error, non-response and resolved states, not only the ideal path.
+12. Data Model - Functional Requirements
+The development team may choose the final schema, but the product must preserve at least the following relationships/data:
+Record
+Minimum data
+Driver link
+Existing XXII/Gross Profit driver identifier, active/inactive state, phone mapping.
+Survey occurrence
+Driver, scheduled/sent time, provider/message reference, reminder count, response state, unique survey token.
+Survey response
+Overall rating, submitted time, general comment, source survey.
+Department feedback
+Department, 1-5 rating, department-specific comment where applicable.
+Retention case
+At Risk flag, Open/In Progress/Resolved status, created/updated/resolved timestamps.
+Internal note
+Case/driver, note text, author, timestamp.
+Notification log
+Trigger, recipient, send result, timestamp.
+Opt-out state
+Phone/driver, opted-out state and date/source where applicable.
+13. Roles & Permissions
+Only authenticated XXII Admin users should access retention data.
+Drivers access only their unique survey experience; they must not be able to view admin data or another driver's survey.
+Internal notes are admin-only.
+Manual survey sending and case-status changes should be restricted to authorized admin roles.
+Existing XXII Admin authentication/authorization should be reused where possible.
+14. MVP Acceptance Criteria
+AC-01: Eligible active drivers can be scheduled according to tenure/type rules and sends are staggered.
+AC-02: New drivers are not surveyed before 7 days.
+AC-03: Inactive/terminated drivers are excluded.
+AC-04: Admin can manually send a survey.
+AC-05: System can send survey outreach using the selected SMS provider.
+AC-06: Non-responders can receive up to 3 follow-ups and are visibly flagged afterward.
+AC-07: Driver can submit an overall 1-5 rating from a mobile-friendly flow.
+AC-08: 4-5 ratings are stored and lead immediately to thank-you + Google review request.
+AC-09: 1-3 ratings mark driver At Risk and require ratings for all four departments.
+AC-10: Low-rating flow captures required comments and supports separate comments for departments rated <=3.
+AC-11: Configured department recipients receive immediate relevant alerts; James receives every 1-3 overall alert.
+AC-12: Admin overview shows At Risk drivers and current case status.
+AC-13: Admin can change case status Open/In Progress/Resolved and add internal notes.
+AC-14: Driver detail shows rating history and the three confirmed 6-week Gross Profit averages.
+AC-15: Previous ratings/comments are visible to admins.
+AC-16: Opted-out drivers are not sent future automated survey messages once provider opt-out state is received/known.
+15. Open Decisions / Dependencies Before Production
+ID
+Item
+Owner / action
+Blocks
+OD-01
+Select SMS provider: Twilio or SimpleTexting.
+Development team to validate; David/Mantas approve commercial/account choice.
+Messaging integration only
+OD-02
+Confirm exact response mechanism. Recommended: unique XXII-hosted survey link.
+David/Mantas approve during workflow/UI review.
+Final survey implementation
+OD-03
+Confirm exact spacing for 3 non-response reminders.
+Client can approve proposed defaults.
+Scheduler finalization
+OD-04
+Define stronger escalation rule for repeated low ratings.
+David/Mantas.
+Automated repeat-risk escalation only
+OD-05
+Confirm source of driver phone numbers.
+Mantas/team + developers.
+Production sends
+OD-06
+Confirm reliable source for driver CPM.
+Mantas/team + developers.
+CPM display only
+OD-07
+Define exact resolution follow-up survey questions/timing.
+David/Mantas during UI/UX review.
+Resolution follow-up only
+Development can start before all open items are closedCore XXII Admin UI, survey pages, retention data model, Gross Profit linkage, rating logic, case management, notification templates, and provider-neutral messaging service can begin immediately after approval. Production SMS activation depends on OD-01, OD-02 and OD-05.
+
+16. Out of Scope / Phase 2 Candidates
+The questionnaire did not explicitly approve any feature for deferral. Therefore, these are recommendations only and require client agreement if the two-week deadline becomes constrained:
+Advanced analytics across departments and long-term retention trends.
+Automated multi-level escalation rules beyond basic At Risk flagging.
+Complex role-specific department dashboards.
+Predictive churn scoring using Gross Profit and survey history.
+Automated sentiment analysis of comments.
+Custom survey builders.
+Additional survey channels beyond the selected SMS provider.
+Advanced resolution-SLA reporting.
+17. Approval
+Approval of this document confirms the business workflow, MVP scope, notification routing, survey rules, XXII Admin requirements, Gross Profit information, and UI/UX direction. Items listed in Section 15 remain explicit implementation decisions/dependencies and should not be treated as silently assumed requirements.
+Approver
+Approval / Comments
+Date
+David
+
+
+Mantas
+
+
+Faizan / Product Coordination
+
+
+Appendix A - Requirement Traceability from Questionnaire
+Questionnaire area
+Captured in this document
+Q1-Q4 Survey schedule
+Section 3
+Q5-Q7 Eligibility
+Section 2 / 3
+Q8-Q12 Rating experience
+Section 4
+Q13 Notifications
+Section 5
+Q14-Q16 At Risk/history
+Section 5 / 7
+Q17-Q19 Follow-up
+Section 6
+Q20-Q23 Admin/GP data
+Section 7 / 8
+Q24-Q25 Google review
+Section 4.1
+Q26-Q29 Messaging provider
+Section 9 / 15
+Q30-Q31 MVP
+Sections 14-16

@@ -1,0 +1,37 @@
+
+> my-project@0.1.0 db:migrate D:\azfs\grossprofit
+> node scripts/migrate.mjs
+
+Skipping 001_create_users.sql (already applied)
+Skipping 002_fuel_transactions.sql (already applied)
+Skipping 003_trips.sql (already applied)
+Skipping 004_drivers.sql (already applied)
+Skipping 005_toll_transactions.sql (already applied)
+Skipping 006_drop_unused_columns.sql (already applied)
+Skipping 007_tms_drivers.sql (already applied)
+Skipping 008_drop_tms_ssn.sql (already applied)
+Skipping 009_tms_trucks.sql (already applied)
+Skipping 010_tms_becomes_roster.sql (already applied)
+Skipping 011_assignments.sql (already applied)
+Skipping 012_compensations.sql (already applied)
+Skipping 013_toll_truck_link.sql (already applied)
+Skipping 014_loads.sql (already applied)
+Skipping 015_samsara_mpg.sql (already applied)
+Skipping 016_gross_profit_reports.sql (already applied)
+Skipping 017_gpr_driver_status_type.sql (already applied)
+Skipping 018_gpr_unit.sql (already applied)
+Skipping 019_gpr_compensation_linehaul.sql (already applied)
+Skipping 020_driver_routes.sql (already applied)
+Skipping 021_driver_routes_drop_fks.sql (already applied)
+Skipping 022_utc_to_chicago.sql (already applied)
+Skipping 023_driver_routes_revenue.sql (already applied)
+Skipping 024_load_financials.sql (already applied)
+Skipping 025_fuel_retail_oo.sql (already applied)
+Skipping 026_relay_fuel_week_totals.sql (already applied)
+Skipping 027_toll_exit_date.sql (already applied)
+Skipping 028_openroad_utc_to_chicago_again.sql (already applied)
+Skipping 029_gp_config.sql (already applied)
+Skipping 030_gp_oo_driver_overrides.sql (already applied)
+Skipping 031_retention.sql (already applied)
+Running 032_retention_occasions.sql (1 statement(s))...
+Migrations complete.
