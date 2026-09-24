@@ -42,7 +42,8 @@ jobs:
     needs: verify
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    environment: production
+    # Uses repository Actions secrets (Settings → Secrets and variables → Actions).
+    # No Environment required — avoids Environments admin page.
     steps:
       - uses: actions/checkout@v4
 
