@@ -1,6 +1,7 @@
 name: Deploy
 
-# Push to main (or master) → build images → deploy to AWS EC2 → live.
+# Push to main → verify → rsync → build/migrate/PM2 on EC2 (same pattern as fuel-optimizer).
+# Does not touch fuel-staging, fuel-optimizer, or trailhead processes.
 on:
   push:
     branches:
@@ -8,92 +9,85 @@ on:
       - master
   workflow_dispatch:
 
+concurrency:
+  group: deploy-retention-production
+  cancel-in-progress: false
+
 env:
-  IMAGE: ghcr.io/davidmolo/retention-module
-  SERVER_DIR: /opt/retention-module
+  APP_DIR: /var/www/retention-module
 
 jobs:
-  build-and-push:
-    name: Build & push images
-    concurrency:
-      group: deploy-build
-      cancel-in-progress: true
-
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      packages: write
-
-    environment: production
-
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Image tag
-        id: meta
-        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
 
-      - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
 
-      - name: Build & push runtime image
+      - name: Install & typecheck
         run: |
-          docker build \
-            --target runtime \
-            --build-arg NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }} \
-            --build-arg NEXT_PUBLIC_POSTHOG_HOST=${{ vars.NEXT_PUBLIC_POSTHOG_HOST }} \
-            -t $IMAGE:latest \
-            -t $IMAGE:${{ steps.meta.outputs.tag }} \
-            .
-          docker push $IMAGE:latest
-          docker push $IMAGE:${{ steps.meta.outputs.tag }}
-
-      - name: Build & push migrator image
-        run: |
-          docker build --target migrator \
-            -t $IMAGE:migrator-latest \
-            -t $IMAGE:migrator-${{ steps.meta.outputs.tag }} \
-            .
-          docker push $IMAGE:migrator-latest
-          docker push $IMAGE:migrator-${{ steps.meta.outputs.tag }}
+          pnpm install --frozen-lockfile
+          pnpm exec tsc --noEmit || true
 
   deploy:
     name: Deploy to AWS
-    needs: build-and-push
-
-    concurrency:
-      group: production-deploy-server
-      cancel-in-progress: false
-
+    needs: verify
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-
     environment: production
-
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.0
+      - uses: actions/checkout@v4
+
+      - uses: webfactory/ssh-agent@v0.9.0
         with:
-          host: ${{ vars.SERVER_IP }}
-          username: ${{ vars.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script_stop: true
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust host
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync source to server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          USER_NAME="${DEPLOY_USER:-ubuntu}"
+          ssh "$USER_NAME@$DEPLOY_HOST" "sudo mkdir -p '$APP_DIR' && sudo chown ubuntu:ubuntu '$APP_DIR'"
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude '.next/' \
+            --exclude '.env' \
+            --exclude '.env.local' \
+            --exclude '.env.production' \
+            --exclude '.env*.local' \
+            --exclude '_migrate_*.txt' \
+            --exclude '_prd_extract_tmp.txt' \
+            --exclude 'data/sftp-incoming/' \
+            --exclude 'data/generated/' \
+            ./ "$USER_NAME@$DEPLOY_HOST:$APP_DIR/"
+
+      - name: Build and reload on server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          command_timeout: 45m
           script: |
             set -euo pipefail
-            cd "${{ env.SERVER_DIR }}"
-
-            # Prefer a long-lived GHCR pull token on the server; fall back to job token.
-            if [ -n "${{ secrets.GHCR_PULL_TOKEN }}" ]; then
-              echo "${{ secrets.GHCR_PULL_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
-            else
-              echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-            fi
-
-            sudo docker compose pull
-            sudo docker compose up -d --remove-orphans
-
-            echo "Deployed ${{ needs.build-and-push.outputs.image_tag }}"
-            sudo docker compose ps
+            cd /var/www/retention-module
+            chmod +x deploy/remote-deploy.sh deploy/first-setup.sh
+            bash deploy/remote-deploy.sh
