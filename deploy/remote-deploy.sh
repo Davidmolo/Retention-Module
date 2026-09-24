@@ -37,6 +37,8 @@ pnpm install --frozen-lockfile
 echo "==> Running migrations"
 if [[ "${SKIP_MIGRATE:-}" == "1" ]]; then
   echo "SKIP_MIGRATE=1 — skipping db:migrate"
+elif ! grep -qE '^DATABASE_URL=.+' .env.production 2>/dev/null && ! grep -qE '^DATABASE_URL=.+' .env 2>/dev/null; then
+  echo "WARNING: DATABASE_URL not set in .env.production — skipping migrate (app will start anyway)"
 else
   pnpm run db:migrate
 fi
