@@ -383,8 +383,12 @@ import { sendSms } from "./sms";
 const OPEN_SURVEY_STATES = new Set(["pending", "sent", "reminded"]);
 
 function buildSurveyUrl(token: string) {
-  const base =
-    process.env.NEXT_PUBLIC_SURVEY_BASE_URL || "http://localhost:3000/s";
+  // Local (`pnpm dev`) → localhost. Live (NODE_ENV=production) → v2 unless overridden.
+  const fallback =
+    process.env.NODE_ENV === "production"
+      ? "https://v2.goxxii.com/s"
+      : "http://localhost:3000/s";
+  const base = process.env.NEXT_PUBLIC_SURVEY_BASE_URL || fallback;
   return `${base.replace(/\/$/, "")}/${token}`;
 }
 
