@@ -30,6 +30,8 @@ services:
       TZ: America/New_York
     volumes:
       - cron-logs:/app/logs
+      - sftp-incoming:/app/data/sftp-incoming
 
 volumes:
   cron-logs:
+  sftp-incoming:
