@@ -37,3 +37,4 @@ scripts/_tmp*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+retention-deploy.tgz
