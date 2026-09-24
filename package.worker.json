@@ -1,0 +1,40 @@
+{
+  "name": "retention-module-worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:seed": "node scripts/seed.mjs",
+    "generate:report": "bun scripts/generate-report.mjs",
+    "backfill:drivers": "bun scripts/backfill-drivers.mjs",
+    "import:fuel": "bun scripts/import-fuel.mjs",
+    "sync:fuel": "bun scripts/sync-fuel.mjs",
+    "sync:fuel:daemon": "bun scripts/sync-fuel-daemon.mjs",
+    "sync:relay-fuel": "bun scripts/sync-relay-fuel.mjs",
+    "sync:tolls": "bun scripts/sync-tolls.mjs",
+    "sync:tms-drivers": "bun scripts/sync-tms-drivers.mjs",
+    "sync:tms-users": "bun scripts/sync-tms-users.mjs",
+    "sync:tms-trucks": "bun scripts/sync-tms-trucks.mjs",
+    "sync:tms-assignments": "bun scripts/sync-tms-assignments.mjs",
+    "sync:tms-compensations": "bun scripts/sync-tms-compensations.mjs",
+    "sync:tms-loads": "bun scripts/sync-tms-loads.mjs",
+    "sync:tms-load-financials": "bun scripts/sync-tms-load-financials.mjs",
+    "sync:tms-driver-routes": "bun scripts/sync-tms-driver-routes.mjs",
+    "sync:samsara-mpg": "bun scripts/sync-samsara-mpg.mjs",
+    "retention:occasions": "bun scripts/retention-occasion-sends.mjs",
+    "retention:schedule-surveys": "bun scripts/retention-schedule-surveys.mjs",
+    "retention:reminders": "bun scripts/retention-reminders.mjs",
+    "cron:daily-tms": "bash scripts/cron/daily-tms.sh",
+    "cron:weekly-gp": "bash scripts/cron/weekly-gp.sh",
+    "cron:daily-retention": "bash scripts/cron/daily-retention.sh",
+    "cron:fuel": "bash scripts/cron/fuel.sh"
+  },
+  "dependencies": {
+    "@next/env": "^16.2.12",
+    "bcryptjs": "^3.0.3",
+    "ioredis": "^6.0.0",
+    "mysql2": "^3.23.2",
+    "nanoid": "^6.0.1",
+    "ssh2-sftp-client": "^12.1.1"
+  }
+}

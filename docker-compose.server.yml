@@ -1,0 +1,35 @@
+services:
+  migrate:
+    image: ghcr.io/davidmolo/retention-module:migrator-latest
+    env_file:
+      - .env
+    command: ["bun", "run", "db:migrate"]
+    restart: "no"
+
+  app:
+    image: ghcr.io/davidmolo/retention-module:latest
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  cron:
+    image: ghcr.io/davidmolo/retention-module:migrator-latest
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["/usr/local/bin/supercronic", "/app/crontab"]
+    environment:
+      TZ: America/New_York
+    volumes:
+      - cron-logs:/app/logs
+
+volumes:
+  cron-logs:

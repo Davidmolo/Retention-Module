@@ -1,0 +1,72 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - deploy
+
+env:
+  IMAGE: ghcr.io/davidmolo/retention-module
+
+jobs:
+  build-and-push:
+    concurrency:
+      group: deploy
+      cancel-in-progress: true
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    environment:
+      name: ${{ github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build & push runtime image
+        run: |
+          docker build \
+            --target runtime \
+            --build-arg NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }} \
+            --build-arg NEXT_PUBLIC_POSTHOG_HOST=${{ vars.NEXT_PUBLIC_POSTHOG_HOST }} \
+            -t $IMAGE:latest .
+          docker push $IMAGE:latest
+
+      - name: Build & push migrator image
+        run: |
+          docker build --target migrator -t $IMAGE:migrator-latest .
+          docker push $IMAGE:migrator-latest
+
+  deploy:
+    needs: build-and-push
+
+    concurrency:
+      group: production-deploy-server
+      cancel-in-progress: false
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: ${{ github.ref_name }}
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.SERVER_IP }}
+          username: ${{ vars.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/retention-module
+
+            echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            sudo docker compose pull
+            sudo docker compose up -d

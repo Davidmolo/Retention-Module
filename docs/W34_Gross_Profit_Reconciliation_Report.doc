@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word">
+<head>
+<meta charset="utf-8">
+<title>Week 34 Gross Profit Reconciliation Report</title>
+<!--[if gte mso 9]>
+<xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml>
+<![endif]-->
+<style>
+  body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #111; line-height: 1.35; max-width: 800px; margin: 24px auto; }
+  h1 { font-size: 18pt; margin-bottom: 4px; }
+  h2 { font-size: 14pt; margin-top: 22px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  h3 { font-size: 12pt; margin-top: 16px; }
+  p, li { margin: 6px 0; }
+  .meta { color: #444; font-size: 10pt; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 10pt; }
+  th, td { border: 1px solid #999; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  td.num, th.num { text-align: right; }
+  .ok { color: #0a7a2f; font-weight: 600; }
+  .warn { color: #9a5b00; font-weight: 600; }
+  .bad { color: #b00020; font-weight: 600; }
+  .box { border: 1px solid #ccc; background: #fafafa; padding: 10px 12px; margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<h1>Week 34 Gross Profit Reconciliation Report</h1>
+<p class="meta">
+  <strong>Period:</strong> Tuesday 11 August 2026 – Monday 17 August 2026 (business week 34)<br>
+  <strong>Prepared for:</strong> XXII Century / client review<br>
+  <strong>Date:</strong> 14 September 2026<br>
+  <strong>Subject:</strong> Comparison of client Gross Profit sheet vs system (OpenRoad-sourced) weekly report
+</p>
+
+<h2>1. Executive summary</h2>
+<p>
+We compared every driver card on the client workbook sheet <strong>W34 (2026)</strong>
+against our live weekly Gross Profit calculation for the same Tuesday–Monday week.
+</p>
+<div class="box">
+  <ul>
+    <li><strong>77</strong> driver cards on the client sheet</li>
+    <li><strong>68</strong> matched to drivers in our W34 active set</li>
+    <li><strong>63 of 68 (93%)</strong> match on <strong>mileage</strong> within ±1 mile</li>
+    <li><strong>48 of 68 (71%)</strong> match on <strong>total gross income</strong> within ±$1</li>
+    <li><strong>48 of 68</strong> match on <strong>both</strong> miles and gross</li>
+    <li><strong>5</strong> drivers have material mileage gaps</li>
+    <li><strong>20</strong> drivers have gross gaps (often with miles already matching)</li>
+    <li><strong>9</strong> sheet cards were not present in our W34 active report set</li>
+  </ul>
+</p>
+</div>
+<p>
+<strong>Conclusion:</strong> This is not a random field-mapping error. Mileage alignment is strong.
+Remaining differences are concentrated in (1) split-haul / multi-driver revenue allocation,
+(2) a small set of drivers with different load coverage inside the week window, and
+(3) secondary expense lines (pay, fuel, PrePass) that use different inputs.
+</p>
+<p>
+The previously disputed example — <strong>Abdullahi Daud, unit 245</strong> — now
+<strong>matches the client sheet on both mileage and total gross</strong>.
+</p>
+
+<h2>2. Scope and method</h2>
+<ul>
+  <li><strong>Client source:</strong> workbook sheet <em>W34 (2026)</em> (77 GP cards; name, unit, mileage, total gross, expenses).</li>
+  <li><strong>System source:</strong> live weekly summary from synced OpenRoad loads + driver_routes, assignments, compensations, fuel, Samsara MPG, and PrePass tolls.</li>
+  <li><strong>Week rule:</strong> Tuesday → Monday (W34 = 2026-08-11 → 2026-08-17).</li>
+  <li><strong>Match keys:</strong> truck unit where available, otherwise driver name.</li>
+  <li><strong>Tolerance:</strong> ±1.0 mile for mileage; ±$1.00 for gross income.</li>
+</ul>
+
+<h2>3. Headline results</h2>
+<table>
+  <tr><th>Metric</th><th class="num">Count</th><th>Notes</th></tr>
+  <tr><td>Client cards</td><td class="num">77</td><td>Full W34 card grid</td></tr>
+  <tr><td>Matched to our roster / week set</td><td class="num">68</td><td>Unit or name match</td></tr>
+  <tr><td>Mileage match (±1 mi)</td><td class="num"><span class="ok">63 / 68</span></td><td>93% of matched drivers</td></tr>
+  <tr><td>Gross income match (±$1)</td><td class="num"><span class="warn">48 / 68</span></td><td>71% of matched drivers</td></tr>
+  <tr><td>Both miles and gross match</td><td class="num"><span class="ok">48</span></td><td></td></tr>
+  <tr><td>Mileage mismatches</td><td class="num"><span class="bad">5</span></td><td>See section 5</td></tr>
+  <tr><td>Gross mismatches</td><td class="num"><span class="bad">20</span></td><td>See section 6</td></tr>
+  <tr><td>On client sheet only (not in our W34 set)</td><td class="num">9</td><td>See section 7</td></tr>
+</table>
+
+<h2>4. Proof case — Abdullahi Daud (unit 245)</h2>
+<p>
+This driver was the primary example of a miles/gross gap earlier. After attributing
+solo loads by delivery week and multi-driver helper segments from OpenRoad
+<strong>driver_routes</strong>, the card matches the client sheet:
+</p>
+<table>
+  <tr><th>Field</th><th class="num">Client sheet</th><th class="num">Our system</th><th class="num">Difference</th><th>Result</th></tr>
+  <tr><td>Mileage</td><td class="num">4,843.7</td><td class="num">4,843.65</td><td class="num">−0.05</td><td class="ok">MATCH</td></tr>
+  <tr><td>Total gross income</td><td class="num">$12,007.60</td><td class="num">$12,007.60</td><td class="num">$0.00</td><td class="ok">MATCH</td></tr>
+  <tr><td>Driver's pay</td><td class="num">$3,248.39</td><td class="num">$3,148.37</td><td class="num">−$100.02</td><td>Secondary (pay split / rates)</td></tr>
+  <tr><td>PrePass</td><td class="num">$83.64</td><td class="num">$66.74</td><td class="num">−$16.90</td><td>Secondary (toll window / link)</td></tr>
+</table>
+
+<h3>4.1 How Daud’s miles and gross are built</h3>
+<table>
+  <tr><th>Component</th><th>Detail</th><th class="num">Miles</th><th class="num">Gross</th></tr>
+  <tr>
+    <td>Solo loads (delivery in W34)</td>
+    <td>2608-00313, 00406, 00502, 00536, 00531 — full load credit</td>
+    <td class="num">4,508.29</td><td class="num">$11,007.60</td>
+  </tr>
+  <tr>
+    <td>Helper route share</td>
+    <td>2608-00582 (OpenRoad load 2229817): Daud is not the final delivery driver; segment miles + allocated revenue; week by route date</td>
+    <td class="num">335.36</td><td class="num">$1,000.00</td>
+  </tr>
+  <tr>
+    <td><strong>Total</strong></td>
+    <td>Solo + helper</td>
+    <td class="num"><strong>4,843.65</strong></td>
+    <td class="num"><strong>$12,007.60</strong></td>
+  </tr>
+  <tr>
+    <td>Client sheet</td>
+    <td>W34 card for Daud / 245</td>
+    <td class="num"><strong>4,843.7</strong></td>
+    <td class="num"><strong>$12,007.60</strong></td>
+  </tr>
+</table>
+<p>
+Helper segment detail from OpenRoad <em>driver_routes</em>: loaded miles <strong>327.16</strong> + empty <strong>8.2</strong>;
+revenue share recorded as <strong>$1,000</strong> (aligned with client payroll flat for that piece).
+</p>
+
+<h2>5. Mileage mismatches (5 drivers)</h2>
+<p>These are the only matched drivers outside ±1 mile:</p>
+<table>
+  <tr>
+    <th>Driver</th><th>Unit</th>
+    <th class="num">Sheet mi</th><th class="num">Ours mi</th><th class="num">Δ mi</th>
+    <th class="num">Sheet gross</th><th class="num">Ours gross</th>
+    <th>Likely cause</th>
+  </tr>
+  <tr>
+    <td>Travis Sadler</td><td>688</td>
+    <td class="num">1,538.4</td><td class="num">426.6</td><td class="num">−1,111.8</td>
+    <td class="num">$4,323.18</td><td class="num">$1,300.00</td>
+    <td>Fewer loads/routes in our W34 bucket than on the sheet</td>
+  </tr>
+  <tr>
+    <td>Calvin Chambers</td><td>256</td>
+    <td class="num">3,000.5</td><td class="num">1,915.08</td><td class="num">−1,085.4</td>
+    <td class="num">$8,200.00</td><td class="num">$4,400.00</td>
+    <td>API shows 3 solo loads (1,915 mi / $4,400); sheet implies additional haul(s)</td>
+  </tr>
+  <tr>
+    <td>Pablo Viera</td><td>246</td>
+    <td class="num">2,205.9</td><td class="num">3,119.03</td><td class="num">+913.1</td>
+    <td class="num">$6,180.00</td><td class="num">$8,530.00</td>
+    <td>Our week includes extra route/load credit relative to the sheet</td>
+  </tr>
+  <tr>
+    <td>Rashard Morgan</td><td>268</td>
+    <td class="num">2,930.7</td><td class="num">2,933.68</td><td class="num">+3.0</td>
+    <td class="num">$7,750.00</td><td class="num">$8,379.20</td>
+    <td>Miles nearly OK; gross differs (revenue share)</td>
+  </tr>
+  <tr>
+    <td>Audrius Labaciauskas</td><td>654</td>
+    <td class="num">2,674.7</td><td class="num">2,675.82</td><td class="num">+1.1</td>
+    <td class="num">$8,750.00</td><td class="num">$8,581.45</td>
+    <td>Miles at edge of tolerance; gross −$169</td>
+  </tr>
+</table>
+
+<h2>6. Gross gaps when mileage already matches</h2>
+<p>
+Most remaining differences are <strong>gross-only</strong>: miles agree within ±1, but total gross
+differs by roughly <strong>$40–$630</strong>. That pattern is characteristic of multi-driver
+revenue allocation (client payroll rounding / $100-style floors vs our proportional
+share of load revenue by loaded miles), not of wrong mile totals.
+</p>
+<table>
+  <tr>
+    <th>Driver</th><th>Unit</th><th class="num">Δ miles</th>
+    <th class="num">Sheet gross</th><th class="num">Ours</th><th class="num">Δ $</th>
+  </tr>
+  <tr><td>Jeffery Roberson</td><td>281</td><td class="num">−0.01</td><td class="num">$10,229.30</td><td class="num">$10,859.21</td><td class="num">+$629.91</td></tr>
+  <tr><td>Rakeem Norton</td><td>254</td><td class="num">−0.05</td><td class="num">$8,000.00</td><td class="num">$8,514.00</td><td class="num">+$514.00</td></tr>
+  <tr><td>Ronnie Sieg</td><td>263*</td><td class="num">+0.03</td><td class="num">$7,370.00</td><td class="num">$7,849.00</td><td class="num">+$479.00</td></tr>
+  <tr><td>Leonard Washington</td><td>264</td><td class="num">−0.02</td><td class="num">$7,024.08</td><td class="num">$7,419.08</td><td class="num">+$395.00</td></tr>
+  <tr><td>Robert Wagner</td><td>212</td><td class="num">−0.01</td><td class="num">$9,772.70</td><td class="num">$10,158.70</td><td class="num">+$386.00</td></tr>
+  <tr><td>Abraham Lanz</td><td>215</td><td class="num">−0.09</td><td class="num">$6,495.00</td><td class="num">$6,795.00</td><td class="num">+$300.00</td></tr>
+  <tr><td>Cheryl Day</td><td>623</td><td class="num">−0.08</td><td class="num">$5,560.00</td><td class="num">$5,860.00</td><td class="num">+$300.00</td></tr>
+  <tr><td>Lucian Cantus</td><td>678</td><td class="num">−0.07</td><td class="num">$10,304.87</td><td class="num">$10,504.87</td><td class="num">+$200.00</td></tr>
+  <tr><td>Raymond Malisa</td><td>667</td><td class="num">+0.02</td><td class="num">$8,406.99</td><td class="num">$8,606.99</td><td class="num">+$200.00</td></tr>
+  <tr><td>Rodney Coleman</td><td>280</td><td class="num">−0.05</td><td class="num">$7,110.00</td><td class="num">$7,310.00</td><td class="num">+$200.00</td></tr>
+</table>
+<p class="meta">*Sieg: sheet unit 263; our current assignment unit may differ (name match used).</p>
+
+<h2>7. On the client sheet but not in our W34 set (9)</h2>
+<p>
+These cards appear on the client sheet but were not in our active W34 report population
+(active status and/or week activity filters, or match failure):
+</p>
+<table>
+  <tr><th>Sheet name</th><th>Unit</th></tr>
+  <tr><td>Liobikas</td><td>250</td></tr>
+  <tr><td>El-Haji</td><td>265</td></tr>
+  <tr><td>Simpson</td><td>188</td></tr>
+  <tr><td>Campbell</td><td>182</td></tr>
+  <tr><td>Walker</td><td>199</td></tr>
+  <tr><td>Dorisme</td><td>690</td></tr>
+  <tr><td>Biskis</td><td>675</td></tr>
+  <tr><td>Petrov</td><td>694</td></tr>
+  <tr><td>C. Smith</td><td>692</td></tr>
+</table>
+
+<h2>8. Root causes (why differences remain)</h2>
+<ol>
+  <li>
+    <strong>Split-haul / helper attribution (resolved for Daud-style cases).</strong>
+    Multi-driver loads are credited from OpenRoad <em>driver_routes</em>:
+    solo = full load by delivery date; helper = route share by route date;
+    owner on a multi-driver load = route share by delivery date.
+  </li>
+  <li>
+    <strong>Revenue allocation on split loads.</strong>
+    When miles match but gross differs by round amounts ($100 / $200 / $300 / ~$500–$630),
+    the client payroll and our proportional revenue share are using different rounding rules.
+  </li>
+  <li>
+    <strong>Week-boundary / load coverage (Sadler, Chambers, Viera).</strong>
+    Large mile gaps mean the set of loads/routes inside Tue–Mon differs between systems.
+  </li>
+  <li>
+    <strong>Secondary lines (pay, fuel, PrePass).</strong>
+    Pay uses TMS compensation rates × our loaded/empty split.
+    Fuel uses (miles ÷ MPG) × PPG (Samsara / card).
+    PrePass uses tolls on assigned trucks in the assignment window.
+    Client green input cells can differ.
+  </li>
+</ol>
+
+<h2>9. Bottom line for stakeholders</h2>
+<div class="box">
+  <p>
+    For Week 34, <strong>mileage reconciles for 63 of 68 matched drivers (93%)</strong>.
+    The former flagship discrepancy (Daud / unit 245) now matches the client sheet on
+    <strong>both miles and total gross</strong>.
+  </p>
+  <p>
+    Remaining gaps are mostly explained by multi-driver revenue sharing rules and a small
+    number of drivers with different load coverage — not by incorrect API field mapping
+    for miles/revenue columns.
+  </p>
+  <p>
+    Recommended next step (if closer payroll parity is required): align split-load revenue
+    rounding with the client’s $100-floor / remainder rules, then re-check the 20 gross-only
+    gaps and the 5 mileage outliers load-by-load.
+  </p>
+</div>
+
+<p class="meta">
+  End of report · Week 34 2026 Gross Profit reconciliation · Internal / client sendable
+</p>
+
+</body>
+</html>

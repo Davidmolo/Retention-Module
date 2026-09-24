@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Retention Module — Review Presentation</title>
+  <style>
+    :root {
+      --bg: #f7f6f3;
+      --surface: #ffffff;
+      --ink: #1a1a1a;
+      --muted: #5c5c5c;
+      --line: #e2e0db;
+      --accent: #1e4d6b;
+      --good: #1f6b4a;
+      --warn: #8a5a12;
+      --bad: #8b2e2e;
+      --soft-good: #e8f4ee;
+      --soft-warn: #f8f0e3;
+      --soft-bad: #f6e8e8;
+      --soft-accent: #e8f0f5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.45;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; }
+    header.hero {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 28px 28px 22px;
+      margin-bottom: 20px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.75rem; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); margin: 0; font-size: 0.98rem; }
+    .toolbar {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px;
+      align-items: center;
+    }
+    button, .btn {
+      appearance: none; border: 1px solid var(--line); background: var(--surface);
+      color: var(--ink); padding: 8px 14px; border-radius: 8px; cursor: pointer;
+      font-size: 0.9rem;
+    }
+    button.primary, .btn.primary {
+      background: var(--accent); color: #fff; border-color: var(--accent);
+    }
+    button:hover { filter: brightness(0.97); }
+    nav.toc {
+      display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 24px;
+    }
+    nav.toc a {
+      text-decoration: none; color: var(--ink); background: var(--surface);
+      border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px;
+      font-size: 0.85rem;
+    }
+    nav.toc a:hover { border-color: var(--accent); color: var(--accent); }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 22px 24px;
+      margin-bottom: 16px;
+      break-inside: avoid;
+    }
+    h2 {
+      margin: 0 0 14px; font-size: 1.25rem; color: var(--accent);
+      border-bottom: 1px solid var(--line); padding-bottom: 8px;
+    }
+    h3 { margin: 18px 0 10px; font-size: 1.05rem; }
+    p, li { color: var(--ink); }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    .stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat {
+      border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+      text-align: center; background: var(--soft-accent);
+    }
+    .stat strong { display: block; font-size: 1.15rem; }
+    .stat span { font-size: 0.78rem; color: var(--muted); }
+    .callout {
+      border-radius: 10px; padding: 12px 14px; margin: 12px 0;
+      border: 1px solid var(--line); font-size: 0.92rem;
+    }
+    .callout.warn { background: var(--soft-warn); border-color: #e6d2a8; }
+    .callout.bad { background: var(--soft-bad); border-color: #e0b4b4; }
+    .callout.info { background: var(--soft-accent); border-color: #b9cfe0; }
+    .callout.good { background: var(--soft-good); border-color: #b7dcc8; }
+    .callout strong { display: block; margin-bottom: 4px; }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 18px 1fr 18px 1fr 18px 1fr 18px 1fr;
+      gap: 4px; align-items: stretch; margin: 12px 0;
+    }
+    .box {
+      border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+      font-size: 0.82rem; min-height: 88px;
+    }
+    .box.hi { border-color: var(--accent); background: var(--soft-accent); }
+    .box b { display: block; margin-bottom: 4px; font-size: 0.85rem; }
+    .arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .card {
+      border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+    }
+    .card h4 { margin: 0 0 8px; font-size: 0.95rem; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 0.88rem;
+      margin: 8px 0 4px;
+    }
+    th, td {
+      border: 1px solid var(--line); padding: 8px 10px; text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f0eeea; font-weight: 600; }
+    tr.ok td:last-child { color: var(--good); font-weight: 600; }
+    tr.warn td:last-child { color: var(--warn); font-weight: 600; }
+    tr.bad td:last-child { color: var(--bad); font-weight: 600; }
+    .msg {
+      border-left: 3px solid var(--accent); padding: 8px 12px;
+      background: #faf9f7; margin: 8px 0; font-size: 0.9rem;
+    }
+    .msg .label {
+      font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--muted); margin-bottom: 4px;
+    }
+    .fork {
+      display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap;
+    }
+    .fork > div {
+      flex: 1; min-width: 240px; border-radius: 10px; padding: 14px;
+      border: 1px solid var(--line);
+    }
+    .fork .neg { background: var(--soft-bad); }
+    .fork .pos { background: var(--soft-good); }
+    .done-list, .open-list { margin: 0; padding-left: 18px; }
+    .done-list li { margin: 4px 0; }
+    .open-list li { margin: 4px 0; }
+    footer {
+      margin-top: 24px; color: var(--muted); font-size: 0.8rem; text-align: center;
+    }
+    @media (max-width: 800px) {
+      .stats, .flow, .grid2, .grid3, .grid4 { grid-template-columns: 1fr; }
+      .flow { display: flex; flex-direction: column; }
+      .arrow { transform: rotate(90deg); height: 20px; }
+    }
+    @media print {
+      body { background: #fff; }
+      .toolbar, .no-print { display: none !important; }
+      .wrap { max-width: none; padding: 0; }
+      section, header.hero {
+        break-inside: avoid; border: 1px solid #ccc;
+        box-shadow: none; margin-bottom: 12px;
+      }
+      a { color: inherit; text-decoration: none; }
+      nav.toc { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <h1>Retention Module — Review Presentation</h1>
+      <p class="subtitle">
+        What we built, what drivers and the team see, exact messages,
+        Google Chat space setup, Twilio test block, and remaining needs.
+      </p>
+      <div class="toolbar no-print">
+        <button class="primary" onclick="window.print()">Print / Save as PDF</button>
+        <span class="muted">Opens print dialog → choose “Save as PDF” or “Microsoft Print to PDF”.</span>
+      </div>
+    </header>
+
+    <nav class="toc no-print">
+      <a href="#overview">Overview</a>
+      <a href="#driver">Driver journey</a>
+      <a href="#team">Team receives</a>
+      <a href="#messages">Exact messages</a>
+      <a href="#ui">What UI shows</a>
+      <a href="#needs">What we need</a>
+      <a href="#status">Done vs pending</a>
+    </nav>
+
+    <section id="overview">
+      <h2>1. Overview</h2>
+      <div class="stats">
+        <div class="stat"><strong>Live GP</strong><span>Driver roster source</span></div>
+        <div class="stat"><strong>08:00 ET</strong><span>Daily Retention cron</span></div>
+        <div class="stat"><strong>1–3 / 4–5</strong><span>Survey branches</span></div>
+        <div class="stat"><strong>SMS + Chat</strong><span>Outreach channels</span></div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Current test block (your review)</strong>
+        Twilio rejected SMS to Pakistan test number <code>+92301237XXXX</code>:
+        “Permission to send an SMS has not been enabled for the region indicated by the 'To' number.”
+        Survey send logic is fine — Twilio needs Geographic Permissions for Pakistan
+        (or use a US test phone). Same block hits cadence surveys, reminders, birthday,
+        anniversary, and holiday SMS.
+      </div>
+
+      <h3>End-to-end flow</h3>
+      <p class="muted">
+        OpenRoad sync (03:00) → MySQL active drivers → Retention cron (08:00) →
+        Twilio SMS → Driver opens /s/token → branch by stars → team alerts
+      </p>
+      <div class="flow">
+        <div class="box"><b>1. Roster</b>OpenRoad → MySQL. Active only. Hire date, DOB, dispatcher, phone.</div>
+        <div class="arrow">→</div>
+        <div class="box hi"><b>2. Daily jobs</b>Occasions → schedule surveys → reminders (America/Chicago dates).</div>
+        <div class="arrow">→</div>
+        <div class="box"><b>3. Driver SMS</b>Twilio from same FMS credentials. Link to mobile survey.</div>
+        <div class="arrow">→</div>
+        <div class="box hi"><b>4. Survey</b>1–3 = at-risk + dept ratings. 4–5 = celebrate + Google review.</div>
+        <div class="arrow">→</div>
+        <div class="box"><b>5. Team</b>Dashboard cases. Google Chat on 4–5. Emails logged (mailer pending).</div>
+      </div>
+
+      <div class="grid2" style="margin-top:14px">
+        <div class="card">
+          <h4>Outreach types</h4>
+          <ul>
+            <li>Cadence — new drivers (company <b>and</b> owner-ops) every <b>14 days</b>; established (≥3 months) every <b>30 days</b> (≥7 days tenure to start)</li>
+            <li>Reminders — after 3 days unanswered, max 2</li>
+            <li>Birthday — wish only (no survey)</li>
+            <li>Anniversary — 3 mo / 6 mo / 1 yr / yearly + survey link</li>
+            <li>Holidays — US federals + Truck Driver Appreciation Week + survey</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>After the driver submits</h4>
+          <div class="fork">
+            <div class="neg">
+              <b>1–3 stars → At Risk</b><br />
+              Case opens · dept ratings required · James + low depts notified (email log today)
+            </div>
+            <div class="pos">
+              <b>4–5 stars → Positive</b><br />
+              Google Chat celebrate · Google review CTA on thank-you screen
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="driver">
+      <h2>2. Driver journey</h2>
+      <table>
+        <thead>
+          <tr><th>Step</th><th>What happens</th><th>What driver sees / gets</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1. SMS arrives</td><td>Cadence, reminder, anniversary, or holiday</td><td>Text with survey link (/s/{token})</td></tr>
+          <tr><td>2. Opens link</td><td>Mobile survey page</td><td>Overall 1–5 stars</td></tr>
+          <tr><td>3a. Rates 4–5</td><td>Positive branch</td><td>Thank you + “leave a Google review”</td></tr>
+          <tr><td>3b. Rates 1–3</td><td>At-risk branch</td><td>Rate Dispatch / Safety / Accounting / Maintenance + comment</td></tr>
+          <tr><td>4. Birthday only</td><td>No survey link</td><td>Appreciation SMS only</td></tr>
+        </tbody>
+      </table>
+
+      <h3>SMS we send the driver</h3>
+      <div class="msg"><div class="label">Survey</div>Hi {FirstName}, XXII wants your feedback: {surveyUrl}</div>
+      <div class="msg"><div class="label">Reminder</div>Hi {FirstName}, quick reminder — XXII still wants your feedback: {surveyUrl}</div>
+      <div class="msg"><div class="label">Birthday (no survey)</div>Happy Birthday, {FirstName}! We wanted to take a moment and express our appreciation for you on your special day. Wishing you a wonderful birthday from everyone at XXII.</div>
+      <div class="msg"><div class="label">Anniversary + survey</div>Happy {3 months|6 months|1 year|N years} work anniversary, {FirstName}! … Please take a moment to provide feedback …: {surveyUrl}</div>
+      <div class="msg"><div class="label">Holiday + survey</div>Happy {HolidayName}, {FirstName}! Warm wishes from the XXII team. If you have a moment, we'd appreciate your feedback: {surveyUrl}</div>
+
+      <div class="callout info">
+        <strong>What the driver sends back</strong>
+        Not SMS replies. They tap the link and submit stars (and on 1–3, department ratings + a written comment).
+      </div>
+    </section>
+
+    <section id="team">
+      <h2>3. What the team receives</h2>
+      <div class="grid2">
+        <div class="card">
+          <h4>On 1–3 (At Risk)</h4>
+          <ul>
+            <li>Case opens on Retention dashboard</li>
+            <li>Email intended: “At Risk — Name rated n/5” → James</li>
+            <li>Dept ≤3 → Ozzy / Accounting / Art+Eric / Safety</li>
+            <li><b>Email currently logged only — mailer not live</b></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>On 4–5 (Celebrate)</h4>
+          <ul>
+            <li>Google Chat Incoming Webhook → your Workspace Space</li>
+            <li>Includes rating, name/ID, dispatcher, comment</li>
+            <li>Driver also gets Google review CTA</li>
+            <li><b>Needs GOOGLE_CHAT_RETENTION_CELEBRATE_WEBHOOK_URL</b></li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Where Google Chat messages go</h3>
+      <p>
+        Messages go to <b>whichever Google Chat Space</b> you create the Incoming Webhook in
+        (e.g. “Driver Wins” / Retention). There is no hardcoded channel name in the app.
+      </p>
+      <div class="grid4">
+        <div class="box"><b>1</b>Open or create a Google Chat Space for celebrations.</div>
+        <div class="box"><b>2</b>Space menu → Apps &amp; integrations → Incoming webhooks → Add.</div>
+        <div class="box"><b>3</b>Name it (e.g. Retention Celebrate) → copy the webhook URL.</div>
+        <div class="box hi"><b>4</b>Set env <code>GOOGLE_CHAT_RETENTION_CELEBRATE_WEBHOOK_URL</code> → redeploy.</div>
+      </div>
+
+      <h3>Example Chat message</h3>
+      <div class="msg">
+        <div class="label">Google Chat</div>
+        <b>Driver celebration — 5/5 ★★★★★</b><br />
+        Driver: Jane Doe (ID 22890)<br />
+        Dispatcher: Art<br />
+        Comment: Great support this week<br />
+        <span class="muted">Let's celebrate — great feedback from the road. Keep supporting this driver!</span>
+      </div>
+
+      <p class="muted">
+        Birthday leadership notice (email, mock today): “Driver birthday today: Name (ID).
+        A birthday appreciation message was sent… Please join us in wishing them a happy birthday.”
+      </p>
+    </section>
+
+    <section id="messages">
+      <h2>4. Message matrix</h2>
+      <table>
+        <thead>
+          <tr><th>Trigger</th><th>To</th><th>Channel</th><th>Live now?</th></tr>
+        </thead>
+        <tbody>
+          <tr class="ok"><td>Cadence survey</td><td>Driver phone</td><td>Twilio SMS</td><td>Yes (if Twilio OK)</td></tr>
+          <tr class="ok"><td>Reminder</td><td>Driver phone</td><td>Twilio SMS</td><td>Yes (if Twilio OK)</td></tr>
+          <tr class="ok"><td>Birthday wish</td><td>Driver phone</td><td>Twilio SMS</td><td>Yes (if Twilio OK)</td></tr>
+          <tr class="ok"><td>Anniversary + link</td><td>Driver phone</td><td>Twilio SMS</td><td>Yes (if Twilio OK)</td></tr>
+          <tr class="ok"><td>Holiday + link</td><td>Driver phone</td><td>Twilio SMS</td><td>Yes (if Twilio OK)</td></tr>
+          <tr class="warn"><td>Birthday leadership</td><td>James + leadership</td><td>Email</td><td>Log only</td></tr>
+          <tr class="warn"><td>At-risk overall</td><td>James</td><td>Email</td><td>Log only</td></tr>
+          <tr class="warn"><td>Dept low rating</td><td>Dept owners</td><td>Email</td><td>Log only</td></tr>
+          <tr class="warn"><td>4–5 celebrate</td><td>Google Chat space</td><td>Incoming webhook</td><td>Needs webhook URL</td></tr>
+          <tr class="ok"><td>Google review CTA</td><td>Driver (browser)</td><td>Survey thank-you</td><td>Yes</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout bad">
+        <strong>Twilio region permission (current test)</strong>
+        Error: Permission to send an SMS has not been enabled for the region indicated by the 'To' number: <code>+92301237XXXX</code>.<br /><br />
+        Fix: Twilio Console → Messaging → Settings → Geo permissions → enable Pakistan,<br />
+        <b>OR</b> change the test driver phone to a US number already allowed on the FMS Twilio account.
+      </div>
+    </section>
+
+    <section id="ui">
+      <h2>5. What the Retention UI shows</h2>
+      <table>
+        <thead>
+          <tr><th>Route</th><th>Purpose</th><th>Main content</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>/retention</code></td><td>Overview</td><td>KPIs, charts, recent responses, driver table</td></tr>
+          <tr><td><code>/retention?view=at-risk</code></td><td>At Risk</td><td>Cases from 1–3 overall</td></tr>
+          <tr><td><code>/retention?view=follow-ups</code></td><td>Follow-ups</td><td>Open / In Progress cases</td></tr>
+          <tr><td><code>/retention?view=exit</code></td><td>Exit / Turnover</td><td>Resolved cases (exit surveys later)</td></tr>
+          <tr><td><code>/retention?view=reasons</code></td><td>Reasons</td><td>Dept low-rating breakdown + comments</td></tr>
+          <tr><td><code>/retention/drivers/[id]</code></td><td>Driver detail</td><td>GP averages, history, notes, Send Survey</td></tr>
+          <tr><td><code>/s/[token]</code></td><td>Driver survey</td><td>Stars → branch UI (mobile)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="needs">
+      <h2>6. What we need</h2>
+      <ol>
+        <li><b>Twilio geo</b> — enable Pakistan OR use US test phone (blocks +9230… now)</li>
+        <li><b>Google Chat</b> — Incoming Webhook in celebrate Space → <code>GOOGLE_CHAT_RETENTION_CELEBRATE_WEBHOOK_URL</code></li>
+        <li><b>Email sender</b> — SES/SMTP for at-risk + birthday leadership (today: log only)</li>
+        <li><b>Survey public URL</b> — <code>NEXT_PUBLIC_SURVEY_BASE_URL</code> = https host (not localhost on AWS)</li>
+        <li><b>AWS</b> — MySQL + Redis + worker crontab (same OpenRoad/Twilio as FMS/GP)</li>
+        <li><b>Cleanup</b> — remove Shahmeer test driver after soak</li>
+      </ol>
+
+      <h3>Environment checklist</h3>
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Env / action</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr class="ok"><td>MySQL</td><td>DATABASE_URL + retention migrations</td><td>Ready in code</td></tr>
+          <tr class="ok"><td>OpenRoad sync</td><td>OPENROAD_* · daily-tms 03:00</td><td>Ready in code</td></tr>
+          <tr class="warn"><td>Twilio SMS</td><td>Same FMS TWILIO_* keys</td><td>Keys OK · geo block on PK test #</td></tr>
+          <tr class="warn"><td>Survey public URL</td><td>NEXT_PUBLIC_SURVEY_BASE_URL</td><td>Set for deploy host</td></tr>
+          <tr class="bad"><td>Google Chat celebrate</td><td>GOOGLE_CHAT_RETENTION_CELEBRATE_WEBHOOK_URL</td><td>Missing until Space webhook</td></tr>
+          <tr class="ok"><td>Google review link</td><td>NEXT_PUBLIC_GOOGLE_REVIEW_URL</td><td>Has default URL</td></tr>
+          <tr class="warn"><td>Team emails</td><td>JAMES / MAINTENANCE / ACCOUNTING / DISPATCH / SAFETY</td><td>Recipients set · send mocked</td></tr>
+          <tr class="ok"><td>Cron</td><td>daily-retention 08:00 ET</td><td>Script + crontab ready</td></tr>
+          <tr class="warn"><td>Test driver</td><td>ID 900000001 · +923012373463 · Shahmeer</td><td>Temp · SMS blocked by geo</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="status">
+      <h2>7. Done vs pending</h2>
+      <div class="grid2">
+        <div class="card">
+          <h4 style="color:var(--good)">Built and wired</h4>
+          <ul class="done-list">
+            <li>Live GP active drivers + dispatcher</li>
+            <li>Survey cadence 14/30d + reminders + manual send</li>
+            <li>Birthday / anniversary / holiday occasion SMS</li>
+            <li>Mobile survey + 1–3 / 4–5 branching</li>
+            <li>At-risk cases, notes, status updates</li>
+            <li>Google Chat celebrate helper + submit hook</li>
+            <li>Google review thank-you CTA</li>
+            <li>Daily cron pipeline</li>
+            <li>Twilio aligned with FMS env names</li>
+            <li>Retention dashboard + driver detail</li>
+            <li>Auto non_response after max reminders (unblocks next cadence)</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4 style="color:var(--warn)">Still needed / partial</h4>
+          <ul class="open-list">
+            <li>Twilio geo for Pakistan test number</li>
+            <li>Google Chat webhook URL for celebrate Space</li>
+            <li>Live email delivery (at-risk + birthday CC)</li>
+            <li>Public survey base URL on AWS</li>
+            <li>Exit surveys + Documents storage</li>
+            <li>Remove temp test driver after validation</li>
+            <li>Remove Preview survey button + /s/preview after review</li>
+            <li>Confirm holiday survey vs greeting-only with David</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout info" style="margin-top:14px">
+        <strong>One-line for stakeholders</strong>
+        Retention can discover active drivers, SMS survey/occasion messages, collect ratings,
+        open at-risk cases, and post 4–5 celebrates to Google Chat — blocked right now on
+        Twilio geo for the PK test phone and on creating the Chat Space webhook; internal
+        emails are still log-only.
+      </div>
+    </section>
+
+    <footer>
+      XXII Retention · Source: lib/retention, scripts/cron/daily-retention, app/retention ·
+      Cron 08:00 ET · Roster from OpenRoad/MySQL
+    </footer>
+  </div>
+</body>
+</html>

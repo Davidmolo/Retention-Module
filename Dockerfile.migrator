@@ -1,0 +1,32 @@
+# Local migrate/cron image — same lean recipe as Dockerfile `migrator` stage.
+FROM oven/bun:1-slim AS base
+WORKDIR /app
+
+FROM base AS install-worker
+
+COPY package.worker.json ./package.json
+RUN bun install
+
+FROM base
+
+ENV NODE_ENV=production
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates tzdata util-linux bash \
+  && curl -fsSLO https://github.com/aptible/supercronic/releases/download/v0.2.36/supercronic-linux-amd64 \
+  && chmod +x supercronic-linux-amd64 \
+  && mv supercronic-linux-amd64 /usr/local/bin/supercronic \
+  && apt-get purge -y curl \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=install-worker /app/node_modules ./node_modules
+COPY package.worker.json ./package.json
+COPY tsconfig.worker.json ./tsconfig.json
+COPY scripts ./scripts
+COPY data/migrations ./data/migrations
+COPY lib ./lib
+COPY crontab ./crontab
+
+RUN mkdir -p /app/logs /tmp/gp-cron-locks \
+  && chmod +x /app/scripts/cron/*.sh
+
+CMD ["bun", "run", "db:migrate"]

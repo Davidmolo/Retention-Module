@@ -1,0 +1,52 @@
+# Gross Profit + Retention cron (supercronic).
+# Container TZ: America/New_York (Ohio). Date math in app uses APP_TIMEZONE=America/Chicago.
+#
+# Design:
+# - Few pipeline entries (not dozens of staggered jobs) → no mid-chain races
+# - Each pipeline uses flock → overlapping runs are skipped, not crashed
+# - Soft steps continue after failure; weekly report is critical
+# - Logs: /app/logs/<pipeline>.log
+#
+# IMPORTANT — nothing from the old per-job crontab was dropped.
+# Those same bun scripts still run, just inside the pipelines below:
+#
+#   fuel.sh          → sync:fuel                         (every 30 min)
+#   daily-tms.sh     → sync:tolls
+#                      sync:tms-compensations
+#                      sync:tms-drivers
+#                      sync:tms-users          (extra vs old crontab)
+#                      sync:tms-trucks
+#                      sync:tms-loads
+#                      sync:tms-driver-routes --all
+#                      sync:tms-assignments
+#                      sync:tms-load-financials
+#   weekly-gp.sh     → sync:samsara-mpg
+#                      backfill:drivers
+#                      sync:relay-fuel
+#                      generate:report
+#   daily-retention  → retention:occasions / schedule-surveys / reminders
+#
+# Admin "Run job" UI (manualCrons.ts) still runs each script individually.
+#
+# Manual test inside cron container:
+#   bash /app/scripts/cron/daily-tms.sh
+#   bash /app/scripts/cron/daily-retention.sh
+#   bash /app/scripts/cron/weekly-gp.sh
+#   bash /app/scripts/cron/fuel.sh
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Fuel import — every 30 minutes  (= old */30 sync:fuel)
+*/30 * * * * bash /app/scripts/cron/fuel.sh
+
+# Daily TMS + OpenRoad sources — 3:00 AM Eastern
+# (= old staggered 3:00–4:35 jobs, run in order with flock)
+0 3 * * * bash /app/scripts/cron/daily-tms.sh
+
+# Weekly GP report chain — Tuesday 5:00 AM Eastern (after overnight TMS)
+# (= old Tue 5:00 / 5:30 / 5:45 / 6:00 jobs, run in order)
+0 5 * * 2 bash /app/scripts/cron/weekly-gp.sh
+
+# Retention occasions / surveys / reminders — 8:00 AM Eastern (roster already synced)
+0 8 * * * bash /app/scripts/cron/daily-retention.sh

@@ -1,0 +1,103 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: nextjs-mysql
+    restart: unless-stopped
+
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: app
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app
+
+    ports:
+      - "3306:3306"
+
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uapp", "-papp"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: nextjs-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/var/lib/redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrator
+
+    container_name: nextjs-migrate
+
+    env_file:
+      - .env
+
+    command: ["bun", "run", "db:migrate"]
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+
+    container_name: nextjs-app
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # cron:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.migrator
+
+  #   env_file:
+  #     - .env
+
+  #   restart: unless-stopped
+
+  #   depends_on:
+  #     migrate:
+  #       condition: service_completed_successfully
+
+  #   command: ["/usr/local/bin/supercronic", "/app/crontab"]
+
+  #   environment:
+  #     TZ: America/New_York
+
+  #   volumes:
+  #     - cron-logs:/app/logs
+  #     - sftp-incoming:/app/data/sftp-incoming
+
+volumes:
+  mysql_data:
+  redis_data:
+  cron-logs:
+  sftp-incoming:

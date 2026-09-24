@@ -1,0 +1,40 @@
+﻿# Build / cache — indexing these can stall Cursor agent context
+.next/
+.turbo/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Logs & dumps
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Env / secrets (never useful as agent context)
+.env
+.env.*
+!.env.example
+
+# Large local data / workbooks from this repo
+data/generated/
+data/sftp-incoming/
+tmp-*/
+tmp-xlsx/
+scripts/_tmp*
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+
+# Archives / media
+*.zip
+*.7z
+*.mp4
+*.webm
