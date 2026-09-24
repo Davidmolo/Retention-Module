@@ -195,18 +195,37 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
       const res = await fetch(`/api/retention/drivers/${data.driver.id}/send-survey`, {
         method: "POST",
       });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error);
+      const raw = await res.text();
+      let json: { ok?: boolean; error?: string; data?: unknown };
+      try {
+        json = JSON.parse(raw) as { ok?: boolean; error?: string; data?: unknown };
+      } catch {
+        if (res.status === 401) {
+          throw new Error("Unauthorized — please sign in again");
+        }
+        if (res.redirected || raw.trimStart().startsWith("<!DOCTYPE") || raw.trimStart().startsWith("<html")) {
+          throw new Error(
+            "Server returned a web page instead of JSON. Sign in again. On live, also set DATABASE_URL and run migrations."
+          );
+        }
+        throw new Error(raw.slice(0, 200) || `Request failed (${res.status})`);
+      }
+      if (!json.ok) throw new Error(json.error || `Request failed (${res.status})`);
       setSurveySent(true);
-      const resent = Boolean(json.data.resent);
+      const payload = json.data as {
+        resent?: boolean;
+        smsMocked?: boolean;
+        occurrence?: SurveyOccurrence;
+      };
+      const resent = Boolean(payload.resent);
       setMessage(
-        json.data.smsMocked
+        payload.smsMocked
           ? "Link has been sent (SMS mocked — provider not active)."
           : resent
             ? "Link has been sent (same open survey resent)."
             : "Link has been sent."
       );
-      const occurrence = json.data.occurrence as SurveyOccurrence | undefined;
+      const occurrence = payload.occurrence;
       if (occurrence && data) {
         const prev = data.occurrences || [];
         const without = prev.filter((o) => o.id !== occurrence.id);
