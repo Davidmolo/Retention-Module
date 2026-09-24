@@ -40,8 +40,8 @@ fi
 echo
 echo "Next:"
 echo "  1. Edit $APP_DIR/.env.production (DATABASE_URL, JWT_SECRET, APIs)."
-echo "  2. Point DNS: retention.goxxii.com → this server IP"
-echo "  3. sudo certbot --nginx -d retention.goxxii.com"
+echo "  2. Point DNS: v2.goxxii.com → this server IP"
+echo "  3. sudo certbot --nginx -d v2.goxxii.com"
 echo "  4. Add GitHub secrets DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY"
 echo "  5. Push to main (or run workflow_dispatch)"
 echo
