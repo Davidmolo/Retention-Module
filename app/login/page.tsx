@@ -86,12 +86,6 @@ export default function LoginPage() {
               {loading ? 'Logging in...' : 'Login'}
             </Button>
           </form>
-
-          <div className="mt-6 text-xs text-muted-foreground text-center">
-            <p>Demo Credentials:</p>
-            <p className="mt-1">Username: <span className="font-mono">admin</span></p>
-            <p>Password: <span className="font-mono">password123</span></p>
-          </div>
         </div>
       </div>
     </div>
