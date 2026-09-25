@@ -34,13 +34,13 @@ export function buildPositiveSurveyCelebrateText(opts: {
 }): string {
   const stars = "★".repeat(opts.overallRating) + "☆".repeat(5 - opts.overallRating);
   const comment = String(opts.generalComment || "").trim();
+  const dispatcher =
+    String(opts.dispatcher || "").trim() || "Unassigned";
   const lines = [
     `*Driver celebration — ${opts.overallRating}/5* ${stars}`,
     `*Driver:* ${opts.driverName} (ID ${opts.driverId})`,
+    `*Dispatcher:* ${dispatcher}`,
   ];
-  if (opts.dispatcher && opts.dispatcher !== "Unassigned") {
-    lines.push(`*Dispatcher:* ${opts.dispatcher}`);
-  }
   if (comment) {
     lines.push(`*Comment:* ${comment}`);
   }
