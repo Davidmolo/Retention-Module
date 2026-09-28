@@ -1,7 +1,30 @@
 import type { AnniversaryMilestone } from "./occasions";
+import { retentionStore } from "./store";
 
 export type OccasionKind = "birthday" | "anniversary" | "holiday";
 export type { AnniversaryMilestone };
+
+export type MessageTemplateId =
+  | "birthday"
+  | "anniversary"
+  | "holiday"
+  | "survey-invite"
+  | "survey-reminder"
+  | "post-resolve"
+  | "post-resolve-resend";
+
+export type MessageTemplateMeta = {
+  id: MessageTemplateId;
+  title: string;
+  description: string;
+  channel: "SMS to driver";
+  /** Short guide shown under the title to help editors write the SMS. */
+  editorGuide: string;
+  /** Placeholders the editor may use in this template. */
+  placeholders: { token: string; meaning: string }[];
+  /** Built-in default body (with placeholders). */
+  defaultBody: string;
+};
 
 function firstName(fullName: string): string {
   const part = fullName.trim().split(/\s+/)[0];
@@ -24,14 +47,230 @@ function feedbackPeriodLabel(m: AnniversaryMilestone): string {
   return `past year`;
 }
 
-/** Driver SMS — birthday only, no survey link. */
-export function birthdayMessage(opts: { driverName: string }): string {
-  const name = firstName(opts.driverName);
-  return (
-    `Happy Birthday, ${name}! ` +
+/** Default SMS bodies (editable in Configure; saved copies override these). */
+export const DEFAULT_MESSAGE_BODIES: Record<MessageTemplateId, string> = {
+  birthday:
+    `Happy Birthday, {FirstName}! ` +
     `We wanted to take a moment and express our appreciation for you on your special day. ` +
-    `Wishing you a wonderful birthday from everyone at XXII.`
-  );
+    `Wishing you a wonderful birthday from everyone at XXII.`,
+  anniversary:
+    `Happy {MilestoneLabel} work anniversary, {FirstName}! ` +
+    `We have hit this milestone together. We appreciate your dedication and commitment, ` +
+    `and we hope you feel that you are getting the support and commitment from our team as well. ` +
+    `Please take a moment to provide feedback on the {FeedbackPeriod} you've been with us ` +
+    `and if there's anything we should do to make improvements for you: {surveyUrl}`,
+  holiday:
+    `Happy {HolidayName}, {FirstName}! Warm wishes from the XXII team. ` +
+    `If you have a moment, we'd appreciate your feedback: {surveyUrl}`,
+  "survey-invite": `Hi {FirstName}, XXII wants your feedback: {surveyUrl}`,
+  "survey-reminder":
+    `Hi {FirstName}, quick reminder — XXII still wants your feedback: {surveyUrl}`,
+  "post-resolve":
+    `Hi {FirstName}, your recent issue was marked resolved. How did we do? {surveyUrl}`,
+  "post-resolve-resend":
+    `Hi {FirstName}, quick check — how did we do resolving your recent issue? {surveyUrl}`,
+};
+
+export const MESSAGE_TEMPLATES: MessageTemplateMeta[] = [
+  {
+    id: "birthday",
+    title: "Birthday wish",
+    description:
+      "Sent on the driver’s birthday. Appreciation only — no survey link.",
+    channel: "SMS to driver",
+    editorGuide:
+      "Keep it warm and short. Thank the driver personally. Do not add a survey link on birthdays.",
+    placeholders: [
+      { token: "{FirstName}", meaning: "Driver’s first name" },
+    ],
+    defaultBody: DEFAULT_MESSAGE_BODIES.birthday,
+  },
+  {
+    id: "anniversary",
+    title: "Work anniversary",
+    description:
+      "Sent at 3 months, 6 months, 1 year, and each year after. Includes a survey link.",
+    channel: "SMS to driver",
+    editorGuide:
+      "Congratulate the milestone, reinforce support, then ask for feedback. Always keep {surveyUrl} in the message.",
+    placeholders: [
+      { token: "{FirstName}", meaning: "Driver’s first name" },
+      {
+        token: "{MilestoneLabel}",
+        meaning: 'Milestone text, e.g. "3 months" or "1 year"',
+      },
+      {
+        token: "{FeedbackPeriod}",
+        meaning: 'Period being reviewed, e.g. "first 3 months"',
+      },
+      { token: "{surveyUrl}", meaning: "Unique survey link (required)" },
+    ],
+    defaultBody: DEFAULT_MESSAGE_BODIES.anniversary,
+  },
+  {
+    id: "holiday",
+    title: "Holiday greeting",
+    description:
+      "Sent on configured company holidays. Includes a survey link.",
+    channel: "SMS to driver",
+    editorGuide:
+      "Lead with the holiday greeting, then a soft ask for feedback. Keep {HolidayName} and {surveyUrl}.",
+    placeholders: [
+      { token: "{FirstName}", meaning: "Driver’s first name" },
+      { token: "{HolidayName}", meaning: "Holiday name, e.g. Thanksgiving" },
+      { token: "{surveyUrl}", meaning: "Unique survey link (required)" },
+    ],
+    defaultBody: DEFAULT_MESSAGE_BODIES.holiday,
+  },
+  {
+    id: "survey-invite",
+    title: "Survey invite",
+    description:
+      "Regular cadence and manual “Send survey” messages.",
+    channel: "SMS to driver",
+    editorGuide:
+      "One clear ask for feedback. Keep the tone light. {surveyUrl} must appear exactly once.",
+    placeholders: [
+      { token: "{FirstName}", meaning: "Driver’s first name" },
+      { token: "{surveyUrl}", meaning: "Unique survey link (required)" },
+    ],
+    defaultBody: DEFAULT_MESSAGE_BODIES["survey-invite"],
+  },
+  {
+    id: "survey-reminder",
+    title: "Survey reminder",
+    description:
+      "Automatic reminder while a survey link is still open.",
+    channel: "SMS to driver",
+    editorGuide:
+      "Polite nudge that the survey is still open. Do not sound pushy. Keep {surveyUrl}.",
+    placeholders: [
+      { token: "{FirstName}", meaning: "Driver’s first name" },
+      { token: "{surveyUrl}", meaning: "Unique survey link (required)" },
+    ],
+    defaultBody: DEFAULT_MESSAGE_BODIES["survey-reminder"],
+  },
+  {
+    id: "post-resolve",
+    title: "Post-resolve follow-up",
+    description:
+      "Sent when an open issue/case is marked resolved.",
+    channel: "SMS to driver",
+    editorGuide:
+      "Reference that their issue was resolved and ask how it went. Keep {surveyUrl}.",
+    placeholders: [
+      { token: "{FirstName}", meaning: "Driver’s first name" },
+      { token: "{surveyUrl}", meaning: "Unique survey link (required)" },
+    ],
+    defaultBody: DEFAULT_MESSAGE_BODIES["post-resolve"],
+  },
+  {
+    id: "post-resolve-resend",
+    title: "Post-resolve resend",
+    description:
+      "Used when resending an open post-resolve survey link.",
+    channel: "SMS to driver",
+    editorGuide:
+      "Shorter follow-up for a resend. Keep {surveyUrl} so the same survey link is reused.",
+    placeholders: [
+      { token: "{FirstName}", meaning: "Driver’s first name" },
+      { token: "{surveyUrl}", meaning: "Unique survey link (required)" },
+    ],
+    defaultBody: DEFAULT_MESSAGE_BODIES["post-resolve-resend"],
+  },
+];
+
+const TEMPLATE_IDS = new Set<string>(MESSAGE_TEMPLATES.map((t) => t.id));
+
+export function isMessageTemplateId(id: string): id is MessageTemplateId {
+  return TEMPLATE_IDS.has(id);
+}
+
+export function applyMessageTemplate(
+  template: string,
+  vars: Record<string, string>
+): string {
+  let out = template;
+  for (const [key, value] of Object.entries(vars)) {
+    const token = key.startsWith("{") ? key : `{${key}}`;
+    out = out.split(token).join(value);
+  }
+  return out;
+}
+
+export async function getMessageTemplateBody(
+  id: MessageTemplateId
+): Promise<string> {
+  try {
+    const saved = await retentionStore.getMessageTemplate(id);
+    if (saved?.body?.trim()) return saved.body;
+  } catch (e) {
+    console.error("[messages] getMessageTemplateBody", id, (e as Error).message);
+  }
+  return DEFAULT_MESSAGE_BODIES[id];
+}
+
+export async function listMessageTemplatesForEditor(): Promise<
+  (MessageTemplateMeta & { body: string; isCustom: boolean; updatedAt: string | null })[]
+> {
+  let saved: Record<string, { body: string; updatedAt: string }> = {};
+  try {
+    saved = await retentionStore.listMessageTemplates();
+  } catch (e) {
+    console.error("[messages] listMessageTemplates", (e as Error).message);
+  }
+  return MESSAGE_TEMPLATES.map((meta) => {
+    const row = saved[meta.id];
+    return {
+      ...meta,
+      body: row?.body?.trim() ? row.body : meta.defaultBody,
+      isCustom: Boolean(row?.body?.trim()),
+      updatedAt: row?.updatedAt ?? null,
+    };
+  });
+}
+
+type RenderVars = {
+  driverName: string;
+  surveyUrl?: string;
+  milestone?: AnniversaryMilestone;
+  holidayName?: string;
+};
+
+function varsFor(id: MessageTemplateId, opts: RenderVars): Record<string, string> {
+  const name = firstName(opts.driverName);
+  const base: Record<string, string> = {
+    FirstName: name,
+    surveyUrl: opts.surveyUrl || "{surveyUrl}",
+  };
+  if (id === "anniversary") {
+    const m = opts.milestone ?? {
+      kind: "years" as const,
+      years: 1,
+      occasionKey: "anniversary-1y",
+    };
+    base.MilestoneLabel = milestoneLabel(m);
+    base.FeedbackPeriod = feedbackPeriodLabel(m);
+  }
+  if (id === "holiday") {
+    base.HolidayName = opts.holidayName || "Holiday";
+  }
+  return base;
+}
+
+export async function renderRetentionSms(
+  id: MessageTemplateId,
+  opts: RenderVars
+): Promise<string> {
+  const body = await getMessageTemplateBody(id);
+  return applyMessageTemplate(body, varsFor(id, opts));
+}
+
+/** Driver SMS — birthday only, no survey link. */
+export async function birthdayMessage(opts: {
+  driverName: string;
+}): Promise<string> {
+  return renderRetentionSms("birthday", { driverName: opts.driverName });
 }
 
 /** Internal email/SMS notice to leadership when a driver has a birthday. */
@@ -50,71 +289,57 @@ export function birthdayLeadershipNotice(opts: {
  * Anniversary SMS to driver — includes survey link.
  * Covers 3 months, 6 months, 1 year, and every year after.
  */
-export function anniversaryMessage(opts: {
+export async function anniversaryMessage(opts: {
   driverName: string;
   milestone: AnniversaryMilestone;
   surveyUrl: string;
-}): string {
-  const name = firstName(opts.driverName);
-  const label = milestoneLabel(opts.milestone);
-  const period = feedbackPeriodLabel(opts.milestone);
-  return (
-    `Happy ${label} work anniversary, ${name}! ` +
-    `We have hit this milestone together. We appreciate your dedication and commitment, ` +
-    `and we hope you feel that you are getting the support and commitment from our team as well. ` +
-    `Please take a moment to provide feedback on the ${period} you've been with us ` +
-    `and if there's anything we should do to make improvements for you: ${opts.surveyUrl}`
-  );
+}): Promise<string> {
+  return renderRetentionSms("anniversary", opts);
 }
 
-export function holidayMessage(opts: {
+export async function holidayMessage(opts: {
   driverName: string;
   holidayName: string;
   surveyUrl: string;
-}): string {
-  const name = firstName(opts.driverName);
-  return (
-    `Happy ${opts.holidayName}, ${name}! Warm wishes from the XXII team. ` +
-    `If you have a moment, we'd appreciate your feedback: ${opts.surveyUrl}`
-  );
+}): Promise<string> {
+  return renderRetentionSms("holiday", opts);
 }
 
 /** Regular cadence / manual survey invite SMS. */
-export function surveyInviteMessage(opts: {
+export async function surveyInviteMessage(opts: {
   driverName: string;
   surveyUrl: string;
-}): string {
-  const name = firstName(opts.driverName);
-  return `Hi ${name}, XXII wants your feedback: ${opts.surveyUrl}`;
+}): Promise<string> {
+  return renderRetentionSms("survey-invite", opts);
 }
 
 /** Reminder SMS while a survey link is still open. */
-export function surveyReminderMessage(opts: {
+export async function surveyReminderMessage(opts: {
   driverName: string;
   surveyUrl: string;
-}): string {
-  const name = firstName(opts.driverName);
-  return `Hi ${name}, quick reminder — XXII still wants your feedback: ${opts.surveyUrl}`;
+}): Promise<string> {
+  return renderRetentionSms("survey-reminder", opts);
 }
 
 /** Post-resolve follow-up survey SMS (first send). */
-export function postResolveSurveyMessage(opts: {
+export async function postResolveSurveyMessage(opts: {
   driverName: string;
   surveyUrl: string;
-}): string {
-  const name = firstName(opts.driverName);
-  return `Hi ${name}, your recent issue was marked resolved. How did we do? ${opts.surveyUrl}`;
+}): Promise<string> {
+  return renderRetentionSms("post-resolve", opts);
 }
 
-/** Post-resolve follow-up when resending an open link. */
-export function postResolveSurveyResendTemplate(opts: {
+/** Post-resolve follow-up when resending an open link (keeps {surveyUrl} for replace). */
+export async function postResolveSurveyResendTemplate(opts: {
   driverName: string;
-}): string {
-  const name = firstName(opts.driverName);
-  return `Hi ${name}, quick check — how did we do resolving your recent issue? {surveyUrl}`;
+}): Promise<string> {
+  return renderRetentionSms("post-resolve-resend", {
+    driverName: opts.driverName,
+    surveyUrl: "{surveyUrl}",
+  });
 }
 
-export function buildOccasionMessage(
+export async function buildOccasionMessage(
   kind: OccasionKind,
   opts: {
     driverName: string;
@@ -122,7 +347,7 @@ export function buildOccasionMessage(
     milestone?: AnniversaryMilestone;
     holidayName?: string;
   }
-): string {
+): Promise<string> {
   if (kind === "birthday") {
     return birthdayMessage({ driverName: opts.driverName });
   }
@@ -144,102 +369,5 @@ export function buildOccasionMessage(
   });
 }
 
-export type MessageTemplateId =
-  | "birthday"
-  | "anniversary"
-  | "holiday"
-  | "survey-invite"
-  | "survey-reminder"
-  | "post-resolve"
-  | "post-resolve-resend";
-
-export type MessageTemplate = {
-  id: MessageTemplateId;
-  title: string;
-  description: string;
-  channel: "SMS to driver";
-  /** Sample body with placeholders like {FirstName} and {surveyUrl}. */
-  sample: string;
-};
-
-const SAMPLE_NAME = "{FirstName}";
-const SAMPLE_URL = "{surveyUrl}";
-
-/** Catalog of every driver-facing SMS body used by Retention. */
-export const MESSAGE_TEMPLATES: MessageTemplate[] = [
-  {
-    id: "birthday",
-    title: "Birthday wish",
-    description:
-      "Sent on the driver’s birthday. Appreciation only — no survey link.",
-    channel: "SMS to driver",
-    sample: birthdayMessage({ driverName: SAMPLE_NAME }),
-  },
-  {
-    id: "anniversary",
-    title: "Work anniversary",
-    description:
-      "Sent at 3 months, 6 months, 1 year, and each year after. Includes a survey link.",
-    channel: "SMS to driver",
-    sample: anniversaryMessage({
-      driverName: SAMPLE_NAME,
-      milestone: { kind: "years", years: 1, occasionKey: "anniversary-1y" },
-      surveyUrl: SAMPLE_URL,
-    }),
-  },
-  {
-    id: "holiday",
-    title: "Holiday greeting",
-    description:
-      "Sent on configured company holidays. Includes a survey link.",
-    channel: "SMS to driver",
-    sample: holidayMessage({
-      driverName: SAMPLE_NAME,
-      holidayName: "{HolidayName}",
-      surveyUrl: SAMPLE_URL,
-    }),
-  },
-  {
-    id: "survey-invite",
-    title: "Survey invite",
-    description:
-      "Regular cadence and manual “Send survey” messages.",
-    channel: "SMS to driver",
-    sample: surveyInviteMessage({
-      driverName: SAMPLE_NAME,
-      surveyUrl: SAMPLE_URL,
-    }),
-  },
-  {
-    id: "survey-reminder",
-    title: "Survey reminder",
-    description:
-      "Automatic reminder while a survey link is still open.",
-    channel: "SMS to driver",
-    sample: surveyReminderMessage({
-      driverName: SAMPLE_NAME,
-      surveyUrl: SAMPLE_URL,
-    }),
-  },
-  {
-    id: "post-resolve",
-    title: "Post-resolve follow-up",
-    description:
-      "Sent when an open issue/case is marked resolved.",
-    channel: "SMS to driver",
-    sample: postResolveSurveyMessage({
-      driverName: SAMPLE_NAME,
-      surveyUrl: SAMPLE_URL,
-    }),
-  },
-  {
-    id: "post-resolve-resend",
-    title: "Post-resolve resend",
-    description:
-      "Used when resending an open post-resolve survey link.",
-    channel: "SMS to driver",
-    sample: postResolveSurveyResendTemplate({
-      driverName: SAMPLE_NAME,
-    }).replaceAll("{surveyUrl}", SAMPLE_URL),
-  },
-];
+/** @deprecated Use MESSAGE_TEMPLATES[].defaultBody — kept for older imports. */
+export type MessageTemplate = MessageTemplateMeta & { sample: string };

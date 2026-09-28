@@ -725,6 +725,56 @@ export const retentionStore = {
     );
     return { id, ...data, sentAt };
   },
+
+  async getMessageTemplate(
+    id: string
+  ): Promise<{ id: string; body: string; updatedAt: string } | null> {
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      `SELECT id, body, updated_at FROM retention_message_templates WHERE id = ? LIMIT 1`,
+      [id]
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      body: String(row.body ?? ""),
+      updatedAt: fromDateTimeRequired(row.updated_at),
+    };
+  },
+
+  async listMessageTemplates(): Promise<
+    Record<string, { body: string; updatedAt: string }>
+  > {
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      `SELECT id, body, updated_at FROM retention_message_templates`
+    );
+    const out: Record<string, { body: string; updatedAt: string }> = {};
+    for (const row of rows) {
+      out[String(row.id)] = {
+        body: String(row.body ?? ""),
+        updatedAt: fromDateTimeRequired(row.updated_at),
+      };
+    }
+    return out;
+  },
+
+  async upsertMessageTemplate(id: string, body: string) {
+    const updatedAt = new Date().toISOString();
+    await getPool().query(
+      `INSERT INTO retention_message_templates (id, body, updated_at)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE body = VALUES(body), updated_at = VALUES(updated_at)`,
+      [id, body, toDateTime(updatedAt)]
+    );
+    return { id, body, updatedAt };
+  },
+
+  async deleteMessageTemplate(id: string) {
+    await getPool().query(
+      `DELETE FROM retention_message_templates WHERE id = ?`,
+      [id]
+    );
+  },
 };
 
 export type { CaseStatus };

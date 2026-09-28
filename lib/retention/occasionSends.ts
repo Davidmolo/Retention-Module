@@ -134,7 +134,7 @@ async function sendBirthdayWish(opts: {
     };
   }
 
-  const smsBody = birthdayMessage({ driverName: opts.driverName });
+  const smsBody = await birthdayMessage({ driverName: opts.driverName });
   const { sendSms } = await import("./sms");
   const sms = await sendSms(opts.phone, smsBody, {
     contactName: opts.driverName,
@@ -221,7 +221,7 @@ async function sendSurveyOccasion(opts: {
     };
   }
 
-  const smsBodyTemplate = buildOccasionMessage(opts.occasionType, {
+  const smsBodyTemplate = await buildOccasionMessage(opts.occasionType, {
     driverName: opts.driverName,
     surveyUrl: "{surveyUrl}",
     milestone: opts.milestone,

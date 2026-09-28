@@ -471,7 +471,7 @@ export async function sendResolutionSurvey(
   if (open) {
     return resendSurveyOccurrence(open, {
       reminderCopy: false,
-      smsBodyTemplate: postResolveSurveyResendTemplate({
+      smsBodyTemplate: await postResolveSurveyResendTemplate({
         driverName: driver.name,
       }),
     });
@@ -479,7 +479,7 @@ export async function sendResolutionSurvey(
 
   const token = nanoid(24);
   const surveyUrl = buildSurveyUrl(token);
-  const smsBody = postResolveSurveyMessage({
+  const smsBody = await postResolveSurveyMessage({
     driverName: driver.name,
     surveyUrl,
   });
@@ -564,8 +564,8 @@ export async function resendSurveyOccurrence(
     opts?.reminderCopy ??
     Boolean(occurrence.sentAt || occurrence.responseState !== "pending");
   const defaultBody = useReminder
-    ? surveyReminderMessage({ driverName: driver.name, surveyUrl })
-    : surveyInviteMessage({ driverName: driver.name, surveyUrl });
+    ? await surveyReminderMessage({ driverName: driver.name, surveyUrl })
+    : await surveyInviteMessage({ driverName: driver.name, surveyUrl });
   const smsBody = opts?.smsBodyTemplate
     ? opts.smsBodyTemplate.replaceAll("{surveyUrl}", surveyUrl)
     : defaultBody;
@@ -646,7 +646,7 @@ export async function sendSurvey(
   const token = nanoid(24);
   const surveyUrl = buildSurveyUrl(token);
 
-  const defaultBody = surveyInviteMessage({
+  const defaultBody = await surveyInviteMessage({
     driverName: driver.name,
     surveyUrl,
   });
