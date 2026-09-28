@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { MESSAGE_TEMPLATES, type MessageTemplateId } from "@/lib/retention/messages";
+
+function surveyBaseForDisplay() {
+  if (typeof window === "undefined") return "{surveyUrl}";
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") {
+    return "http://localhost:3000/s/{token}";
+  }
+  return "https://v2.goxxii.com/s/{token}";
+}
 
 export function ConfigureMessagesPanel({
   focusId,
@@ -10,6 +19,12 @@ export function ConfigureMessagesPanel({
   focusId?: MessageTemplateId | null;
   onBack: () => void;
 }) {
+  const surveySample = useMemo(() => surveyBaseForDisplay(), []);
+  const isLocal =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1");
+
   useEffect(() => {
     if (!focusId) return;
     const el = document.getElementById(`msg-${focusId}`);
@@ -39,32 +54,44 @@ export function ConfigureMessagesPanel({
             <code className="rounded bg-slate-100 px-1 text-xs">{"{surveyUrl}"}</code>{" "}
             are filled in when a message is sent.
           </p>
+          <p className="mt-2 text-xs text-[var(--xxii-muted)]">
+            Survey links on this environment resolve to{" "}
+            <code className="rounded bg-slate-100 px-1">{surveySample}</code>
+            {isLocal ? " (local)" : " (live)"}.
+          </p>
         </div>
       </div>
 
       <div className="space-y-3">
-        {MESSAGE_TEMPLATES.map((tpl) => (
-          <section
-            key={tpl.id}
-            id={`msg-${tpl.id}`}
-            className="xxii-card scroll-mt-24 overflow-hidden"
-          >
-            <div className="border-b border-[var(--xxii-line)] bg-slate-50/80 px-4 py-3 sm:px-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-extrabold text-[var(--xxii-text)]">
-                  {tpl.title}
-                </h3>
-                <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700 ring-1 ring-sky-200">
-                  {tpl.channel}
-                </span>
+        {MESSAGE_TEMPLATES.map((tpl) => {
+          const body = tpl.sample.includes("{surveyUrl}")
+            ? tpl.sample.replaceAll("{surveyUrl}", surveySample)
+            : tpl.sample;
+          return (
+            <section
+              key={tpl.id}
+              id={`msg-${tpl.id}`}
+              className="xxii-card scroll-mt-24 overflow-hidden"
+            >
+              <div className="border-b border-[var(--xxii-line)] bg-slate-50/80 px-4 py-3 sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-extrabold text-[var(--xxii-text)]">
+                    {tpl.title}
+                  </h3>
+                  <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700 ring-1 ring-sky-200">
+                    {tpl.channel}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-[var(--xxii-muted)]">
+                  {tpl.description}
+                </p>
               </div>
-              <p className="mt-1 text-xs text-[var(--xxii-muted)]">{tpl.description}</p>
-            </div>
-            <pre className="whitespace-pre-wrap break-words px-4 py-4 font-sans text-sm leading-relaxed text-slate-800 sm:px-5">
-              {tpl.sample}
-            </pre>
-          </section>
-        ))}
+              <pre className="whitespace-pre-wrap break-words px-4 py-4 font-sans text-sm leading-relaxed text-slate-800 sm:px-5">
+                {body}
+              </pre>
+            </section>
+          );
+        })}
       </div>
     </div>
   );
