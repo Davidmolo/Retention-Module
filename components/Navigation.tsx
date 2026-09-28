@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, Menu } from 'lucide-react';
 import { Button } from './ui/button';
@@ -41,10 +41,50 @@ type RetentionNavItem = {
 
 const RETENTION_CHILDREN: RetentionNavItem[] = [
   { href: '/retention', label: 'Overview', view: null },
+  { href: '/retention?view=responses', label: 'Responses', view: 'responses' },
   { href: '/retention?view=at-risk', label: 'At Risk', view: 'at-risk' },
   { href: '/retention?view=follow-ups', label: 'Follow-ups', view: 'follow-ups' },
   { href: '/retention?view=exit', label: 'Exit / Turnover', view: 'exit' },
   { href: '/retention?view=reasons', label: 'Reasons', view: 'reasons' },
+];
+
+const CONFIGURE_CHILDREN: { href: string; label: string; msg: string | null }[] = [
+  { href: '/retention?view=configure', label: 'All message texts', msg: null },
+  {
+    href: '/retention?view=configure&msg=birthday',
+    label: 'Birthday wish',
+    msg: 'birthday',
+  },
+  {
+    href: '/retention?view=configure&msg=anniversary',
+    label: 'Work anniversary',
+    msg: 'anniversary',
+  },
+  {
+    href: '/retention?view=configure&msg=holiday',
+    label: 'Holiday greeting',
+    msg: 'holiday',
+  },
+  {
+    href: '/retention?view=configure&msg=survey-invite',
+    label: 'Survey invite',
+    msg: 'survey-invite',
+  },
+  {
+    href: '/retention?view=configure&msg=survey-reminder',
+    label: 'Survey reminder',
+    msg: 'survey-reminder',
+  },
+  {
+    href: '/retention?view=configure&msg=post-resolve',
+    label: 'Post-resolve follow-up',
+    msg: 'post-resolve',
+  },
+  {
+    href: '/retention?view=configure&msg=post-resolve-resend',
+    label: 'Post-resolve resend',
+    msg: 'post-resolve-resend',
+  },
 ];
 
 function linkClass(active: boolean) {
@@ -61,12 +101,19 @@ function NavigationInner({ currentPage }: NavigationProps) {
   const searchParams = useSearchParams();
   const onRetention = pathname.startsWith('/retention');
   const retentionView = searchParams.get('view');
+  const configureMsg = searchParams.get('msg');
+  const onConfigure = onRetention && retentionView === 'configure';
 
   const [open, setOpen] = useState(false);
   const [gpOpen, setGpOpen] = useState(() => GP_CHILD_KEYS.has(currentPage));
   const [retentionOpen, setRetentionOpen] = useState(
     () => currentPage === 'retention' || onRetention
   );
+  const [configureOpen, setConfigureOpen] = useState(() => onConfigure);
+
+  useEffect(() => {
+    if (onConfigure) setConfigureOpen(true);
+  }, [onConfigure]);
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -177,6 +224,7 @@ function NavigationInner({ currentPage }: NavigationProps) {
                 {RETENTION_CHILDREN.map((item) => {
                   const active =
                     onRetention &&
+                    !onConfigure &&
                     (item.view == null
                       ? !retentionView
                       : retentionView === item.view);
@@ -191,6 +239,58 @@ function NavigationInner({ currentPage }: NavigationProps) {
                     </Link>
                   );
                 })}
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!configureOpen) {
+                        setConfigureOpen(true);
+                        router.push('/retention?view=configure');
+                        setOpen(false);
+                        return;
+                      }
+                      setConfigureOpen(false);
+                    }}
+                    aria-expanded={configureOpen}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition ${
+                      onConfigure
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    Configure
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 shrink-0 transition-transform ${
+                        configureOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+                  {configureOpen && (
+                    <div className="mt-1 ml-2 pl-2 border-l border-border space-y-1">
+                      {CONFIGURE_CHILDREN.map((item) => {
+                        const active =
+                          onConfigure &&
+                          (item.msg == null
+                            ? !configureMsg
+                            : configureMsg === item.msg);
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => {
+                              setConfigureOpen(true);
+                              setOpen(false);
+                            }}
+                            className={linkClass(active)}
+                          >
+                            {item.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
