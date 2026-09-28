@@ -8,6 +8,7 @@ import {
   verifyToken,
   type AuthUser,
 } from './jwt';
+import { normalizeUserRole } from './roles';
 
 export type { AuthUser };
 
@@ -15,6 +16,7 @@ interface UserRow extends RowDataPacket {
   id: number;
   username: string;
   password_hash: string;
+  role?: string | null;
 }
 
 /** Look up a user and verify the password against the stored bcrypt hash. */
@@ -24,7 +26,7 @@ export async function verifyCredentials(
 ): Promise<AuthUser | null> {
   const pool = getPool();
   const [rows] = await pool.query<UserRow[]>(
-    'SELECT id, username, password_hash FROM users WHERE username = ? LIMIT 1',
+    'SELECT id, username, password_hash, role FROM users WHERE username = ? LIMIT 1',
     [username]
   );
   const user = rows[0];
@@ -33,7 +35,11 @@ export async function verifyCredentials(
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return null;
 
-  return { id: user.id, username: user.username };
+  return {
+    id: user.id,
+    username: user.username,
+    role: normalizeUserRole(user.role),
+  };
 }
 
 export async function setAuthCookie(token: string) {

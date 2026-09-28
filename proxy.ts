@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE_NAME, verifyToken } from '@/lib/jwt';
+import {
+  homePathForRole,
+  isAdminRole,
+  retentionOnlyAllowed,
+} from '@/lib/roles';
 
 // Next.js 16 renamed the `middleware` convention to `proxy` (runs in the Edge
 // runtime — keep this file free of Node-only imports like mysql2/bcrypt).
@@ -50,6 +55,19 @@ export async function proxy(request: NextRequest) {
       const response = NextResponse.redirect(new URL('/login', request.url));
       response.cookies.delete(AUTH_COOKIE_NAME);
       return response;
+    }
+
+    // Retention-only staff cannot open Gross Profit / Dashboard / other modules.
+    if (!isAdminRole(user.role) && !retentionOnlyAllowed(path)) {
+      if (path.startsWith('/api/')) {
+        return NextResponse.json(
+          { ok: false, error: 'Forbidden — Retention access only' },
+          { status: 403 }
+        );
+      }
+      return NextResponse.redirect(
+        new URL(homePathForRole(user.role), request.url)
+      );
     }
   }
 

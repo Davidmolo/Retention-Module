@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, Menu } from 'lucide-react';
 import { Button } from './ui/button';
 import { ThemeToggle } from './ThemeToggle';
+import type { UserRole } from '@/lib/roles';
 
 type PageKey =
   | 'dashboard'
@@ -65,10 +66,31 @@ function NavigationInner({ currentPage }: NavigationProps) {
   const retentionView = searchParams.get('view');
 
   const [open, setOpen] = useState(false);
+  const [role, setRole] = useState<UserRole>('admin');
   const [gpOpen, setGpOpen] = useState(() => GP_CHILD_KEYS.has(currentPage));
   const [retentionOpen, setRetentionOpen] = useState(
     () => currentPage === 'retention' || onRetention
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        const next = json?.user?.role === 'retention' ? 'retention' : 'admin';
+        setRole(next);
+      })
+      .catch(() => {
+        /* keep default admin UI until proven otherwise */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const isAdmin = role === 'admin';
+  const homeHref = isAdmin ? '/dashboard' : '/retention';
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -105,7 +127,7 @@ function NavigationInner({ currentPage }: NavigationProps) {
       >
         <div className="px-4 py-4 border-b border-border">
           <Link
-            href="/dashboard"
+            href={homeHref}
             onClick={() => setOpen(false)}
             aria-label="XXII Century"
             className="block"
@@ -116,45 +138,49 @@ function NavigationInner({ currentPage }: NavigationProps) {
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          <Link
-            href="/dashboard"
-            onClick={() => setOpen(false)}
-            className={linkClass(currentPage === 'dashboard')}
-          >
-            Dashboard
-          </Link>
-
-          <div>
-            <button
-              type="button"
-              onClick={() => setGpOpen((v) => !v)}
-              aria-expanded={gpOpen}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition ${
-                GP_CHILD_KEYS.has(currentPage)
-                  ? 'bg-muted/60 text-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
+          {isAdmin && (
+            <Link
+              href="/dashboard"
+              onClick={() => setOpen(false)}
+              className={linkClass(currentPage === 'dashboard')}
             >
-              Gross Profit
-              <ChevronDown
-                className={`w-4 h-4 shrink-0 transition-transform ${gpOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
-            {gpOpen && (
-              <div className="mt-1 ml-2 pl-2 border-l border-border space-y-1">
-                {GP_CHILDREN.map((item) => (
-                  <Link
-                    key={item.key}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    className={linkClass(currentPage === item.key)}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
+              Dashboard
+            </Link>
+          )}
+
+          {isAdmin && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setGpOpen((v) => !v)}
+                aria-expanded={gpOpen}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition ${
+                  GP_CHILD_KEYS.has(currentPage)
+                    ? 'bg-muted/60 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                Gross Profit
+                <ChevronDown
+                  className={`w-4 h-4 shrink-0 transition-transform ${gpOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {gpOpen && (
+                <div className="mt-1 ml-2 pl-2 border-l border-border space-y-1">
+                  {GP_CHILDREN.map((item) => (
+                    <Link
+                      key={item.key}
+                      href={item.href}
+                      onClick={() => setOpen(false)}
+                      className={linkClass(currentPage === item.key)}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <button
@@ -198,15 +224,20 @@ function NavigationInner({ currentPage }: NavigationProps) {
           </div>
         </nav>
 
-        <div className="p-3 border-t border-border flex items-center gap-2">
-          <ThemeToggle />
-          <Button
-            onClick={handleLogout}
-            variant="outline"
-            className="flex-1 text-foreground"
-          >
-            Logout
-          </Button>
+        <div className="p-3 border-t border-border space-y-2">
+          <div className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {isAdmin ? 'Admin' : 'Retention staff'}
+          </div>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Button
+              onClick={handleLogout}
+              variant="outline"
+              className="flex-1 text-foreground"
+            >
+              Logout
+            </Button>
+          </div>
         </div>
       </aside>
     </>

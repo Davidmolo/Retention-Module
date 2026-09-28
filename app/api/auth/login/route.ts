@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCredentials, setAuthCookie } from '@/lib/auth';
 import { signToken } from '@/lib/jwt';
+import { homePathForRole } from '@/lib/roles';
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,7 +27,14 @@ export async function POST(request: NextRequest) {
     await setAuthCookie(token);
 
     return NextResponse.json(
-      { success: true, user: { username: user.username } },
+      {
+        success: true,
+        user: {
+          username: user.username,
+          role: user.role,
+          homePath: homePathForRole(user.role),
+        },
+      },
       { status: 200 }
     );
   } catch (error) {

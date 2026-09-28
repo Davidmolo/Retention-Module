@@ -21,12 +21,14 @@ const hash = await bcrypt.hash(password, 10);
 const conn = await mysql.createConnection(url);
 try {
   await conn.query(
-    `INSERT INTO users (username, password_hash)
-     VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)`,
+    `INSERT INTO users (username, password_hash, role)
+     VALUES (?, ?, 'admin')
+     ON DUPLICATE KEY UPDATE
+       password_hash = VALUES(password_hash),
+       role = 'admin'`,
     [username, hash]
   );
-  console.log(`Seeded admin user "${username}".`);
+  console.log(`Seeded admin user "${username}" (role=admin).`);
 } finally {
   await conn.end();
 }

@@ -29,7 +29,14 @@ export default function LoginPage() {
         return;
       }
 
-      router.push('/dashboard');
+      const data = await response.json().catch(() => ({}));
+      const home =
+        typeof data?.user?.homePath === 'string' && data.user.homePath
+          ? data.user.homePath
+          : data?.user?.role === 'retention'
+            ? '/retention'
+            : '/dashboard';
+      router.push(home);
     } catch (err) {
       setError('An error occurred. Please try again.');
       setLoading(false);

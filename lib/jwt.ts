@@ -1,10 +1,14 @@
 // Edge-safe JWT helpers. Depends ONLY on `jose` (Web Crypto), so this module
 // can be imported from proxy.ts (Edge runtime) without pulling in mysql2.
 import { SignJWT, jwtVerify } from 'jose';
+import { normalizeUserRole, type UserRole } from './roles';
+
+export type { UserRole };
 
 export interface AuthUser {
   id: number;
   username: string;
+  role: UserRole;
 }
 
 export const AUTH_COOKIE_NAME = 'auth_token';
@@ -19,7 +23,10 @@ function getSecret(): Uint8Array {
 }
 
 export async function signToken(user: AuthUser): Promise<string> {
-  return new SignJWT({ username: user.username })
+  return new SignJWT({
+    username: user.username,
+    role: normalizeUserRole(user.role),
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(String(user.id))
     .setIssuedAt()
@@ -34,6 +41,7 @@ export async function verifyToken(token: string): Promise<AuthUser | null> {
     return {
       id: Number(payload.sub),
       username: String(payload.username ?? ''),
+      role: normalizeUserRole(payload.role),
     };
   } catch {
     return null;
