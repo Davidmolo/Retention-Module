@@ -9,11 +9,8 @@ import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import { getGpAdapter } from "@/lib/adapters/gp";
 import { isSurveyEligible } from "./rules";
-import {
-  birthdayLeadershipNotice,
-  birthdayMessage,
-  buildOccasionMessage,
-} from "./messages";
+import { birthdayLeadershipNotice } from "./messages";
+import { birthdayMessage, buildOccasionMessage } from "./messageSend";
 import {
   anniversaryMilestoneOn,
   holidaysOn,

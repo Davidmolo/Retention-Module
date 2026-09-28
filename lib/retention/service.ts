@@ -26,7 +26,7 @@ import {
   postResolveSurveyResendTemplate,
   surveyInviteMessage,
   surveyReminderMessage,
-} from "./messages";
+} from "./messageSend";
 
 async function bustRetentionCaches(driverId?: string) {
   const keys = [CACHE_KEYS.retentionOverview];

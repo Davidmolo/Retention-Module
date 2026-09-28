@@ -2,9 +2,9 @@ import { fail, ok } from "@/lib/http";
 import {
   DEFAULT_MESSAGE_BODIES,
   isMessageTemplateId,
-  listMessageTemplatesForEditor,
   type MessageTemplateId,
 } from "@/lib/retention/messages";
+import { listMessageTemplatesForEditor } from "@/lib/retention/messageSend";
 import { retentionStore } from "@/lib/retention/store";
 
 export const dynamic = "force-dynamic";
