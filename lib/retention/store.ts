@@ -410,6 +410,19 @@ export const retentionStore = {
     return rows.map(mapSurveyResponse);
   },
 
+  async findResponseByOccurrenceId(
+    occurrenceId: string
+  ): Promise<SurveyResponse | null> {
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      `SELECT * FROM retention_survey_responses
+        WHERE survey_occurrence_id = ?
+        ORDER BY submitted_at DESC
+        LIMIT 1`,
+      [occurrenceId]
+    );
+    return rows[0] ? mapSurveyResponse(rows[0]) : null;
+  },
+
   async getLatestResponse(driverId: string): Promise<SurveyResponse | null> {
     const list = await this.listSurveyResponses(driverId);
     return list[0] || null;

@@ -142,7 +142,7 @@ export const MESSAGE_TEMPLATES: MessageTemplateMeta[] = [
       "Automatic reminder while a survey link is still open.",
     channel: "SMS to driver",
     editorGuide:
-      "Polite nudge that the survey is still open. Do not sound pushy. Keep {surveyUrl}.",
+      "Polite nudge that the survey is still open. Sent only if the driver has not submitted yet — completed surveys never get reminders. Keep {surveyUrl}.",
     placeholders: [
       { token: "{FirstName}", meaning: "Driver’s first name" },
       { token: "{surveyUrl}", meaning: "Unique survey link (required)" },

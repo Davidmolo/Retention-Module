@@ -140,7 +140,8 @@ export async function runScheduledSurveys(): Promise<{
   return { sent, skipped, results };
 }
 
-/** Remind unanswered surveys; after max reminders + wait, mark non_response. */
+/** Remind unanswered surveys; after max reminders + wait, mark non_response.
+ * Never reminds drivers who already submitted (completed) that survey. */
 export async function runSurveyReminders(opts?: {
   reminderAfterDays?: number;
   maxReminders?: number;
@@ -156,7 +157,35 @@ export async function runSurveyReminders(opts?: {
   let firstTouch = true;
 
   for (const occ of all) {
-    if (!["sent", "reminded"].includes(occ.responseState)) {
+    // Already submitted or closed — never send automatic reminders.
+    if (
+      occ.responseState === "completed" ||
+      occ.responseState === "non_response"
+    ) {
+      skipped += 1;
+      continue;
+    }
+
+    if (!["sent", "reminded", "pending"].includes(occ.responseState)) {
+      skipped += 1;
+      continue;
+    }
+
+    // Self-heal: response exists but occurrence was left open → mark completed, no SMS.
+    const existing = await retentionStore.findResponseByOccurrenceId(occ.id);
+    if (existing) {
+      if (occ.responseState !== "completed") {
+        await retentionStore.updateSurveyOccurrence(occ.id, {
+          responseState: "completed",
+          completedAt: existing.submittedAt || new Date().toISOString(),
+        });
+      }
+      skipped += 1;
+      continue;
+    }
+
+    // Pending with no send yet — nothing to remind.
+    if (occ.responseState === "pending" && !occ.sentAt) {
       skipped += 1;
       continue;
     }

@@ -551,6 +551,26 @@ export async function resendSurveyOccurrence(
     (err as Error & { status?: number }).status = 400;
     throw err;
   }
+
+  // Never auto-remind (or resend) after the driver already submitted.
+  const existingResponse = await retentionStore.findResponseByOccurrenceId(
+    occurrence.id
+  );
+  if (existingResponse || occurrence.responseState === "completed") {
+    if (occurrence.responseState !== "completed") {
+      await retentionStore.updateSurveyOccurrence(occurrence.id, {
+        responseState: "completed",
+        completedAt:
+          existingResponse?.submittedAt || new Date().toISOString(),
+      });
+    }
+    const err = new Error(
+      "Driver already completed this survey — no reminder will be sent"
+    );
+    (err as Error & { status?: number }).status = 409;
+    throw err;
+  }
+
   if (!OPEN_SURVEY_STATES.has(occurrence.responseState)) {
     const err = new Error(
       "This survey link is closed — create a new survey after it expires or is submitted"
