@@ -17,6 +17,13 @@ import {
 import { prefetchDriverDetail } from "@/lib/retention/driverCache";
 import { OverviewPanels } from "./OverviewPanels";
 import { ResponsesPanel } from "./ResponsesPanel";
+import { ConfigureMessagesPanel } from "./ConfigureMessagesPanel";
+import {
+  MESSAGE_TEMPLATES,
+  type MessageTemplateId,
+} from "@/lib/retention/messages";
+
+const MESSAGE_FOCUS_IDS = new Set<string>(MESSAGE_TEMPLATES.map((t) => t.id));
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
@@ -88,24 +95,32 @@ export function RetentionDashboard({
   const [view, setViewLocal] = useState<ViewKey>(initialView || urlView);
   const [responsesFilter, setResponsesFilter] =
     useState<ResponsesFilter>(urlResponsesFilter);
+  const [configureMsg, setConfigureMsg] = useState<string | null>(() =>
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("msg")
+      : searchParams.get("msg")
+  );
   const riskOnly = view === "at-risk";
 
   // Keep view in sync when sidebar Links change ?view= (Next soft nav does not remount).
   useEffect(() => {
     setViewLocal(urlView);
     setResponsesFilter(urlResponsesFilter);
-  }, [urlView, urlResponsesFilter]);
+    setConfigureMsg(searchParams.get("msg"));
+  }, [urlView, urlResponsesFilter, searchParams]);
 
   useEffect(() => {
     const syncFromUrl = () => {
       setViewLocal(parseRetentionView(window.location.search));
       setResponsesFilter(parseResponsesFilter(window.location.search));
+      setConfigureMsg(new URLSearchParams(window.location.search).get("msg"));
     };
     const onView = (e: Event) => {
       const next = (e as CustomEvent<RetentionView>).detail;
       if (next) {
         setViewLocal(next);
         setResponsesFilter(parseResponsesFilter(window.location.search));
+        setConfigureMsg(new URLSearchParams(window.location.search).get("msg"));
       }
     };
     window.addEventListener("popstate", syncFromUrl);
@@ -117,7 +132,10 @@ export function RetentionDashboard({
   }, []);
 
   const setView = useCallback(
-    (next: ViewKey, extra?: { filter?: ResponsesFilter }) => {
+    (
+      next: ViewKey,
+      extra?: { filter?: ResponsesFilter; msg?: MessageTemplateId }
+    ) => {
       if (pathname !== "/retention") {
         router.push(retentionViewPath(next, extra));
         return;
@@ -132,6 +150,9 @@ export function RetentionDashboard({
               ? extra.filter
               : "all"
           );
+        }
+        if (next === "configure") {
+          setConfigureMsg(extra?.msg ?? null);
         }
         navigateRetentionView(next, extra);
       });
@@ -156,6 +177,16 @@ export function RetentionDashboard({
         initialFilter={responsesFilter}
         onBack={goOverview}
       />
+    );
+  }
+
+  if (view === "configure") {
+    const focusId =
+      configureMsg && MESSAGE_FOCUS_IDS.has(configureMsg)
+        ? (configureMsg as MessageTemplateId)
+        : null;
+    return (
+      <ConfigureMessagesPanel focusId={focusId} onBack={goOverview} />
     );
   }
 

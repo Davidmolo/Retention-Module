@@ -21,6 +21,12 @@ import {
 } from "./rules";
 import { ensureDemoSeed } from "./seed";
 import { CACHE_KEYS, cacheDel } from "@/lib/cache";
+import {
+  postResolveSurveyMessage,
+  postResolveSurveyResendTemplate,
+  surveyInviteMessage,
+  surveyReminderMessage,
+} from "./messages";
 
 async function bustRetentionCaches(driverId?: string) {
   const keys = [CACHE_KEYS.retentionOverview];
@@ -383,12 +389,14 @@ import { sendSms } from "./sms";
 const OPEN_SURVEY_STATES = new Set(["pending", "sent", "reminded"]);
 
 function buildSurveyUrl(token: string) {
-  // Local (`pnpm dev`) → localhost. Live (NODE_ENV=production) → v2 unless overridden.
+  // Prefer explicit env. Otherwise: production → live host, everything else → localhost.
+  const fromEnv = process.env.NEXT_PUBLIC_SURVEY_BASE_URL?.trim();
   const fallback =
     process.env.NODE_ENV === "production"
       ? "https://v2.goxxii.com/s"
       : "http://localhost:3000/s";
-  const base = process.env.NEXT_PUBLIC_SURVEY_BASE_URL || fallback;
+  // In local `next dev`, never accidentally bake live survey links when env is missing.
+  const base = fromEnv || fallback;
   return `${base.replace(/\/$/, "")}/${token}`;
 }
 
@@ -463,14 +471,18 @@ export async function sendResolutionSurvey(
   if (open) {
     return resendSurveyOccurrence(open, {
       reminderCopy: false,
-      smsBodyTemplate: `Hi ${driver.name.split(" ")[0]}, quick check — how did we do resolving your recent issue? {surveyUrl}`,
+      smsBodyTemplate: postResolveSurveyResendTemplate({
+        driverName: driver.name,
+      }),
     });
   }
 
   const token = nanoid(24);
   const surveyUrl = buildSurveyUrl(token);
-  const firstName = driver.name.split(" ")[0];
-  const smsBody = `Hi ${firstName}, your recent issue was marked resolved. How did we do? ${surveyUrl}`;
+  const smsBody = postResolveSurveyMessage({
+    driverName: driver.name,
+    surveyUrl,
+  });
 
   const sms = await sendSms(driver.phone, smsBody, {
     contactName: driver.name,
@@ -548,13 +560,12 @@ export async function resendSurveyOccurrence(
   }
 
   const surveyUrl = buildSurveyUrl(occurrence.token);
-  const firstName = driver.name.split(" ")[0];
   const useReminder =
     opts?.reminderCopy ??
     Boolean(occurrence.sentAt || occurrence.responseState !== "pending");
   const defaultBody = useReminder
-    ? `Hi ${firstName}, quick reminder — XXII still wants your feedback: ${surveyUrl}`
-    : `Hi ${firstName}, XXII wants your feedback: ${surveyUrl}`;
+    ? surveyReminderMessage({ driverName: driver.name, surveyUrl })
+    : surveyInviteMessage({ driverName: driver.name, surveyUrl });
   const smsBody = opts?.smsBodyTemplate
     ? opts.smsBodyTemplate.replaceAll("{surveyUrl}", surveyUrl)
     : defaultBody;
@@ -635,7 +646,10 @@ export async function sendSurvey(
   const token = nanoid(24);
   const surveyUrl = buildSurveyUrl(token);
 
-  const defaultBody = `Hi ${driver.name.split(" ")[0]}, XXII wants your feedback: ${surveyUrl}`;
+  const defaultBody = surveyInviteMessage({
+    driverName: driver.name,
+    surveyUrl,
+  });
   const smsBody = opts?.smsBodyTemplate
     ? opts.smsBodyTemplate.replaceAll("{surveyUrl}", surveyUrl)
     : defaultBody;

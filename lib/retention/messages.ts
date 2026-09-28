@@ -79,6 +79,41 @@ export function holidayMessage(opts: {
   );
 }
 
+/** Regular cadence / manual survey invite SMS. */
+export function surveyInviteMessage(opts: {
+  driverName: string;
+  surveyUrl: string;
+}): string {
+  const name = firstName(opts.driverName);
+  return `Hi ${name}, XXII wants your feedback: ${opts.surveyUrl}`;
+}
+
+/** Reminder SMS while a survey link is still open. */
+export function surveyReminderMessage(opts: {
+  driverName: string;
+  surveyUrl: string;
+}): string {
+  const name = firstName(opts.driverName);
+  return `Hi ${name}, quick reminder — XXII still wants your feedback: ${opts.surveyUrl}`;
+}
+
+/** Post-resolve follow-up survey SMS (first send). */
+export function postResolveSurveyMessage(opts: {
+  driverName: string;
+  surveyUrl: string;
+}): string {
+  const name = firstName(opts.driverName);
+  return `Hi ${name}, your recent issue was marked resolved. How did we do? ${opts.surveyUrl}`;
+}
+
+/** Post-resolve follow-up when resending an open link. */
+export function postResolveSurveyResendTemplate(opts: {
+  driverName: string;
+}): string {
+  const name = firstName(opts.driverName);
+  return `Hi ${name}, quick check — how did we do resolving your recent issue? {surveyUrl}`;
+}
+
 export function buildOccasionMessage(
   kind: OccasionKind,
   opts: {
@@ -108,3 +143,103 @@ export function buildOccasionMessage(
     surveyUrl: opts.surveyUrl || "{surveyUrl}",
   });
 }
+
+export type MessageTemplateId =
+  | "birthday"
+  | "anniversary"
+  | "holiday"
+  | "survey-invite"
+  | "survey-reminder"
+  | "post-resolve"
+  | "post-resolve-resend";
+
+export type MessageTemplate = {
+  id: MessageTemplateId;
+  title: string;
+  description: string;
+  channel: "SMS to driver";
+  /** Sample body with placeholders like {FirstName} and {surveyUrl}. */
+  sample: string;
+};
+
+const SAMPLE_NAME = "{FirstName}";
+const SAMPLE_URL = "{surveyUrl}";
+
+/** Catalog of every driver-facing SMS body used by Retention. */
+export const MESSAGE_TEMPLATES: MessageTemplate[] = [
+  {
+    id: "birthday",
+    title: "Birthday wish",
+    description:
+      "Sent on the driver’s birthday. Appreciation only — no survey link.",
+    channel: "SMS to driver",
+    sample: birthdayMessage({ driverName: SAMPLE_NAME }),
+  },
+  {
+    id: "anniversary",
+    title: "Work anniversary",
+    description:
+      "Sent at 3 months, 6 months, 1 year, and each year after. Includes a survey link.",
+    channel: "SMS to driver",
+    sample: anniversaryMessage({
+      driverName: SAMPLE_NAME,
+      milestone: { kind: "years", years: 1, occasionKey: "anniversary-1y" },
+      surveyUrl: SAMPLE_URL,
+    }),
+  },
+  {
+    id: "holiday",
+    title: "Holiday greeting",
+    description:
+      "Sent on configured company holidays. Includes a survey link.",
+    channel: "SMS to driver",
+    sample: holidayMessage({
+      driverName: SAMPLE_NAME,
+      holidayName: "{HolidayName}",
+      surveyUrl: SAMPLE_URL,
+    }),
+  },
+  {
+    id: "survey-invite",
+    title: "Survey invite",
+    description:
+      "Regular cadence and manual “Send survey” messages.",
+    channel: "SMS to driver",
+    sample: surveyInviteMessage({
+      driverName: SAMPLE_NAME,
+      surveyUrl: SAMPLE_URL,
+    }),
+  },
+  {
+    id: "survey-reminder",
+    title: "Survey reminder",
+    description:
+      "Automatic reminder while a survey link is still open.",
+    channel: "SMS to driver",
+    sample: surveyReminderMessage({
+      driverName: SAMPLE_NAME,
+      surveyUrl: SAMPLE_URL,
+    }),
+  },
+  {
+    id: "post-resolve",
+    title: "Post-resolve follow-up",
+    description:
+      "Sent when an open issue/case is marked resolved.",
+    channel: "SMS to driver",
+    sample: postResolveSurveyMessage({
+      driverName: SAMPLE_NAME,
+      surveyUrl: SAMPLE_URL,
+    }),
+  },
+  {
+    id: "post-resolve-resend",
+    title: "Post-resolve resend",
+    description:
+      "Used when resending an open post-resolve survey link.",
+    channel: "SMS to driver",
+    sample: postResolveSurveyResendTemplate({
+      driverName: SAMPLE_NAME,
+    }).replaceAll("{surveyUrl}", SAMPLE_URL),
+  },
+];

@@ -4,7 +4,8 @@ export type RetentionView =
   | "follow-ups"
   | "exit"
   | "reasons"
-  | "responses";
+  | "responses"
+  | "configure";
 
 export type ResponsesFilter = "all" | "pending" | "completed" | "non_response";
 
@@ -17,6 +18,7 @@ const VIEWS = new Set<string>([
   "exit",
   "reasons",
   "responses",
+  "configure",
 ]);
 
 const RESPONSE_FILTERS = new Set<string>([
@@ -43,7 +45,7 @@ export function parseResponsesFilter(
 
 export function retentionViewPath(
   view: RetentionView,
-  extra?: { filter?: ResponsesFilter }
+  extra?: { filter?: ResponsesFilter; msg?: string }
 ): string {
   const params = new URLSearchParams();
   if (view !== "overview") params.set("view", view);
@@ -54,6 +56,9 @@ export function retentionViewPath(
   ) {
     params.set("filter", extra.filter);
   }
+  if (view === "configure" && extra?.msg) {
+    params.set("msg", extra.msg);
+  }
   const q = params.toString();
   return q ? `/retention?${q}` : "/retention";
 }
@@ -61,7 +66,7 @@ export function retentionViewPath(
 /** Instant view switch on /retention — updates URL without a Next.js RSC refetch. */
 export function navigateRetentionView(
   view: RetentionView,
-  extra?: { filter?: ResponsesFilter }
+  extra?: { filter?: ResponsesFilter; msg?: string }
 ) {
   const path = retentionViewPath(view, extra);
   window.history.pushState({ retentionView: view }, "", path);

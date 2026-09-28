@@ -30,6 +30,10 @@ import {
   RETENTION_VIEW_EVENT,
   type RetentionView,
 } from "@/lib/retention/viewNav";
+import {
+  MESSAGE_TEMPLATES,
+  type MessageTemplateId,
+} from "@/lib/retention/messages";
 
 const retentionLinks: { view: RetentionView; label: string }[] = [
   { view: "overview", label: "Overview" },
@@ -39,6 +43,9 @@ const retentionLinks: { view: RetentionView; label: string }[] = [
   { view: "exit", label: "Exit / Turnover" },
   { view: "reasons", label: "Reasons" },
 ];
+
+const configureLinks: { id: MessageTemplateId; label: string }[] =
+  MESSAGE_TEMPLATES.map((t) => ({ id: t.id, label: t.title }));
 
 /** Keeps page content from re-rendering when sidebar/header chrome state changes. */
 const PageBody = memo(function PageBody({ children }: { children: ReactNode }) {
@@ -384,12 +391,24 @@ function RetentionSubnav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const onList = pathname === "/retention";
   const [currentView, setCurrentView] = useState<RetentionView>("overview");
+  const [configureOpen, setConfigureOpen] = useState(false);
+  const [focusMsg, setFocusMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const sync = () => setCurrentView(parseRetentionView(window.location.search));
+    const sync = () => {
+      const view = parseRetentionView(window.location.search);
+      setCurrentView(view);
+      const msg = new URLSearchParams(window.location.search).get("msg");
+      setFocusMsg(msg);
+      if (view === "configure") setConfigureOpen(true);
+    };
     const onView = (e: Event) => {
       const next = (e as CustomEvent<RetentionView>).detail;
-      if (next) setCurrentView(next);
+      if (next) {
+        setCurrentView(next);
+        if (next === "configure") setConfigureOpen(true);
+      }
+      setFocusMsg(new URLSearchParams(window.location.search).get("msg"));
     };
     sync();
     window.addEventListener("popstate", sync);
@@ -400,15 +419,19 @@ function RetentionSubnav({ onNavigate }: { onNavigate?: () => void }) {
     };
   }, []);
 
-  function go(view: RetentionView) {
+  function go(view: RetentionView, extra?: { msg?: MessageTemplateId }) {
     onNavigate?.();
+    if (view === "configure") setConfigureOpen(true);
     if (onList) {
       setCurrentView(view);
-      navigateRetentionView(view);
+      setFocusMsg(extra?.msg ?? null);
+      navigateRetentionView(view, extra);
       return;
     }
-    router.push(retentionViewPath(view));
+    router.push(retentionViewPath(view, extra));
   }
+
+  const configureActive = onList && currentView === "configure";
 
   return (
     <>
@@ -430,6 +453,65 @@ function RetentionSubnav({ onNavigate }: { onNavigate?: () => void }) {
           </button>
         );
       })}
+
+      <button
+        type="button"
+        aria-expanded={configureOpen}
+        onClick={() => {
+          if (!configureOpen) {
+            go("configure");
+            return;
+          }
+          setConfigureOpen(false);
+        }}
+        className={clsx(
+          "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm",
+          configureActive
+            ? "bg-white/12 font-semibold text-white"
+            : "text-white/70 hover:bg-white/8 hover:text-white"
+        )}
+      >
+        <span>Configure</span>
+        <ChevronDown
+          size={14}
+          className={clsx(configureOpen ? "rotate-180" : "")}
+        />
+      </button>
+
+      {configureOpen && (
+        <div className="ml-2 space-y-0.5 border-l border-white/10 py-0.5 pl-2">
+          <button
+            type="button"
+            onClick={() => go("configure")}
+            className={clsx(
+              "block w-full rounded-lg px-3 py-1.5 text-left text-xs",
+              configureActive && !focusMsg
+                ? "bg-white/10 font-semibold text-white"
+                : "text-white/60 hover:bg-white/8 hover:text-white"
+            )}
+          >
+            All message texts
+          </button>
+          {configureLinks.map((link) => {
+            const active = configureActive && focusMsg === link.id;
+            return (
+              <button
+                key={link.id}
+                type="button"
+                onClick={() => go("configure", { msg: link.id })}
+                className={clsx(
+                  "block w-full rounded-lg px-3 py-1.5 text-left text-xs",
+                  active
+                    ? "bg-white/10 font-semibold text-white"
+                    : "text-white/60 hover:bg-white/8 hover:text-white"
+                )}
+              >
+                {link.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
