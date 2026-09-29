@@ -551,26 +551,6 @@ export async function resendSurveyOccurrence(
     (err as Error & { status?: number }).status = 400;
     throw err;
   }
-
-  // Never auto-remind (or resend) after the driver already submitted.
-  const existingResponse = await retentionStore.findResponseByOccurrenceId(
-    occurrence.id
-  );
-  if (existingResponse || occurrence.responseState === "completed") {
-    if (occurrence.responseState !== "completed") {
-      await retentionStore.updateSurveyOccurrence(occurrence.id, {
-        responseState: "completed",
-        completedAt:
-          existingResponse?.submittedAt || new Date().toISOString(),
-      });
-    }
-    const err = new Error(
-      "Driver already completed this survey — no reminder will be sent"
-    );
-    (err as Error & { status?: number }).status = 409;
-    throw err;
-  }
-
   if (!OPEN_SURVEY_STATES.has(occurrence.responseState)) {
     const err = new Error(
       "This survey link is closed — create a new survey after it expires or is submitted"
@@ -881,12 +861,20 @@ export async function submitSurvey(
     });
 
     for (const dept of departmentFeedback) {
+      // Department email only when that department scored 3 or lower.
+      // Do not CC James — he only gets the overall (≤3) email above.
       if (dept.rating > 3) continue;
-      const deptRecipients = recipientsForDepartment(dept.department);
-      // James always gets department low alerts too (CC if not already To).
-      const toList = deptRecipients.filter((e) => e.toLowerCase() !== james.toLowerCase());
-      const ccList = toList.length ? [james] : [];
-      const primaryTo = toList.length ? toList : [james];
+      const deptRecipients = recipientsForDepartment(dept.department).filter(
+        Boolean
+      );
+      if (!deptRecipients.length) {
+        alerts.push({
+          event: "department_low_skipped",
+          department: dept.department,
+          reason: "no_recipients",
+        });
+        continue;
+      }
       const deptMail = buildDepartmentLowEmail({
         driverName: driver.name,
         driverId: driver.id,
@@ -897,15 +885,14 @@ export async function submitSurvey(
         caseUrl,
       });
       const deptSend = await sendRetentionEmail({
-        to: primaryTo,
-        cc: ccList,
+        to: deptRecipients,
         subject: deptMail.subject,
         text: deptMail.text,
         html: deptMail.html,
       });
       const loggedRecipients = deptSend.deliveredTo?.length
         ? deptSend.deliveredTo
-        : [...primaryTo, ...ccList];
+        : deptRecipients;
       for (const to of loggedRecipients) {
         await retentionStore.addNotificationLog({
           trigger: "department_low",
@@ -917,9 +904,8 @@ export async function submitSurvey(
         });
       }
       alerts.push({
-        to: deptSend.deliveredTo || primaryTo,
-        intendedTo: deptSend.intendedTo || primaryTo,
-        cc: ccList,
+        to: deptSend.deliveredTo || deptRecipients,
+        intendedTo: deptSend.intendedTo || deptRecipients,
         department: dept.department,
         mocked: deptSend.mocked,
         testing: deptSend.testing,
