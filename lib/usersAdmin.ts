@@ -114,8 +114,6 @@ export function canUpdateTarget(opts: {
 export function canRemoveTarget(opts: {
   actorRole: UserRole;
   targetRole: UserRole;
-  /** Allow an Admin to delete their own account. */
-  isSelf?: boolean;
 }): { ok: true } | { ok: false; error: string } {
   if (!isAdminRole(opts.actorRole)) {
     return { ok: false, error: 'Forbidden' };
@@ -124,9 +122,6 @@ export function canRemoveTarget(opts: {
   if (isSuperAdminRole(opts.actorRole)) {
     return { ok: true };
   }
-
-  // Regular Admin may remove themselves.
-  if (opts.isSelf) return { ok: true };
 
   // Regular Admin: staff only
   if (opts.targetRole === 'staff') return { ok: true };
@@ -222,14 +217,13 @@ export async function deleteManagedUser(opts: {
   actorId: number;
   actorRole: UserRole;
   targetId: number;
-}): Promise<
-  { ok: true; deletedSelf: boolean } | { ok: false; error: string }
-> {
+}): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!canListManagedUsers(opts.actorRole)) {
     return { ok: false, error: 'Forbidden' };
   }
-
-  const deletedSelf = opts.actorId === opts.targetId;
+  if (opts.actorId === opts.targetId) {
+    return { ok: false, error: 'You cannot remove your own account' };
+  }
 
   const pool = getPool();
   const [rows] = await pool.query<UserRow[]>(
@@ -244,7 +238,6 @@ export async function deleteManagedUser(opts: {
   const gate = canRemoveTarget({
     actorRole: opts.actorRole,
     targetRole: currentRole,
-    isSelf: deletedSelf,
   });
   if (!gate.ok) return gate;
 
@@ -266,5 +259,5 @@ export async function deleteManagedUser(opts: {
     /* ignore if invites table missing */
   }
 
-  return { ok: true, deletedSelf };
+  return { ok: true };
 }

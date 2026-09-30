@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { clearAuthCookie, getAuthUser } from '@/lib/auth';
+import { getAuthUser } from '@/lib/auth';
 import {
   canListManagedUsers,
   deleteManagedUser,
@@ -92,12 +92,5 @@ export async function DELETE(_request: NextRequest, ctx: Ctx) {
     );
   }
 
-  if (result.deletedSelf) {
-    await clearAuthCookie();
-  }
-
-  return NextResponse.json({
-    ok: true,
-    deletedSelf: result.deletedSelf,
-  });
+  return NextResponse.json({ ok: true });
 }

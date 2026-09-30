@@ -56,8 +56,7 @@ export function ManagePermissionsPanel({
   };
 
   const canRemoveUser = (u: ManagedUser) => {
-    // Anyone who can open Manage permissions may remove themselves.
-    if (u.id === currentUserId) return true;
+    if (u.id === currentUserId) return false;
     if (isSuper) return true;
     return u.role === 'staff';
   };
@@ -165,18 +164,17 @@ export function ManagePermissionsPanel({
   const onRemove = async (u: ManagedUser) => {
     if (!canRemoveUser(u)) {
       setErr(
-        u.role === 'admin'
-          ? 'Admins can add Admins but cannot remove them'
-          : 'You cannot remove this user'
+        u.id === currentUserId
+          ? 'You cannot remove your own account'
+          : u.role === 'admin'
+            ? 'Admins can add Admins but cannot remove them'
+            : 'You cannot remove this user'
       );
       return;
     }
-    const removingSelf = u.id === currentUserId;
     if (
       !window.confirm(
-        removingSelf
-          ? `Remove your own account (${u.username})? You will be signed out and need a new invite to return.`
-          : `Remove ${u.username}? They will lose access immediately.`
+        `Remove ${u.username}? They will lose access immediately.`
       )
     ) {
       return;
@@ -191,10 +189,6 @@ export function ManagePermissionsPanel({
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) {
         setErr(json?.error || 'Could not remove user');
-        return;
-      }
-      if (json.deletedSelf) {
-        window.location.href = '/login';
         return;
       }
       setMsg(`Removed ${u.username}`);
