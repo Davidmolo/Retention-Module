@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Navigation } from '@/components/Navigation';
 import { Button } from '@/components/ui/button';
 import { ManagePermissionsPanel } from '@/components/ManagePermissionsPanel';
+import { CompanyUpdatesAdminPanel } from '@/components/CompanyUpdatesAdminPanel';
 import {
   ALL_MODULES,
   isAdminRole,
@@ -488,6 +489,8 @@ export default function SettingsPage() {
                 ) : null}
               </section>
             ) : null}
+
+            {canManageUsers ? <CompanyUpdatesAdminPanel /> : null}
 
             {canManageUsers && user ? (
               <ManagePermissionsPanel

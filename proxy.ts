@@ -30,6 +30,7 @@ export async function proxy(request: NextRequest) {
     path.startsWith('/api/retention') ||
     path.startsWith('/api/account') ||
     path.startsWith('/api/settings') ||
+    path.startsWith('/api/company-updates') ||
     path.startsWith('/api/gross-profit') ||
     path.startsWith('/api/drivers') ||
     path.startsWith('/api/data') ||

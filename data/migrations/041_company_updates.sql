@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS company_updates (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  title VARCHAR(255) NOT NULL,
+  summary TEXT NOT NULL,
+  tag VARCHAR(64) NULL,
+  published_on DATE NOT NULL,
+  created_by INT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  INDEX idx_company_updates_published (published_on)
+);

@@ -99,6 +99,9 @@ export function pathAllowedForModules(
   if (path.startsWith("/api/settings") || path.startsWith("/api/account")) {
     return true;
   }
+  if (path.startsWith("/api/company-updates")) {
+    return canAccessModule(modules, "dashboard");
+  }
 
   if (path === "/dashboard" || path.startsWith("/dashboard")) {
     return canAccessModule(modules, "dashboard");

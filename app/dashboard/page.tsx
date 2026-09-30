@@ -2,10 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Navigation } from '@/components/Navigation';
-import {
-  COMPANY_UPDATES,
-  formatUpdateDate,
-} from '@/lib/companyUpdates';
+import { formatUpdateDate } from '@/lib/companyUpdates';
+
+type UpdateRow = {
+  id: number;
+  title: string;
+  summary: string;
+  tag: string | null;
+  publishedOn: string;
+};
 
 function greetingForHour(hour: number): string {
   if (hour < 12) return 'Good morning';
@@ -24,10 +29,33 @@ function formatLongDate(d: Date): string {
 
 export default function DashboardPage() {
   const [now, setNow] = useState(() => new Date());
+  const [updates, setUpdates] = useState<UpdateRow[]>([]);
+  const [loadingUpdates, setLoadingUpdates] = useState(true);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/company-updates', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json?.ok && Array.isArray(json.updates)) {
+          setUpdates(json.updates);
+        }
+      })
+      .catch(() => {
+        /* keep empty */
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingUpdates(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const greeting = useMemo(() => greetingForHour(now.getHours()), [now]);
@@ -62,31 +90,41 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <ul className="divide-y divide-border">
-            {COMPANY_UPDATES.map((update) => (
-              <li key={update.id} className="px-6 py-5">
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  {update.tag ? (
-                    <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                      {update.tag}
-                    </span>
-                  ) : null}
-                  <time
-                    dateTime={update.date}
-                    className="text-xs text-muted-foreground"
-                  >
-                    {formatUpdateDate(update.date)}
-                  </time>
-                </div>
-                <h3 className="text-base font-semibold text-card-foreground">
-                  {update.title}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-                  {update.summary}
-                </p>
-              </li>
-            ))}
-          </ul>
+          {loadingUpdates ? (
+            <p className="px-6 py-8 text-sm text-muted-foreground">
+              Loading updates…
+            </p>
+          ) : updates.length === 0 ? (
+            <p className="px-6 py-8 text-sm text-muted-foreground">
+              No company updates yet.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {updates.map((update) => (
+                <li key={update.id} className="px-6 py-5">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    {update.tag ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                        {update.tag}
+                      </span>
+                    ) : null}
+                    <time
+                      dateTime={update.publishedOn}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {formatUpdateDate(update.publishedOn)}
+                    </time>
+                  </div>
+                  <h3 className="text-base font-semibold text-card-foreground">
+                    {update.title}
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+                    {update.summary}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </main>
     </div>
