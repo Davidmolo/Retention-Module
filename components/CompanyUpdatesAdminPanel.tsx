@@ -130,7 +130,8 @@ export function CompanyUpdatesAdminPanel() {
           Company Updates
         </h2>
         <p className="text-sm text-muted-foreground">
-          Publish what shows on the Dashboard landing page for everyone.
+          Publish, edit, or delete Dashboard “What&apos;s new” posts. Visible to
+          every signed-in user.
         </p>
       </div>
 

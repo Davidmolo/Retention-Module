@@ -357,6 +357,8 @@ export default function SettingsPage() {
               </form>
             </section>
 
+            {canManageUsers ? <CompanyUpdatesAdminPanel /> : null}
+
             {canManageUsers ? (
               <section className="rounded-lg border border-border bg-card p-6 space-y-5">
                 <div>
@@ -489,8 +491,6 @@ export default function SettingsPage() {
                 ) : null}
               </section>
             ) : null}
-
-            {canManageUsers ? <CompanyUpdatesAdminPanel /> : null}
 
             {canManageUsers && user ? (
               <ManagePermissionsPanel
