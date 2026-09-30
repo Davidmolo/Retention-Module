@@ -3,6 +3,8 @@ import { getPool } from '@/lib/db';
 import {
   ALL_MODULES,
   defaultModulesForRole,
+  isAdminRole,
+  isSuperAdminRole,
   normalizeUserRole,
   parseModulesJson,
   roleHasFullModules,
@@ -63,6 +65,78 @@ export function sanitizeManagedModules(
   return mods;
 }
 
+/**
+ * Permission matrix:
+ * - Super Admin: update/remove Admin + Staff (+ other Super Admins except last/self)
+ * - Admin: add Admin via invite; update/remove Staff only; cannot remove Admin
+ * - Staff: no manage access
+ */
+export function canListManagedUsers(actorRole: UserRole): boolean {
+  return isAdminRole(actorRole);
+}
+
+export function canUpdateTarget(opts: {
+  actorRole: UserRole;
+  targetRole: UserRole;
+  nextRole: UserRole;
+}): { ok: true } | { ok: false; error: string } {
+  if (!isAdminRole(opts.actorRole)) {
+    return { ok: false, error: 'Forbidden' };
+  }
+
+  if (isSuperAdminRole(opts.actorRole)) {
+    if (opts.nextRole === 'super_admin' || opts.targetRole === 'super_admin') {
+      return { ok: true };
+    }
+    return { ok: true };
+  }
+
+  // Regular Admin
+  if (opts.targetRole === 'super_admin' || opts.nextRole === 'super_admin') {
+    return {
+      ok: false,
+      error: 'Admins cannot change Super Admin accounts',
+    };
+  }
+  if (opts.targetRole === 'admin' || opts.nextRole === 'admin') {
+    return {
+      ok: false,
+      error: 'Admins cannot update or remove other Admins (invite only)',
+    };
+  }
+  // Staff only
+  if (opts.targetRole !== 'staff' || opts.nextRole !== 'staff') {
+    return { ok: false, error: 'Admins can only manage Staff accounts' };
+  }
+  return { ok: true };
+}
+
+export function canRemoveTarget(opts: {
+  actorRole: UserRole;
+  targetRole: UserRole;
+}): { ok: true } | { ok: false; error: string } {
+  if (!isAdminRole(opts.actorRole)) {
+    return { ok: false, error: 'Forbidden' };
+  }
+
+  if (isSuperAdminRole(opts.actorRole)) {
+    return { ok: true };
+  }
+
+  // Regular Admin: staff only
+  if (opts.targetRole === 'staff') return { ok: true };
+  if (opts.targetRole === 'admin') {
+    return {
+      ok: false,
+      error: 'Admins can add Admins but cannot remove them',
+    };
+  }
+  return {
+    ok: false,
+    error: 'Admins cannot remove Super Admins',
+  };
+}
+
 export async function listManagedUsers(): Promise<ManagedUser[]> {
   const [rows] = await getPool().query<UserRow[]>(
     `SELECT id, username, role, display_name, modules_json, created_at
@@ -92,8 +166,8 @@ export async function updateManagedUser(opts: {
   role: UserRole;
   modules: AppModule[];
 }): Promise<{ ok: true; user: ManagedUser } | { ok: false; error: string }> {
-  if (opts.actorRole !== 'super_admin') {
-    return { ok: false, error: 'Only Super Admins can manage permissions' };
+  if (!canListManagedUsers(opts.actorRole)) {
+    return { ok: false, error: 'Forbidden' };
   }
 
   const pool = getPool();
@@ -106,21 +180,19 @@ export async function updateManagedUser(opts: {
   if (!existing) return { ok: false, error: 'User not found' };
 
   const currentRole = normalizeUserRole(existing.role);
-  let nextRole = normalizeUserRole(opts.role);
+  const nextRole = normalizeUserRole(opts.role);
 
-  // Only Super Admin can grant/keep Super Admin.
-  if (nextRole === 'super_admin' && opts.actorRole !== 'super_admin') {
-    return { ok: false, error: 'Only Super Admins can grant Super Admin' };
-  }
+  const gate = canUpdateTarget({
+    actorRole: opts.actorRole,
+    targetRole: currentRole,
+    nextRole,
+  });
+  if (!gate.ok) return gate;
 
-  // Do not leave zero Super Admins.
   if (currentRole === 'super_admin' && nextRole !== 'super_admin') {
     const count = await countSuperAdmins();
     if (count <= 1) {
-      return {
-        ok: false,
-        error: 'Cannot demote the last Super Admin',
-      };
+      return { ok: false, error: 'Cannot demote the last Super Admin' };
     }
   }
 
@@ -146,8 +218,8 @@ export async function deleteManagedUser(opts: {
   actorRole: UserRole;
   targetId: number;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (opts.actorRole !== 'super_admin') {
-    return { ok: false, error: 'Only Super Admins can remove users' };
+  if (!canListManagedUsers(opts.actorRole)) {
+    return { ok: false, error: 'Forbidden' };
   }
   if (opts.actorId === opts.targetId) {
     return { ok: false, error: 'You cannot remove your own account' };
@@ -163,6 +235,12 @@ export async function deleteManagedUser(opts: {
   if (!existing) return { ok: false, error: 'User not found' };
 
   const currentRole = normalizeUserRole(existing.role);
+  const gate = canRemoveTarget({
+    actorRole: opts.actorRole,
+    targetRole: currentRole,
+  });
+  if (!gate.ok) return gate;
+
   if (currentRole === 'super_admin') {
     const count = await countSuperAdmins();
     if (count <= 1) {

@@ -489,8 +489,11 @@ export default function SettingsPage() {
               </section>
             ) : null}
 
-            {isSuper && user ? (
-              <ManagePermissionsPanel currentUserId={user.id} />
+            {canManageUsers && user ? (
+              <ManagePermissionsPanel
+                currentUserId={user.id}
+                actorRole={user.role}
+              />
             ) : null}
           </div>
         )}

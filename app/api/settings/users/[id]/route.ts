@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import {
+  canListManagedUsers,
   deleteManagedUser,
   updateManagedUser,
 } from '@/lib/usersAdmin';
 import {
-  isSuperAdminRole,
   normalizeUserRole,
   type AppModule,
   type UserRole,
@@ -17,9 +17,9 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: NextRequest, ctx: Ctx) {
   const actor = await getAuthUser();
-  if (!actor || !isSuperAdminRole(actor.role)) {
+  if (!actor || !canListManagedUsers(actor.role)) {
     return NextResponse.json(
-      { ok: false, error: 'Forbidden — Super Admin only' },
+      { ok: false, error: 'Forbidden' },
       { status: 403 }
     );
   }
@@ -63,9 +63,9 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
 
 export async function DELETE(_request: NextRequest, ctx: Ctx) {
   const actor = await getAuthUser();
-  if (!actor || !isSuperAdminRole(actor.role)) {
+  if (!actor || !canListManagedUsers(actor.role)) {
     return NextResponse.json(
-      { ok: false, error: 'Forbidden — Super Admin only' },
+      { ok: false, error: 'Forbidden' },
       { status: 403 }
     );
   }
