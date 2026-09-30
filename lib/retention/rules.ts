@@ -1,5 +1,6 @@
 import type { GpDriver } from "@/lib/adapters/gp";
 import { APP_TIMEZONE } from "@/lib/dates";
+import { isRetentionExcludedDriverId } from "./rosterExclusions";
 
 export function isLowOverall(rating: number) {
   return rating >= 1 && rating <= 3;
@@ -40,6 +41,7 @@ export function tenureCategory(
 
 export function isSurveyEligible(driver: GpDriver) {
   if (!driver || driver.status !== "active") return false;
+  if (isRetentionExcludedDriverId(driver.id)) return false;
   return daysSinceHire(driver.hireDate) >= 7;
 }
 

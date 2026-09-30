@@ -13,6 +13,10 @@
 import type { GpAdapter, SixWeekAverages } from "./types";
 import { toGpDriver } from "./gpMapping";
 import { getPool } from "@/lib/db";
+import {
+  isRetentionExcludedDriverId,
+  retentionExcludedDriversSql,
+} from "@/lib/retention/rosterExclusions";
 
 export type LiveGpDb = {
   // mysql2 pool.query — keep loose so SELECT row shapes stay usable
@@ -81,9 +85,11 @@ export const liveGpAdapter: GpAdapter = {
   async listDrivers({ includeInactive = false } = {}) {
     const pool = requireDb();
     // Retention / live roster: only OpenRoad status = 'active' (not suspended).
+    // Also drop known non-drivers / test / former employees (see rosterExclusions).
+    const exclusion = retentionExcludedDriversSql("d");
     const where = includeInactive
-      ? ""
-      : ` WHERE d.status IS NOT NULL AND LOWER(TRIM(d.status)) = 'active'`;
+      ? ` WHERE 1=1${exclusion}`
+      : ` WHERE d.status IS NOT NULL AND LOWER(TRIM(d.status)) = 'active'${exclusion}`;
     const [rows] = await pool.query(
       `${DRIVER_SELECT}${where} ORDER BY name`
     );
@@ -104,6 +110,7 @@ export const liveGpAdapter: GpAdapter = {
   },
 
   async getDriver(driverId: string) {
+    if (isRetentionExcludedDriverId(driverId)) return null;
     const pool = requireDb();
     const [rows] = await pool.query(
       `${DRIVER_SELECT} WHERE d.id = ? LIMIT 1`,
