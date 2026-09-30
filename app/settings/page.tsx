@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Navigation } from '@/components/Navigation';
 import { Button } from '@/components/ui/button';
+import { ManagePermissionsPanel } from '@/components/ManagePermissionsPanel';
 import {
   ALL_MODULES,
   isAdminRole,
@@ -486,6 +487,10 @@ export default function SettingsPage() {
                   </div>
                 ) : null}
               </section>
+            ) : null}
+
+            {isSuper && user ? (
+              <ManagePermissionsPanel currentUserId={user.id} />
             ) : null}
           </div>
         )}
