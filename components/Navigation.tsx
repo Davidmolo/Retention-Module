@@ -57,8 +57,8 @@ const RETENTION_CHILDREN: RetentionNavItem[] = [
   { href: '/retention?view=configure', label: 'Configure', view: 'configure' },
 ];
 
-function linkClass(active: boolean) {
-  return `block px-3 py-2 rounded-md text-sm font-medium transition ${
+function linkClass(active: boolean, withIcon = false) {
+  return `${withIcon ? 'flex items-center gap-2' : 'block'} px-3 py-2 rounded-md text-sm font-medium transition ${
     active
       ? 'bg-muted text-foreground'
       : 'text-muted-foreground hover:text-foreground hover:bg-muted'
@@ -275,10 +275,10 @@ function NavigationInner({ currentPage }: NavigationProps) {
           <Link
             href="/settings"
             onClick={() => setOpen(false)}
-            className={`${linkClass(onSettings || currentPage === 'settings')} flex items-center gap-2`}
+            className={linkClass(onSettings || currentPage === 'settings', true)}
           >
             <Settings className="w-4 h-4 shrink-0" aria-hidden />
-            Settings
+            <span>Settings</span>
           </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />
