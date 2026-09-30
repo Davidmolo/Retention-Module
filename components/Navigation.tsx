@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { ChevronDown, Menu } from 'lucide-react';
+import { ChevronDown, Menu, Settings } from 'lucide-react';
 import { Button } from './ui/button';
 import { ThemeToggle } from './ThemeToggle';
 import {
@@ -275,8 +275,9 @@ function NavigationInner({ currentPage }: NavigationProps) {
           <Link
             href="/settings"
             onClick={() => setOpen(false)}
-            className={linkClass(onSettings || currentPage === 'settings')}
+            className={`${linkClass(onSettings || currentPage === 'settings')} flex items-center gap-2`}
           >
+            <Settings className="w-4 h-4 shrink-0" aria-hidden />
             Settings
           </Link>
           <div className="flex items-center gap-2">
