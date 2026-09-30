@@ -1,10 +1,16 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Navigation } from '@/components/Navigation';
 import { Button } from '@/components/ui/button';
-import { isAdminRole, isSuperAdminRole, type AppModule, type UserRole } from '@/lib/roles';
+import {
+  ALL_MODULES,
+  isAdminRole,
+  isSuperAdminRole,
+  type AppModule,
+  type UserRole,
+} from '@/lib/roles';
 
 type MeUser = {
   id: number;
@@ -14,10 +20,36 @@ type MeUser = {
   displayName?: string | null;
 };
 
-function roleLabel(role: UserRole): string {
+type PendingInvite = {
+  id: number;
+  email: string;
+  role: UserRole;
+  modules: AppModule[];
+  expiresAt: string;
+  createdAt: string;
+};
+
+const MODULE_OPTIONS: { id: AppModule; label: string; locked?: boolean }[] = [
+  { id: 'dashboard', label: 'Dashboard', locked: true },
+  { id: 'gross-profit', label: 'Gross Profit' },
+  { id: 'retention', label: 'Retention' },
+  { id: 'detention', label: 'Detention (when available)' },
+];
+
+function roleLabel(role: UserRole | string): string {
   if (role === 'super_admin') return 'Super Admin';
   if (role === 'retention') return 'Retention';
   return 'Admin';
+}
+
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 export default function SettingsPage() {
@@ -34,6 +66,33 @@ export default function SettingsPage() {
   const [pwMsg, setPwMsg] = useState('');
   const [pwErr, setPwErr] = useState('');
   const [pwSaving, setPwSaving] = useState(false);
+
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<UserRole>('admin');
+  const [inviteModules, setInviteModules] = useState<AppModule[]>([
+    'dashboard',
+    'gross-profit',
+    'retention',
+  ]);
+  const [inviteMsg, setInviteMsg] = useState('');
+  const [inviteErr, setInviteErr] = useState('');
+  const [inviteSaving, setInviteSaving] = useState(false);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+
+  const canManageUsers = user ? isAdminRole(user.role) : false;
+  const isSuper = user ? isSuperAdminRole(user.role) : false;
+
+  const loadInvites = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/invites', { cache: 'no-store' });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json?.ok && Array.isArray(json.invites)) {
+        setPendingInvites(json.invites);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,8 +116,16 @@ export default function SettingsPage() {
     };
   }, []);
 
-  const canManageUsers = user ? isAdminRole(user.role) : false;
-  const isSuper = user ? isSuperAdminRole(user.role) : false;
+  useEffect(() => {
+    if (canManageUsers) void loadInvites();
+  }, [canManageUsers, loadInvites]);
+
+  const toggleModule = (mod: AppModule) => {
+    if (mod === 'dashboard') return;
+    setInviteModules((prev) =>
+      prev.includes(mod) ? prev.filter((m) => m !== mod) : [...prev, mod]
+    );
+  };
 
   const onSaveProfile = async (e: FormEvent) => {
     e.preventDefault();
@@ -116,6 +183,43 @@ export default function SettingsPage() {
     }
   };
 
+  const onSendInvite = async (e: FormEvent) => {
+    e.preventDefault();
+    setInviteMsg('');
+    setInviteErr('');
+    setInviteSaving(true);
+    try {
+      const modules = ALL_MODULES.filter(
+        (m) => m === 'dashboard' || inviteModules.includes(m)
+      );
+      const res = await fetch('/api/settings/invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: inviteEmail,
+          role: inviteRole,
+          modules,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        setInviteErr(json?.error || 'Could not send invite');
+        return;
+      }
+      setInviteEmail('');
+      setInviteMsg(
+        json.mockedEmail
+          ? `Invite created for ${json.invite.email} (email mocked — SMTP not configured on this server).`
+          : `Invitation sent to ${json.invite.email}.`
+      );
+      await loadInvites();
+    } catch {
+      setInviteErr('Could not send invite');
+    } finally {
+      setInviteSaving(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background md:pl-60 pt-14 md:pt-0">
       <Navigation currentPage="settings" />
@@ -124,7 +228,8 @@ export default function SettingsPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground">Settings</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage your account. Admins can invite users and set module access.
+            Manage your account
+            {canManageUsers ? ' and invite users with module access' : ''}.
           </p>
         </div>
 
@@ -145,7 +250,10 @@ export default function SettingsPage() {
                   Profile
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Signed in as <span className="font-medium text-foreground">{user.username}</span>
+                  Signed in as{' '}
+                  <span className="font-medium text-foreground">
+                    {user.username}
+                  </span>
                   {' · '}
                   {roleLabel(user.role)}
                 </p>
@@ -237,20 +345,125 @@ export default function SettingsPage() {
             </section>
 
             {canManageUsers ? (
-              <section className="rounded-lg border border-border bg-card p-6 space-y-3">
+              <section className="rounded-lg border border-border bg-card p-6 space-y-5">
                 <div>
                   <h2 className="text-lg font-semibold text-card-foreground">
                     Invite users
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Admins can invite by email, choose a role, and select modules.
-                    Invite-link flow is next — Super Admins
-                    {isSuper ? ' (you)' : ''} can also remove admins when that ships.
+                    Enter an email, choose role and modules, then send an invite
+                    link. They set their own password and get only the modules
+                    you select.
+                    {isSuper
+                      ? ' As Super Admin you can also invite other Super Admins.'
+                      : ' Only Super Admins can invite another Super Admin.'}
                   </p>
                 </div>
-                <p className="text-sm text-muted-foreground rounded-md bg-muted px-3 py-2">
-                  Coming soon: email invite → role → modules → set password link.
-                </p>
+
+                <form onSubmit={onSendInvite} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-card-foreground mb-1">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder="name@goxxii.com"
+                      required
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-card-foreground mb-1">
+                      Role
+                    </label>
+                    <select
+                      value={inviteRole}
+                      onChange={(e) =>
+                        setInviteRole(e.target.value as UserRole)
+                      }
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="retention">Retention</option>
+                      {isSuper ? (
+                        <option value="super_admin">Super Admin</option>
+                      ) : null}
+                    </select>
+                  </div>
+
+                  <div>
+                    <p className="block text-sm font-medium text-card-foreground mb-2">
+                      Module access
+                    </p>
+                    <div className="space-y-2">
+                      {MODULE_OPTIONS.map((opt) => {
+                        const checked =
+                          opt.id === 'dashboard' ||
+                          inviteModules.includes(opt.id);
+                        return (
+                          <label
+                            key={opt.id}
+                            className="flex items-center gap-2 text-sm text-card-foreground"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={opt.locked}
+                              onChange={() => toggleModule(opt.id)}
+                              className="rounded border-input"
+                            />
+                            {opt.label}
+                            {opt.locked ? (
+                              <span className="text-xs text-muted-foreground">
+                                (always on)
+                              </span>
+                            ) : null}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {inviteErr ? (
+                    <p className="text-sm text-destructive">{inviteErr}</p>
+                  ) : null}
+                  {inviteMsg ? (
+                    <p className="text-sm text-green-600">{inviteMsg}</p>
+                  ) : null}
+
+                  <Button type="submit" disabled={inviteSaving}>
+                    {inviteSaving ? 'Sending…' : 'Send invitation'}
+                  </Button>
+                </form>
+
+                {pendingInvites.length > 0 ? (
+                  <div className="pt-2 border-t border-border">
+                    <h3 className="text-sm font-semibold text-card-foreground mb-2">
+                      Pending invites
+                    </h3>
+                    <ul className="space-y-2">
+                      {pendingInvites.map((inv) => (
+                        <li
+                          key={inv.id}
+                          className="text-sm rounded-md bg-muted px-3 py-2"
+                        >
+                          <span className="font-medium text-foreground">
+                            {inv.email}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {' '}
+                            · {roleLabel(inv.role)} ·{' '}
+                            {inv.modules.join(', ')} · expires{' '}
+                            {formatWhen(inv.expiresAt)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </section>
             ) : null}
           </div>

@@ -7,10 +7,12 @@ import { homePathForRole, pathAllowedForModules } from '@/lib/roles';
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
-  // Public: login, auth APIs, driver survey links, SMS provider webhooks (no JWT)
+  // Public: login, auth APIs, invites, driver survey links, SMS webhooks
   if (
     path === '/login' ||
     path.startsWith('/api/auth') ||
+    path.startsWith('/invite') ||
+    path.startsWith('/api/invites') ||
     path.startsWith('/s/') ||
     path.startsWith('/api/survey') ||
     path.startsWith('/api/retention/sms/')

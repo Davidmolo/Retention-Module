@@ -88,6 +88,7 @@ export function pathAllowedForModules(
   modules: AppModule[]
 ): boolean {
   if (path.startsWith("/api/auth")) return true;
+  if (path.startsWith("/invite") || path.startsWith("/api/invites")) return true;
   if (path === "/settings" || path.startsWith("/settings/")) return true;
   if (path.startsWith("/api/settings") || path.startsWith("/api/account")) {
     return true;
