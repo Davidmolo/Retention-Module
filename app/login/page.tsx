@@ -33,9 +33,7 @@ export default function LoginPage() {
       const home =
         typeof data?.user?.homePath === 'string' && data.user.homePath
           ? data.user.homePath
-          : data?.user?.role === 'retention'
-            ? '/retention'
-            : '/dashboard';
+          : '/dashboard';
       router.push(home);
     } catch (err) {
       setError('An error occurred. Please try again.');

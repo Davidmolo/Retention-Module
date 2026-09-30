@@ -6,7 +6,12 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, Menu } from 'lucide-react';
 import { Button } from './ui/button';
 import { ThemeToggle } from './ThemeToggle';
-import type { UserRole } from '@/lib/roles';
+import {
+  canAccessModule,
+  isSuperAdminRole,
+  type AppModule,
+  type UserRole,
+} from '@/lib/roles';
 
 type PageKey =
   | 'dashboard'
@@ -18,7 +23,8 @@ type PageKey =
   | 'gross-profit'
   | 'tolls'
   | 'configurations'
-  | 'retention';
+  | 'retention'
+  | 'settings';
 
 interface NavigationProps {
   currentPage: PageKey;
@@ -58,15 +64,27 @@ function linkClass(active: boolean) {
   }`;
 }
 
+function roleBadge(role: UserRole): string {
+  if (isSuperAdminRole(role)) return 'Super Admin';
+  if (role === 'retention') return 'Retention staff';
+  return 'Admin';
+}
+
 function NavigationInner({ currentPage }: NavigationProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const onRetention = pathname.startsWith('/retention');
+  const onSettings = pathname.startsWith('/settings');
   const retentionView = searchParams.get('view');
 
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<UserRole>('admin');
+  const [modules, setModules] = useState<AppModule[]>([
+    'dashboard',
+    'gross-profit',
+    'retention',
+  ]);
   const [gpOpen, setGpOpen] = useState(() => GP_CHILD_KEYS.has(currentPage));
   const [retentionOpen, setRetentionOpen] = useState(
     () => currentPage === 'retention' || onRetention
@@ -77,20 +95,24 @@ function NavigationInner({ currentPage }: NavigationProps) {
     fetch('/api/auth/me', { cache: 'no-store' })
       .then((r) => r.json())
       .then((json) => {
-        if (cancelled) return;
-        const next = json?.user?.role === 'retention' ? 'retention' : 'admin';
-        setRole(next);
+        if (cancelled || !json?.user) return;
+        const nextRole = (json.user.role || 'admin') as UserRole;
+        setRole(nextRole);
+        if (Array.isArray(json.user.modules) && json.user.modules.length) {
+          setModules(json.user.modules as AppModule[]);
+        }
       })
       .catch(() => {
-        /* keep default admin UI until proven otherwise */
+        /* keep defaults until proven otherwise */
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const isAdmin = role === 'admin';
-  const homeHref = isAdmin ? '/dashboard' : '/retention';
+  const showDashboard = canAccessModule(modules, 'dashboard');
+  const showGp = canAccessModule(modules, 'gross-profit');
+  const showRetention = canAccessModule(modules, 'retention');
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -127,7 +149,7 @@ function NavigationInner({ currentPage }: NavigationProps) {
       >
         <div className="px-4 py-4 border-b border-border">
           <Link
-            href={homeHref}
+            href="/dashboard"
             onClick={() => setOpen(false)}
             aria-label="XXII Century"
             className="block"
@@ -138,17 +160,19 @@ function NavigationInner({ currentPage }: NavigationProps) {
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {isAdmin && (
+          {showDashboard && (
             <Link
               href="/dashboard"
               onClick={() => setOpen(false)}
-              className={linkClass(currentPage === 'dashboard')}
+              className={linkClass(
+                currentPage === 'dashboard' && !onSettings && !onRetention
+              )}
             >
               Dashboard
             </Link>
           )}
 
-          {isAdmin && (
+          {showGp && (
             <div>
               <button
                 type="button"
@@ -182,52 +206,61 @@ function NavigationInner({ currentPage }: NavigationProps) {
             </div>
           )}
 
-          <div>
-            <button
-              type="button"
-              onClick={() => setRetentionOpen((v) => !v)}
-              aria-expanded={retentionOpen}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition ${
-                retentionSectionActive
-                  ? 'bg-muted/60 text-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-            >
-              Retention
-              <ChevronDown
-                className={`w-4 h-4 shrink-0 transition-transform ${
-                  retentionOpen ? 'rotate-180' : ''
+          {showRetention && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setRetentionOpen((v) => !v)}
+                aria-expanded={retentionOpen}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition ${
+                  retentionSectionActive
+                    ? 'bg-muted/60 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
-              />
-            </button>
-            {retentionOpen && (
-              <div className="mt-1 ml-2 pl-2 border-l border-border space-y-1">
-                {RETENTION_CHILDREN.map((item) => {
-                  const active =
-                    onRetention &&
-                    (item.view == null
-                      ? !retentionView
-                      : retentionView === item.view);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setOpen(false)}
-                      className={linkClass(active)}
-                    >
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+              >
+                Retention
+                <ChevronDown
+                  className={`w-4 h-4 shrink-0 transition-transform ${
+                    retentionOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {retentionOpen && (
+                <div className="mt-1 ml-2 pl-2 border-l border-border space-y-1">
+                  {RETENTION_CHILDREN.map((item) => {
+                    const active =
+                      onRetention &&
+                      (item.view == null
+                        ? !retentionView
+                        : retentionView === item.view);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setOpen(false)}
+                        className={linkClass(active)}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
 
         <div className="p-3 border-t border-border space-y-2">
           <div className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {isAdmin ? 'Admin' : 'Retention staff'}
+            {roleBadge(role)}
           </div>
+          <Link
+            href="/settings"
+            onClick={() => setOpen(false)}
+            className={linkClass(onSettings || currentPage === 'settings')}
+          >
+            Settings
+          </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <Button

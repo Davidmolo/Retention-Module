@@ -18,6 +18,8 @@ export async function GET() {
       id: user.id,
       username: user.username,
       role: user.role,
+      modules: user.modules,
+      displayName: user.displayName || null,
       homePath: homePathForRole(user.role),
     },
   });

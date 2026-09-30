@@ -32,6 +32,8 @@ export async function POST(request: NextRequest) {
         user: {
           username: user.username,
           role: user.role,
+          modules: user.modules,
+          displayName: user.displayName || null,
           homePath: homePathForRole(user.role),
         },
       },

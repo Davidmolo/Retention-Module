@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "db:seed": "node scripts/seed.mjs",
     "retention:seed-user": "node scripts/seed-retention-user.mjs",
+    "db:seed-super-admins": "node scripts/seed-super-admins.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "seed:trips": "bun scripts/seed-trips.mjs",
     "backfill:drivers": "bun scripts/backfill-drivers.mjs",
