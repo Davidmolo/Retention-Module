@@ -8,6 +8,7 @@ import {
   defaultModulesForRole,
   normalizeUserRole,
   parseModulesJson,
+  roleHasFullModules,
   type AppModule,
   type UserRole,
 } from '@/lib/roles';
@@ -148,7 +149,21 @@ export async function createAndSendInvite(opts: {
     role = 'admin';
   }
 
-  const modules = sanitizeInviteModules(opts.modules, role);
+  // Admins / Super Admins always get every module. Limited users get
+  // exactly what the inviter selected (1–3 of GP / Retention / Detention).
+  const modules = roleHasFullModules(role)
+    ? defaultModulesForRole(role)
+    : sanitizeInviteModules(opts.modules, role);
+
+  if (!roleHasFullModules(role)) {
+    const flows = modules.filter((m) => m !== 'dashboard');
+    if (!flows.length) {
+      return {
+        ok: false,
+        error: 'Select at least one module: Gross Profit, Retention, or Detention',
+      };
+    }
+  }
 
   if (await userExists(email)) {
     return {

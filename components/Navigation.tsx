@@ -24,7 +24,8 @@ type PageKey =
   | 'tolls'
   | 'configurations'
   | 'retention'
-  | 'settings';
+  | 'settings'
+  | 'detention';
 
 interface NavigationProps {
   currentPage: PageKey;
@@ -113,6 +114,8 @@ function NavigationInner({ currentPage }: NavigationProps) {
   const showDashboard = canAccessModule(modules, 'dashboard');
   const showGp = canAccessModule(modules, 'gross-profit');
   const showRetention = canAccessModule(modules, 'retention');
+  const showDetention = canAccessModule(modules, 'detention');
+  const onDetention = pathname.startsWith('/detention');
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -165,7 +168,10 @@ function NavigationInner({ currentPage }: NavigationProps) {
               href="/dashboard"
               onClick={() => setOpen(false)}
               className={linkClass(
-                currentPage === 'dashboard' && !onSettings && !onRetention
+                currentPage === 'dashboard' &&
+                  !onSettings &&
+                  !onRetention &&
+                  !onDetention
               )}
             >
               Dashboard
@@ -247,6 +253,18 @@ function NavigationInner({ currentPage }: NavigationProps) {
                 </div>
               )}
             </div>
+          )}
+
+          {showDetention && (
+            <Link
+              href="/detention"
+              onClick={() => setOpen(false)}
+              className={linkClass(
+                currentPage === 'detention' || onDetention
+              )}
+            >
+              Detention
+            </Link>
           )}
         </nav>
 

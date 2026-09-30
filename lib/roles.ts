@@ -41,8 +41,13 @@ export function isAdminRole(role: UserRole | string | null | undefined): boolean
 /** Default modules when modules_json is empty. */
 export function defaultModulesForRole(role: UserRole): AppModule[] {
   if (role === "retention") return ["dashboard", "retention"];
-  // admin + super_admin
-  return ["dashboard", "gross-profit", "retention"];
+  // Admin + Super Admin always see every XXII flow.
+  return ["dashboard", "gross-profit", "retention", "detention"];
+}
+
+/** True when this role is expected to have full module access. */
+export function roleHasFullModules(role: UserRole): boolean {
+  return role === "admin" || role === "super_admin";
 }
 
 export function parseModulesJson(

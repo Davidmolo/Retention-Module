@@ -29,11 +29,10 @@ type PendingInvite = {
   createdAt: string;
 };
 
-const MODULE_OPTIONS: { id: AppModule; label: string; locked?: boolean }[] = [
-  { id: 'dashboard', label: 'Dashboard', locked: true },
+const MODULE_OPTIONS: { id: AppModule; label: string }[] = [
   { id: 'gross-profit', label: 'Gross Profit' },
   { id: 'retention', label: 'Retention' },
-  { id: 'detention', label: 'Detention (when available)' },
+  { id: 'detention', label: 'Detention' },
 ];
 
 function roleLabel(role: UserRole | string): string {
@@ -70,7 +69,6 @@ export default function SettingsPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<UserRole>('admin');
   const [inviteModules, setInviteModules] = useState<AppModule[]>([
-    'dashboard',
     'gross-profit',
     'retention',
   ]);
@@ -81,6 +79,8 @@ export default function SettingsPage() {
 
   const canManageUsers = user ? isAdminRole(user.role) : false;
   const isSuper = user ? isSuperAdminRole(user.role) : false;
+  const invitePicksModules =
+    inviteRole !== 'admin' && inviteRole !== 'super_admin';
 
   const loadInvites = useCallback(async () => {
     try {
@@ -121,7 +121,6 @@ export default function SettingsPage() {
   }, [canManageUsers, loadInvites]);
 
   const toggleModule = (mod: AppModule) => {
-    if (mod === 'dashboard') return;
     setInviteModules((prev) =>
       prev.includes(mod) ? prev.filter((m) => m !== mod) : [...prev, mod]
     );
@@ -189,9 +188,21 @@ export default function SettingsPage() {
     setInviteErr('');
     setInviteSaving(true);
     try {
-      const modules = ALL_MODULES.filter(
-        (m) => m === 'dashboard' || inviteModules.includes(m)
-      );
+      const modules =
+        inviteRole === 'admin' || inviteRole === 'super_admin'
+          ? ALL_MODULES
+          : (['dashboard', ...inviteModules] as AppModule[]);
+      if (
+        inviteRole !== 'admin' &&
+        inviteRole !== 'super_admin' &&
+        inviteModules.length === 0
+      ) {
+        setInviteErr(
+          'Select at least one module: Gross Profit, Retention, or Detention'
+        );
+        setInviteSaving(false);
+        return;
+      }
       const res = await fetch('/api/settings/invites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -210,7 +221,7 @@ export default function SettingsPage() {
       setInviteMsg(
         json.mockedEmail
           ? `Invite created for ${json.invite.email} (email mocked — SMTP not configured on this server).`
-          : `Invitation sent to ${json.invite.email}.`
+          : `Invitation sent to ${json.invite.email}. They only set a password — module access is already decided by you.`
       );
       await loadInvites();
     } catch {
@@ -351,12 +362,13 @@ export default function SettingsPage() {
                     Invite users
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Enter an email, choose role and modules, then send an invite
-                    link. They set their own password and get only the modules
-                    you select.
+                    You decide which XXII modules they can use (Gross Profit,
+                    Retention, Detention — one, two, or all). They only open the
+                    email link and set a password; they do not choose access.
+                    Admins always get every module.
                     {isSuper
-                      ? ' As Super Admin you can also invite other Super Admins.'
-                      : ' Only Super Admins can invite another Super Admin.'}
+                      ? ' Super Admins can also invite other Super Admins.'
+                      : ''}
                   </p>
                 </div>
 
@@ -377,7 +389,7 @@ export default function SettingsPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-card-foreground mb-1">
-                      Role
+                      Access type
                     </label>
                     <select
                       value={inviteRole}
@@ -386,46 +398,55 @@ export default function SettingsPage() {
                       }
                       className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     >
-                      <option value="admin">Admin</option>
-                      <option value="retention">Retention</option>
+                      <option value="admin">
+                        Admin — all modules (GP, Retention, Detention)
+                      </option>
+                      <option value="retention">
+                        Limited — choose modules below
+                      </option>
                       {isSuper ? (
-                        <option value="super_admin">Super Admin</option>
+                        <option value="super_admin">
+                          Super Admin — all modules + manage admins
+                        </option>
                       ) : null}
                     </select>
                   </div>
 
-                  <div>
-                    <p className="block text-sm font-medium text-card-foreground mb-2">
-                      Module access
-                    </p>
-                    <div className="space-y-2">
-                      {MODULE_OPTIONS.map((opt) => {
-                        const checked =
-                          opt.id === 'dashboard' ||
-                          inviteModules.includes(opt.id);
-                        return (
-                          <label
-                            key={opt.id}
-                            className="flex items-center gap-2 text-sm text-card-foreground"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={opt.locked}
-                              onChange={() => toggleModule(opt.id)}
-                              className="rounded border-input"
-                            />
-                            {opt.label}
-                            {opt.locked ? (
-                              <span className="text-xs text-muted-foreground">
-                                (always on)
-                              </span>
-                            ) : null}
-                          </label>
-                        );
-                      })}
+                  {invitePicksModules ? (
+                    <div>
+                      <p className="block text-sm font-medium text-card-foreground mb-2">
+                        Modules this user can access
+                      </p>
+                      <div className="space-y-2">
+                        {MODULE_OPTIONS.map((opt) => {
+                          const checked = inviteModules.includes(opt.id);
+                          return (
+                            <label
+                              key={opt.id}
+                              className="flex items-center gap-2 text-sm text-card-foreground"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleModule(opt.id)}
+                                className="rounded border-input"
+                              />
+                              {opt.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Pick 1, 2, or all three. Dashboard landing is included
+                        automatically.
+                      </p>
                     </div>
-                  </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground rounded-md bg-muted px-3 py-2">
+                      This account will see all modules: Gross Profit, Retention,
+                      and Detention.
+                    </p>
+                  )}
 
                   {inviteErr ? (
                     <p className="text-sm text-destructive">{inviteErr}</p>

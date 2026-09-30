@@ -1,12 +1,9 @@
 /**
- * Seed Super Admin accounts (David + developer temporary).
+ * Seed the David Super Admin account.
  *
  *   pnpm exec node scripts/seed-super-admins.mjs
  *
- * Optional overrides:
- *   SEED_SUPER_DAVID_PASSWORD=...
- *   SEED_SUPER_DEV_PASSWORD=...
- *   SEED_SUPER_DEV_USERNAME=shahmeerahmed219@gmail.com
+ * Optional: SEED_SUPER_DAVID_PASSWORD=...
  */
 import crypto from 'node:crypto';
 import mysql from 'mysql2/promise';
@@ -22,7 +19,6 @@ if (!url) {
 }
 
 function genPassword(bytes = 12) {
-  // Readable but strong: base64url without padding
   return crypto.randomBytes(bytes).toString('base64url').slice(0, 16);
 }
 
@@ -33,25 +29,11 @@ const ALL_MODULES_JSON = JSON.stringify([
   'detention',
 ]);
 
-const accounts = [
-  {
-    username: 'david@goxxii.com',
-    displayName: 'David',
-    password:
-      process.env.SEED_SUPER_DAVID_PASSWORD?.trim() || genPassword(),
-  },
-  {
-    username:
-      process.env.SEED_SUPER_DEV_USERNAME?.trim() ||
-      'shahmeerahmed219@gmail.com',
-    displayName: 'Dev Super Admin',
-    password: process.env.SEED_SUPER_DEV_PASSWORD?.trim() || genPassword(),
-  },
-];
+const davidPassword =
+  process.env.SEED_SUPER_DAVID_PASSWORD?.trim() || genPassword();
 
 const conn = await mysql.createConnection(url);
 try {
-  // Ensure columns exist (migration 038); ignore if already present.
   try {
     await conn.query(
       `ALTER TABLE users
@@ -61,33 +43,23 @@ try {
   } catch (e) {
     const msg = String(e?.message || e);
     if (!/Duplicate column/i.test(msg)) {
-      // role column might be missing display_name position — try softer
-      if (!/check that column\/key exists|Unknown column 'role'/i.test(msg)) {
-        console.warn('[seed-super-admins] alter skipped:', msg);
-      }
+      console.warn('[seed-super-admins] alter skipped:', msg);
     }
   }
 
-  console.log('=== Super Admin credentials (save these) ===');
-  for (const acct of accounts) {
-    const hash = await bcrypt.hash(acct.password, 10);
-    await conn.query(
-      `INSERT INTO users (username, password_hash, role, display_name, modules_json)
-       VALUES (?, ?, 'super_admin', ?, ?)
-       ON DUPLICATE KEY UPDATE
-         password_hash = VALUES(password_hash),
-         role = 'super_admin',
-         display_name = VALUES(display_name),
-         modules_json = VALUES(modules_json)`,
-      [acct.username, hash, acct.displayName, ALL_MODULES_JSON]
-    );
-    console.log(`username: ${acct.username}`);
-    console.log(`password: ${acct.password}`);
-    console.log(`role:     super_admin`);
-    console.log('---');
-  }
+  const hash = await bcrypt.hash(davidPassword, 10);
+  await conn.query(
+    `INSERT INTO users (username, password_hash, role, display_name, modules_json)
+     VALUES (?, ?, 'super_admin', 'David', ?)
+     ON DUPLICATE KEY UPDATE
+       password_hash = VALUES(password_hash),
+       role = 'super_admin',
+       display_name = VALUES(display_name),
+       modules_json = VALUES(modules_json)`,
+    ['david@goxxii.com', hash, ALL_MODULES_JSON]
+  );
 
-  // Promote legacy shared admin login to Super Admin without changing its password.
+  // Keep shared admin login as Super Admin (password unchanged).
   await conn.query(
     `UPDATE users
      SET role = 'super_admin',
@@ -96,7 +68,18 @@ try {
      WHERE username = 'admin'`,
     [ALL_MODULES_JSON]
   );
-  console.log('Also promoted existing "admin" user to super_admin (password unchanged).');
+
+  // Remove temporary developer Super Admin if present.
+  await conn.query(
+    `DELETE FROM users WHERE username = 'shahmeerahmed219@gmail.com'`
+  );
+
+  console.log('=== Super Admin credentials ===');
+  console.log('username: david@goxxii.com');
+  console.log(`password: ${davidPassword}`);
+  console.log('role:     super_admin');
+  console.log('Also ensured "admin" is super_admin (password unchanged).');
+  console.log('Removed shahmeerahmed219@gmail.com if it existed.');
 } finally {
   await conn.end();
 }

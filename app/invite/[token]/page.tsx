@@ -100,7 +100,8 @@ export default function AcceptInvitePage() {
           Join XXII Admin
         </h1>
         <p className="text-center text-sm text-muted-foreground mb-6">
-          Set your password to finish joining.
+          Set your password to join. Your module access was already assigned by
+          your admin.
         </p>
 
         {loading ? (
@@ -166,7 +167,7 @@ export default function AcceptInvitePage() {
             ) : null}
 
             <Button type="submit" className="w-full" disabled={saving}>
-              {saving ? 'Creating account…' : 'Create account & sign in'}
+              {saving ? 'Saving…' : 'Set password & sign in'}
             </Button>
           </form>
         ) : null}
