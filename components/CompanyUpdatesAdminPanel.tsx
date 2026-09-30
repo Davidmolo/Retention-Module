@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { formatUpdateDate } from '@/lib/companyUpdates';
+import { formatUpdateDate } from '@/lib/companyUpdatesShared';
 
 type UpdateRow = {
   id: number;

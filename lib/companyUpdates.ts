@@ -1,16 +1,9 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { getPool } from '@/lib/db';
+import type { CompanyUpdate } from '@/lib/companyUpdatesShared';
 
-export type CompanyUpdate = {
-  id: number;
-  title: string;
-  summary: string;
-  tag: string | null;
-  /** ISO date YYYY-MM-DD */
-  publishedOn: string;
-  createdAt: string | null;
-  updatedAt: string | null;
-};
+export type { CompanyUpdate } from '@/lib/companyUpdatesShared';
+export { formatUpdateDate } from '@/lib/companyUpdatesShared';
 
 interface UpdateRow extends RowDataPacket {
   id: number;
@@ -74,16 +67,6 @@ function mapRow(row: UpdateRow): CompanyUpdate {
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
-}
-
-export function formatUpdateDate(isoDate: string): string {
-  const d = new Date(`${isoDate}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return isoDate;
-  return d.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
 }
 
 async function seedIfEmpty(): Promise<void> {

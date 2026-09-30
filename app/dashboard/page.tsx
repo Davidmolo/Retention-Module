@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Navigation } from '@/components/Navigation';
-import { formatUpdateDate } from '@/lib/companyUpdates';
+import { formatUpdateDate } from '@/lib/companyUpdatesShared';
 
 type UpdateRow = {
   id: number;
