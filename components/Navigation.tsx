@@ -67,7 +67,7 @@ function linkClass(active: boolean) {
 
 function roleBadge(role: UserRole): string {
   if (isSuperAdminRole(role)) return 'Super Admin';
-  if (role === 'retention') return 'Retention staff';
+  if (role === 'staff') return 'Staff';
   return 'Admin';
 }
 

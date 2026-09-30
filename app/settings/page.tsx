@@ -37,7 +37,7 @@ const MODULE_OPTIONS: { id: AppModule; label: string }[] = [
 
 function roleLabel(role: UserRole | string): string {
   if (role === 'super_admin') return 'Super Admin';
-  if (role === 'retention') return 'Retention';
+  if (role === 'staff' || role === 'retention') return 'Staff';
   return 'Admin';
 }
 
@@ -401,8 +401,8 @@ export default function SettingsPage() {
                       <option value="admin">
                         Admin — all modules (GP, Retention, Detention)
                       </option>
-                      <option value="retention">
-                        Limited — choose modules below
+                      <option value="staff">
+                        Staff — choose modules below
                       </option>
                       {isSuper ? (
                         <option value="super_admin">

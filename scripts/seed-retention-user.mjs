@@ -1,9 +1,9 @@
 /**
- * Create / update a Retention-only staff login.
+ * Create / update a staff login with Retention-only modules by default.
  *
  *   SEED_RETENTION_USERNAME=james SEED_RETENTION_PASSWORD='...' pnpm retention:seed-user
  *
- * Role = retention → can open Retention only (not Dashboard / Gross Profit).
+ * Role = staff → modules decided via modules_json (default: Retention only).
  */
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
@@ -19,6 +19,7 @@ if (!url) {
 
 const username = process.env.SEED_RETENTION_USERNAME || 'james';
 const password = process.env.SEED_RETENTION_PASSWORD || 'changeme';
+const modulesJson = JSON.stringify(['dashboard', 'retention']);
 
 if (!password || password === 'changeme') {
   console.warn(
@@ -30,14 +31,15 @@ const hash = await bcrypt.hash(password, 10);
 const conn = await mysql.createConnection(url);
 try {
   await conn.query(
-    `INSERT INTO users (username, password_hash, role)
-     VALUES (?, ?, 'retention')
+    `INSERT INTO users (username, password_hash, role, modules_json)
+     VALUES (?, ?, 'staff', ?)
      ON DUPLICATE KEY UPDATE
        password_hash = VALUES(password_hash),
-       role = 'retention'`,
-    [username, hash]
+       role = 'staff',
+       modules_json = VALUES(modules_json)`,
+    [username, hash, modulesJson]
   );
-  console.log(`Seeded retention-only user "${username}" (role=retention).`);
+  console.log(`Seeded staff user "${username}" (role=staff).`);
 } finally {
   await conn.end();
 }

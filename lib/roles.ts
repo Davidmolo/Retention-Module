@@ -1,4 +1,4 @@
-export type UserRole = "super_admin" | "admin" | "retention";
+export type UserRole = "super_admin" | "admin" | "staff";
 
 export type AppModule =
   | "dashboard"
@@ -20,8 +20,9 @@ export function normalizeUserRole(raw: unknown): UserRole {
   if (v === "super_admin" || v === "superadmin" || v === "super-admin") {
     return "super_admin";
   }
-  if (v === "retention" || v === "staff" || v === "retention_only") {
-    return "retention";
+  // Legacy DB value "retention" maps to staff.
+  if (v === "staff" || v === "retention" || v === "retention_only") {
+    return "staff";
   }
   return "admin";
 }
@@ -40,7 +41,7 @@ export function isAdminRole(role: UserRole | string | null | undefined): boolean
 
 /** Default modules when modules_json is empty. */
 export function defaultModulesForRole(role: UserRole): AppModule[] {
-  if (role === "retention") return ["dashboard", "retention"];
+  if (role === "staff") return ["dashboard", "retention"];
   // Admin + Super Admin always see every XXII flow.
   return ["dashboard", "gross-profit", "retention", "detention"];
 }

@@ -144,12 +144,12 @@ export async function createAndSendInvite(opts: {
       error: 'Only Super Admins can invite another Super Admin',
     };
   }
-  // Regular admins invite as admin or retention only.
+  // Regular admins invite as admin or staff only.
   if (opts.inviterRole === 'admin' && role === 'super_admin') {
     role = 'admin';
   }
 
-  // Admins / Super Admins always get every module. Limited users get
+  // Admins / Super Admins always get every module. Staff get
   // exactly what the inviter selected (1–3 of GP / Retention / Detention).
   const modules = roleHasFullModules(role)
     ? defaultModulesForRole(role)
@@ -219,8 +219,8 @@ export async function createAndSendInvite(opts: {
   const roleLabel =
     role === 'super_admin'
       ? 'Super Admin'
-      : role === 'retention'
-        ? 'Retention'
+      : role === 'staff'
+        ? 'Staff'
         : 'Admin';
 
   const text = [

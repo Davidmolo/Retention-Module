@@ -14,7 +14,7 @@ type InviteInfo = {
 
 function roleLabel(role: string): string {
   if (role === 'super_admin') return 'Super Admin';
-  if (role === 'retention') return 'Retention';
+  if (role === 'staff' || role === 'retention') return 'Staff';
   return 'Admin';
 }
 
