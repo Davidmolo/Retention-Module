@@ -35,6 +35,7 @@
     "retention:reminders": "node --import tsx scripts/retention-reminders.mjs",
     "retention:upsert-test-driver": "node --import tsx scripts/retention-upsert-test-driver.mjs",
     "retention:remove-test-driver": "node --import tsx scripts/retention-remove-test-driver.mjs",
+    "detention:import-csv": "node --import tsx scripts/import-detentions-csv.mjs",
     "cron:daily-tms": "bash scripts/cron/daily-tms.sh",
     "cron:weekly-gp": "bash scripts/cron/weekly-gp.sh",
     "cron:daily-retention": "bash scripts/cron/daily-retention.sh",

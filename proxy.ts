@@ -27,6 +27,7 @@ export async function proxy(request: NextRequest) {
     path.startsWith('/gross-profit') ||
     path.startsWith('/retention') ||
     path.startsWith('/detention') ||
+    path.startsWith('/api/detention') ||
     path.startsWith('/api/retention') ||
     path.startsWith('/api/account') ||
     path.startsWith('/api/settings') ||

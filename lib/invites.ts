@@ -47,7 +47,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   dashboard: 'Dashboard',
   'gross-profit': 'Gross Profit',
   retention: 'Retention',
-  detention: 'Detention (coming soon)',
+  detention: 'Detention',
 };
 
 export function appBaseUrl(): string {

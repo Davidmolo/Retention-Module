@@ -38,3 +38,5 @@ scripts/_tmp*
 *.tsbuildinfo
 next-env.d.ts
 retention-deploy.tgz
+
+data/detention-sample.csv

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 
 export default function LoginPage() {
@@ -9,7 +8,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +32,9 @@ export default function LoginPage() {
         typeof data?.user?.homePath === 'string' && data.user.homePath
           ? data.user.homePath
           : '/dashboard';
-      router.push(home);
+      // Full navigation avoids App Router soft-nav hang when Windows path
+      // casing has duplicated Next modules ("layout router to be mounted").
+      window.location.assign(home);
     } catch (err) {
       setError('An error occurred. Please try again.');
       setLoading(false);
