@@ -18,6 +18,10 @@ import type {
   DetentionStatus,
 } from "@/lib/detention/types";
 import { DETENTION_STATUSES } from "@/lib/detention/types";
+import {
+  gmailSearchUrl,
+  normalizeGmailThreadUrl,
+} from "@/lib/detention/gmailLinks";
 
 function money(n: number | null | undefined) {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -565,27 +569,54 @@ function DetentionDetailDrawer({
                 <Field label="Delivery">{d.delLocation || "—"}</Field>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {d.loadLink ? (
-                  <a
-                    href={d.loadLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
-                  >
-                    Open load <ExternalLink size={14} />
-                  </a>
-                ) : null}
-                {d.threadUrl ? (
-                  <a
-                    href={d.threadUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
-                  >
-                    Email thread <ExternalLink size={14} />
-                  </a>
-                ) : null}
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
+                  {d.loadLink ? (
+                    <a
+                      href={d.loadLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
+                    >
+                      Open load <ExternalLink size={14} />
+                    </a>
+                  ) : null}
+                  {normalizeGmailThreadUrl(d.threadUrl) ? (
+                    <a
+                      href={normalizeGmailThreadUrl(d.threadUrl)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Opens only if you are signed into the Gmail that received this detention email"
+                      className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
+                    >
+                      Direct thread <ExternalLink size={14} />
+                    </a>
+                  ) : null}
+                  {gmailSearchUrl({
+                    loadNumber: d.loadNumber,
+                    shipmentNumber: d.shipmentNumber,
+                  }) ? (
+                    <a
+                      href={gmailSearchUrl({
+                        loadNumber: d.loadNumber,
+                        shipmentNumber: d.shipmentNumber,
+                      })!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
+                    >
+                      Search Gmail <ExternalLink size={14} />
+                    </a>
+                  ) : null}
+                </div>
+                {(d.threadUrl || d.loadNumber) && (
+                  <p className="text-xs text-slate-500">
+                    Direct thread only works in the mailbox that got the OpenRoad
+                    email (usually Art’s / shared detention inbox). Use{" "}
+                    <span className="font-medium">Search Gmail</span> if you open
+                    a different Google account.
+                  </p>
+                )}
               </div>
 
               <section>
