@@ -154,6 +154,7 @@ const SELECT_COLS = `
 export type ListDetentionsOpts = {
   status?: string;
   search?: string;
+  dispatcher?: string;
   awaitingUs?: boolean;
   followUpDue?: boolean;
 };
@@ -168,6 +169,10 @@ export async function listDetentions(
   if (opts.status && opts.status !== "all") {
     conds.push("d.status = ?");
     params.push(opts.status);
+  }
+  if (opts.dispatcher?.trim()) {
+    conds.push("d.dispatcher = ?");
+    params.push(opts.dispatcher.trim());
   }
   if (opts.awaitingUs) {
     conds.push("d.awaiting_us = 1");
@@ -214,7 +219,8 @@ export async function getDetentionKpis(): Promise<DetentionKpis> {
        SUM(CASE WHEN follow_up_date IS NOT NULL AND follow_up_date <= CURDATE()
                  AND status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS follow_up_count,
        SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count,
-       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN COALESCE(amount,0) ELSE 0 END) AS open_amount
+       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN COALESCE(amount,0) ELSE 0 END) AS open_amount,
+       SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END) AS paid_amount
      FROM detentions`
   );
   const r = rows[0] || {};
@@ -225,7 +231,19 @@ export async function getDetentionKpis(): Promise<DetentionKpis> {
     followUpDue: Number(r.follow_up_count || 0),
     paid: Number(r.paid_count || 0),
     openAmount: Number(r.open_amount || 0),
+    paidAmount: Number(r.paid_amount || 0),
   };
+}
+
+export async function listDetentionDispatchers(): Promise<string[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT DISTINCT dispatcher
+       FROM detentions
+      WHERE dispatcher IS NOT NULL AND TRIM(dispatcher) <> ''
+      ORDER BY dispatcher ASC`
+  );
+  return rows.map((r) => String(r.dispatcher));
 }
 
 export async function getDetention(id: string): Promise<Detention | null> {

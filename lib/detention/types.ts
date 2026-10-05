@@ -80,6 +80,8 @@ export type DetentionKpis = {
   followUpDue: number;
   paid: number;
   openAmount: number;
+  /** Sum collected on Paid claims (settled amount when set, else claim amount). */
+  paidAmount: number;
 };
 
 export const DEFAULT_RATE_PER_HOUR = 25;

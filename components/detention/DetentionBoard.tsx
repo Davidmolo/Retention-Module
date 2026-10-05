@@ -99,17 +99,47 @@ function KpiCard({
   );
 }
 
+type KpiFilter = "open" | "awaiting" | "followUp" | "paid" | null;
+
 export function DetentionBoard() {
   const [items, setItems] = useState<DetentionListItem[]>([]);
   const [kpis, setKpis] = useState<DetentionKpis | null>(null);
   const [statuses, setStatuses] = useState<string[]>([...DETENTION_STATUSES]);
+  const [dispatchers, setDispatchers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const [dispatcher, setDispatcher] = useState("all");
   const [awaitingOnly, setAwaitingOnly] = useState(false);
   const [followUpOnly, setFollowUpOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const applyKpiFilter = useCallback((next: KpiFilter) => {
+    // KPI sections are exclusive — switching always clears the others.
+    if (next === "open" || next === null) {
+      setStatus("all");
+      setAwaitingOnly(false);
+      setFollowUpOnly(false);
+      return;
+    }
+    if (next === "awaiting") {
+      setStatus("all");
+      setAwaitingOnly(true);
+      setFollowUpOnly(false);
+      return;
+    }
+    if (next === "followUp") {
+      setStatus("all");
+      setAwaitingOnly(false);
+      setFollowUpOnly(true);
+      return;
+    }
+    // paid
+    setStatus("Paid");
+    setAwaitingOnly(false);
+    setFollowUpOnly(false);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,6 +147,7 @@ export function DetentionBoard() {
     try {
       const sp = new URLSearchParams();
       if (status !== "all") sp.set("status", status);
+      if (dispatcher !== "all") sp.set("dispatcher", dispatcher);
       if (search.trim()) sp.set("search", search.trim());
       if (awaitingOnly) sp.set("awaitingUs", "1");
       if (followUpOnly) sp.set("followUpDue", "1");
@@ -130,12 +161,15 @@ export function DetentionBoard() {
       setItems(json.data.items || []);
       setKpis(json.data.kpis || null);
       if (Array.isArray(json.data.statuses)) setStatuses(json.data.statuses);
+      if (Array.isArray(json.data.dispatchers)) {
+        setDispatchers(json.data.dispatchers);
+      }
     } catch (e) {
       setError((e as Error).message || "Failed to load");
     } finally {
       setLoading(false);
     }
-  }, [status, search, awaitingOnly, followUpOnly]);
+  }, [status, dispatcher, search, awaitingOnly, followUpOnly]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -168,45 +202,52 @@ export function DetentionBoard() {
             title="Open"
             value={String(kpis.open)}
             hint={`${kpis.total} total`}
-            active={status === "all" && !awaitingOnly && !followUpOnly}
-            onClick={() => {
-              setStatus("all");
-              setAwaitingOnly(false);
-              setFollowUpOnly(false);
-            }}
+            active={
+              status === "all" && !awaitingOnly && !followUpOnly
+            }
+            onClick={() => applyKpiFilter("open")}
           />
           <KpiCard
             title="Awaiting us"
             value={String(kpis.awaitingUs)}
             hint="Customer replied / we owe action"
             tone="warn"
-            active={awaitingOnly}
-            onClick={() => {
-              setAwaitingOnly((v) => !v);
-              setFollowUpOnly(false);
-            }}
+            active={awaitingOnly && !followUpOnly && status === "all"}
+            onClick={() =>
+              applyKpiFilter(
+                awaitingOnly && !followUpOnly && status === "all"
+                  ? "open"
+                  : "awaiting"
+              )
+            }
           />
           <KpiCard
             title="Follow-up due"
             value={String(kpis.followUpDue)}
             hint="Due today or earlier"
             tone="risk"
-            active={followUpOnly}
-            onClick={() => {
-              setFollowUpOnly((v) => !v);
-              setAwaitingOnly(false);
-            }}
+            active={followUpOnly && !awaitingOnly && status === "all"}
+            onClick={() =>
+              applyKpiFilter(
+                followUpOnly && !awaitingOnly && status === "all"
+                  ? "open"
+                  : "followUp"
+              )
+            }
           />
           <KpiCard
             title="Paid"
             value={String(kpis.paid)}
+            hint={`Collected ${money(kpis.paidAmount ?? 0)}`}
             tone="good"
-            active={status === "Paid"}
-            onClick={() => {
-              setStatus((s) => (s === "Paid" ? "all" : "Paid"));
-              setAwaitingOnly(false);
-              setFollowUpOnly(false);
-            }}
+            active={status === "Paid" && !awaitingOnly && !followUpOnly}
+            onClick={() =>
+              applyKpiFilter(
+                status === "Paid" && !awaitingOnly && !followUpOnly
+                  ? "open"
+                  : "paid"
+              )
+            }
           />
           <KpiCard
             title="Open amount"
@@ -230,17 +271,33 @@ export function DetentionBoard() {
               className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[var(--xxii-brand,#1e4d9c)]"
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Filter size={16} className="text-slate-400" />
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setAwaitingOnly(false);
+                setFollowUpOnly(false);
+              }}
               className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
             >
               <option value="all">All statuses</option>
               {statuses.map((s) => (
                 <option key={s} value={s}>
                   {s}
+                </option>
+              ))}
+            </select>
+            <select
+              value={dispatcher}
+              onChange={(e) => setDispatcher(e.target.value)}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            >
+              <option value="all">All dispatchers</option>
+              {dispatchers.map((d) => (
+                <option key={d} value={d}>
+                  {d}
                 </option>
               ))}
             </select>
