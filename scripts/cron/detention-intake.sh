@@ -2,6 +2,8 @@
 # Poll ar@ for OpenRoad Detention completed emails → XXII Detention board.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="${APP_DIR:-/var/www/retention-module}"
+mkdir -p "$APP_DIR/logs"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
