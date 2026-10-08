@@ -1,6 +1,11 @@
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import {
+  canonicalDispatcherName,
+  dispatcherMatchKeys,
+  uniqueCanonicalDispatchers,
+} from "./dispatcherNames";
+import {
   DETENTION_STATUSES,
   type Detention,
   type DetentionHistoryEvent,
@@ -16,6 +21,7 @@ interface DetentionRow extends RowDataPacket {
   customer: string | null;
   customer_email: string | null;
   dispatcher: string | null;
+  dispatcher_email: string | null;
   load_number: string | null;
   shipment_number: string | null;
   driver_name: string | null;
@@ -46,6 +52,9 @@ interface DetentionRow extends RowDataPacket {
   email_date: Date | string | null;
   last_reply_from: string | null;
   last_reply_at: Date | string | null;
+  dispatcher_replied_at: Date | string | null;
+  dispatcher_compliance: string | null;
+  dispatcher_compliance_checked_at: Date | string | null;
   history_json: string | DetentionHistoryEvent[] | null;
   source: string;
   created_at: Date | string;
@@ -102,7 +111,10 @@ function mapDetention(row: DetentionRow): Detention {
     id: row.id,
     customer: row.customer,
     customerEmail: row.customer_email,
-    dispatcher: row.dispatcher,
+    dispatcher: row.dispatcher
+      ? canonicalDispatcherName(row.dispatcher)
+      : null,
+    dispatcherEmail: row.dispatcher_email ?? null,
     loadNumber: row.load_number,
     shipmentNumber: row.shipment_number,
     driverName: row.driver_name,
@@ -133,6 +145,9 @@ function mapDetention(row: DetentionRow): Detention {
     emailDate: toIso(row.email_date),
     lastReplyFrom: row.last_reply_from,
     lastReplyAt: toIso(row.last_reply_at),
+    dispatcherRepliedAt: toIso(row.dispatcher_replied_at),
+    dispatcherCompliance: row.dispatcher_compliance ?? null,
+    dispatcherComplianceCheckedAt: toIso(row.dispatcher_compliance_checked_at),
     history: parseHistory(row.history_json),
     source: row.source || "import",
     createdAt: toIso(row.created_at) || new Date().toISOString(),
@@ -141,15 +156,21 @@ function mapDetention(row: DetentionRow): Detention {
 }
 
 const SELECT_COLS = `
-  id, customer, customer_email, dispatcher, load_number, shipment_number,
+  id, customer, customer_email, dispatcher, dispatcher_email, load_number, shipment_number,
   driver_name, driver_number, truck_number, stop_type,
   pu_location, pu_appt, del_location, del_appt,
   arrival_time, detention_start, driver_departure, detention_mins,
   detention_time_label, rate_per_hour, amount, billable_amount, settled_amount,
   status, awaiting_us, follow_up_date, load_link, thread_url,
   message_id, thread_id, calendar_event_id, email_date,
-  last_reply_from, last_reply_at, history_json, source, created_at, updated_at
+  last_reply_from, last_reply_at, dispatcher_replied_at, dispatcher_compliance,
+  dispatcher_compliance_checked_at, history_json, source, created_at, updated_at
 `;
+
+export type DetentionSort =
+  | "default"
+  | "emailDateDesc"
+  | "emailDateAsc";
 
 export type ListDetentionsOpts = {
   status?: string;
@@ -157,12 +178,34 @@ export type ListDetentionsOpts = {
   dispatcher?: string;
   awaitingUs?: boolean;
   followUpDue?: boolean;
+  /** YYYY-MM-DD — match email received date (falls back to created_at). */
+  emailDate?: string;
+  sort?: DetentionSort;
+  /** 1-based page number */
+  page?: number;
+  /** Rows per page (default 25, max 100) */
+  pageSize?: number;
 };
 
-export async function listDetentions(
-  opts: ListDetentionsOpts = {}
-): Promise<DetentionListItem[]> {
-  const pool = getPool();
+export type DetentionListResult = {
+  items: DetentionListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+function isYmd(value: string | undefined): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+/** Calendar date of the detention email (or created_at when email_date is empty). */
+const EMAIL_DAY_EXPR = "DATE(COALESCE(d.email_date, d.created_at))";
+
+function buildDetentionListWhere(opts: ListDetentionsOpts): {
+  conds: string[];
+  params: unknown[];
+} {
   const conds: string[] = ["1=1"];
   const params: unknown[] = [];
 
@@ -171,8 +214,16 @@ export async function listDetentions(
     params.push(opts.status);
   }
   if (opts.dispatcher?.trim()) {
-    conds.push("d.dispatcher = ?");
-    params.push(opts.dispatcher.trim());
+    const keys = dispatcherMatchKeys(opts.dispatcher);
+    if (keys.length === 1) {
+      conds.push("LOWER(TRIM(d.dispatcher)) = ?");
+      params.push(keys[0]);
+    } else if (keys.length > 1) {
+      conds.push(
+        `LOWER(TRIM(d.dispatcher)) IN (${keys.map(() => "?").join(",")})`
+      );
+      params.push(...keys);
+    }
   }
   if (opts.awaitingUs) {
     conds.push("d.awaiting_us = 1");
@@ -180,6 +231,10 @@ export async function listDetentions(
   if (opts.followUpDue) {
     conds.push("d.follow_up_date IS NOT NULL AND d.follow_up_date <= CURDATE()");
     conds.push("d.status NOT IN ('Paid','Denied')");
+  }
+  if (isYmd(opts.emailDate)) {
+    conds.push(`${EMAIL_DAY_EXPR} = ?`);
+    params.push(opts.emailDate);
   }
   if (opts.search?.trim()) {
     const q = `%${opts.search.trim()}%`;
@@ -189,24 +244,58 @@ export async function listDetentions(
     );
     params.push(q, q, q, q, q, q);
   }
+  return { conds, params };
+}
+
+export async function listDetentions(
+  opts: ListDetentionsOpts = {}
+): Promise<DetentionListResult> {
+  const pool = getPool();
+  const { conds, params } = buildDetentionListWhere(opts);
+  const whereSql = conds.join(" AND ");
+
+  // Default + filters: newest email first (open claims still above Paid/Denied)
+  let orderBy = `
+        CASE WHEN d.status IN ('Paid','Denied') THEN 1 ELSE 0 END,
+        COALESCE(d.email_date, d.created_at) DESC,
+        d.id DESC`;
+  if (opts.sort === "emailDateAsc") {
+    orderBy = `COALESCE(d.email_date, d.created_at) ASC, d.id ASC`;
+  } else if (opts.sort === "emailDateDesc") {
+    orderBy = `COALESCE(d.email_date, d.created_at) DESC, d.id DESC`;
+  }
+
+  const pageSize = Math.min(100, Math.max(1, Number(opts.pageSize) || 25));
+  const page = Math.max(1, Number(opts.page) || 1);
+  const offset = (page - 1) * pageSize;
+
+  const [countRows] = await pool.query<RowDataPacket[]>(
+    `SELECT COUNT(*) AS total FROM detentions d WHERE ${whereSql}`,
+    params
+  );
+  const total = Number(countRows[0]?.total || 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const [rows] = await pool.query<DetentionRow[]>(
     `SELECT d.*,
             (SELECT COUNT(*) FROM detention_notes n WHERE n.detention_id = d.id) AS note_count
        FROM detentions d
-      WHERE ${conds.join(" AND ")}
-      ORDER BY
-        CASE WHEN d.status IN ('Paid','Denied') THEN 1 ELSE 0 END,
-        COALESCE(d.follow_up_date, '9999-12-31') ASC,
-        d.updated_at DESC`
-    ,
-    params
+      WHERE ${whereSql}
+      ORDER BY ${orderBy}
+      LIMIT ? OFFSET ?`,
+    [...params, pageSize, offset]
   );
 
-  return rows.map((r) => ({
-    ...mapDetention(r),
-    noteCount: Number(r.note_count || 0),
-  }));
+  return {
+    items: rows.map((r) => ({
+      ...mapDetention(r),
+      noteCount: Number(r.note_count || 0),
+    })),
+    total,
+    page,
+    pageSize,
+    totalPages,
+  };
 }
 
 export async function getDetentionKpis(): Promise<DetentionKpis> {
@@ -243,7 +332,7 @@ export async function listDetentionDispatchers(): Promise<string[]> {
       WHERE dispatcher IS NOT NULL AND TRIM(dispatcher) <> ''
       ORDER BY dispatcher ASC`
   );
-  return rows.map((r) => String(r.dispatcher));
+  return uniqueCanonicalDispatchers(rows.map((r) => String(r.dispatcher)));
 }
 
 export async function getDetention(id: string): Promise<Detention | null> {
@@ -439,6 +528,7 @@ export type UpsertDetentionInput = {
   customer?: string | null;
   customerEmail?: string | null;
   dispatcher?: string | null;
+  dispatcherEmail?: string | null;
   loadNumber?: string | null;
   shipmentNumber?: string | null;
   driverName?: string | null;
@@ -483,9 +573,13 @@ export async function upsertDetention(
     input.status && isDetentionStatus(input.status) ? input.status : "New";
   const createdAt = input.createdAt || new Date().toISOString().slice(0, 23).replace("T", " ");
   const updatedAt = input.updatedAt || createdAt;
+  const dispatcher =
+    input.dispatcher?.trim()
+      ? canonicalDispatcherName(input.dispatcher)
+      : null;
   await pool.query(
     `INSERT INTO detentions (
-      id, customer, customer_email, dispatcher, load_number, shipment_number,
+      id, customer, customer_email, dispatcher, dispatcher_email, load_number, shipment_number,
       driver_name, driver_number, truck_number, stop_type,
       pu_location, pu_appt, del_location, del_appt,
       arrival_time, detention_start, driver_departure, detention_mins,
@@ -493,11 +587,12 @@ export async function upsertDetention(
       status, awaiting_us, follow_up_date, load_link, thread_url,
       message_id, thread_id, calendar_event_id, email_date,
       last_reply_from, last_reply_at, history_json, source, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON DUPLICATE KEY UPDATE
       customer = VALUES(customer),
       customer_email = VALUES(customer_email),
       dispatcher = VALUES(dispatcher),
+      dispatcher_email = VALUES(dispatcher_email),
       load_number = VALUES(load_number),
       shipment_number = VALUES(shipment_number),
       driver_name = VALUES(driver_name),
@@ -535,7 +630,8 @@ export async function upsertDetention(
       input.id,
       input.customer ?? null,
       input.customerEmail ?? null,
-      input.dispatcher ?? null,
+      dispatcher,
+      input.dispatcherEmail ?? null,
       input.loadNumber ?? null,
       input.shipmentNumber ?? null,
       input.driverName ?? null,

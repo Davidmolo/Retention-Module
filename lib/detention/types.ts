@@ -20,11 +20,14 @@ export type DetentionHistoryEvent = {
   to?: string;
 };
 
+export type DispatcherCompliance = "ok" | "missed" | "pending" | "n/a";
+
 export type Detention = {
   id: string;
   customer: string | null;
   customerEmail: string | null;
   dispatcher: string | null;
+  dispatcherEmail: string | null;
   loadNumber: string | null;
   shipmentNumber: string | null;
   driverName: string | null;
@@ -55,10 +58,63 @@ export type Detention = {
   emailDate: string | null;
   lastReplyFrom: string | null;
   lastReplyAt: string | null;
+  dispatcherRepliedAt: string | null;
+  dispatcherCompliance: DispatcherCompliance | string | null;
+  dispatcherComplianceCheckedAt: string | null;
   history: DetentionHistoryEvent[];
   source: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type DetentionPeriodSummary = {
+  key: string;
+  label: string;
+  submitted: number;
+  submittedAmount: number;
+  paid: number;
+  collectedAmount: number;
+  open: number;
+  openAmount: number;
+};
+
+/** Submitted vs paid track record per dispatcher (David’s reporting ask). */
+export type DetentionDispatcherSummary = {
+  dispatcher: string;
+  submitted: number;
+  submittedAmount: number;
+  paid: number;
+  collectedAmount: number;
+  open: number;
+  openAmount: number;
+  collectionRate: number;
+};
+
+export type DetentionComplianceItem = {
+  id: string;
+  customer: string | null;
+  loadNumber: string | null;
+  shipmentNumber: string | null;
+  driverName: string | null;
+  amount: number | null;
+  status: string;
+  emailDate: string | null;
+  threadUrl: string | null;
+  dispatcher: string | null;
+  dispatcherEmail: string | null;
+  dispatcherRepliedAt: string | null;
+  dispatcherCompliance: DispatcherCompliance | string | null;
+};
+
+export type DetentionComplianceGroup = {
+  dispatcher: string;
+  dispatcherEmail: string | null;
+  total: number;
+  ok: number;
+  missed: number;
+  pending: number;
+  na: number;
+  items: DetentionComplianceItem[];
 };
 
 export type DetentionNote = {

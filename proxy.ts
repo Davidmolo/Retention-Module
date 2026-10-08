@@ -8,6 +8,7 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   // Public: login, auth APIs, invites, driver survey links, SMS webhooks
+  // Detention Gmail OAuth callback + IT setup connect page (key-protected in handlers)
   if (
     path === '/login' ||
     path.startsWith('/api/auth') ||
@@ -15,7 +16,11 @@ export async function proxy(request: NextRequest) {
     path.startsWith('/api/invites') ||
     path.startsWith('/s/') ||
     path.startsWith('/api/survey') ||
-    path.startsWith('/api/retention/sms/')
+    path.startsWith('/api/retention/sms/') ||
+    path === '/detention/connect-ar-mailbox' ||
+    path.startsWith('/api/detention/gmail/') ||
+    path === '/api/detention/intake' ||
+    path === '/api/detention/compliance/scan'
   ) {
     return NextResponse.next();
   }
@@ -31,6 +36,7 @@ export async function proxy(request: NextRequest) {
     path.startsWith('/api/retention') ||
     path.startsWith('/api/account') ||
     path.startsWith('/api/settings') ||
+    path.startsWith('/api/feedback') ||
     path.startsWith('/api/company-updates') ||
     path.startsWith('/api/gross-profit') ||
     path.startsWith('/api/drivers') ||

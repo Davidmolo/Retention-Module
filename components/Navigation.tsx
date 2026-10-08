@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, Menu, Settings } from 'lucide-react';
 import { Button } from './ui/button';
+import { FeedbackPanel } from './FeedbackPanel';
 import { ThemeToggle } from './ThemeToggle';
 import {
   canAccessModule,
@@ -57,6 +58,16 @@ const RETENTION_CHILDREN: RetentionNavItem[] = [
   { href: '/retention?view=configure', label: 'Configure', view: 'configure' },
 ];
 
+const DETENTION_CHILDREN: { href: string; label: string; match: string }[] = [
+  { href: '/detention', label: 'Board', match: '/detention' },
+  { href: '/detention/summary', label: 'Summary', match: '/detention/summary' },
+  {
+    href: '/detention/compliance',
+    label: 'Compliance',
+    match: '/detention/compliance',
+  },
+];
+
 function linkClass(active: boolean, withIcon = false) {
   return `${withIcon ? 'flex items-center gap-2' : 'block'} px-3 py-2 rounded-md text-sm font-medium transition ${
     active
@@ -89,6 +100,9 @@ function NavigationInner({ currentPage }: NavigationProps) {
   const [gpOpen, setGpOpen] = useState(() => GP_CHILD_KEYS.has(currentPage));
   const [retentionOpen, setRetentionOpen] = useState(
     () => currentPage === 'retention' || onRetention
+  );
+  const [detentionOpen, setDetentionOpen] = useState(
+    () => currentPage === 'detention' || pathname.startsWith('/detention')
   );
 
   useEffect(() => {
@@ -256,15 +270,45 @@ function NavigationInner({ currentPage }: NavigationProps) {
           )}
 
           {showDetention && (
-            <Link
-              href="/detention"
-              onClick={() => setOpen(false)}
-              className={linkClass(
-                currentPage === 'detention' || onDetention
+            <div>
+              <button
+                type="button"
+                onClick={() => setDetentionOpen((v) => !v)}
+                aria-expanded={detentionOpen}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition ${
+                  onDetention
+                    ? 'bg-muted/60 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                Detention
+                <ChevronDown
+                  className={`w-4 h-4 shrink-0 transition-transform ${
+                    detentionOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {detentionOpen && (
+                <div className="mt-1 ml-2 pl-2 border-l border-border space-y-1">
+                  {DETENTION_CHILDREN.map((item) => {
+                    const active =
+                      item.match === '/detention'
+                        ? pathname === '/detention'
+                        : pathname.startsWith(item.match);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setOpen(false)}
+                        className={linkClass(active)}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
-            >
-              Detention
-            </Link>
+            </div>
           )}
         </nav>
 
@@ -280,6 +324,7 @@ function NavigationInner({ currentPage }: NavigationProps) {
             <Settings className="w-4 h-4 shrink-0" aria-hidden />
             <span>Settings</span>
           </Link>
+          <FeedbackPanel modules={modules} />
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <Button

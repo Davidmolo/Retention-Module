@@ -95,8 +95,20 @@ export function pathAllowedForModules(
 ): boolean {
   if (path.startsWith("/api/auth")) return true;
   if (path.startsWith("/invite") || path.startsWith("/api/invites")) return true;
+  if (
+    path === "/detention/connect-ar-mailbox" ||
+    path.startsWith("/api/detention/gmail/") ||
+    path === "/api/detention/intake" ||
+    path === "/api/detention/compliance/scan"
+  ) {
+    return true;
+  }
   if (path === "/settings" || path.startsWith("/settings/")) return true;
-  if (path.startsWith("/api/settings") || path.startsWith("/api/account")) {
+  if (
+    path.startsWith("/api/settings") ||
+    path.startsWith("/api/account") ||
+    path.startsWith("/api/feedback")
+  ) {
     return true;
   }
   if (path.startsWith("/api/company-updates")) {

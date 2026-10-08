@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Detention Module — Overview for David</title>
+  <style>
+    :root {
+      --bg: #f7f6f3;
+      --surface: #ffffff;
+      --ink: #1a1a1a;
+      --muted: #5c5c5c;
+      --line: #e2e0db;
+      --accent: #1e4d6b;
+      --good: #1f6b4a;
+      --warn: #8a5a12;
+      --bad: #8b2e2e;
+      --soft-good: #e8f4ee;
+      --soft-warn: #f8f0e3;
+      --soft-bad: #f6e8e8;
+      --soft-accent: #e8f0f5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.45;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; }
+    header.hero {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 28px 28px 22px;
+      margin-bottom: 20px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.75rem; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); margin: 0; font-size: 0.98rem; }
+    .toolbar {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px;
+      align-items: center;
+    }
+    button, .btn {
+      appearance: none; border: 1px solid var(--line); background: var(--surface);
+      color: var(--ink); padding: 8px 14px; border-radius: 8px; cursor: pointer;
+      font-size: 0.9rem; text-decoration: none; display: inline-block;
+    }
+    button.primary, .btn.primary {
+      background: var(--accent); color: #fff; border-color: var(--accent);
+    }
+    button:hover, .btn:hover { filter: brightness(0.97); }
+    nav.toc {
+      display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 24px;
+    }
+    nav.toc a {
+      text-decoration: none; color: var(--ink); background: var(--surface);
+      border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px;
+      font-size: 0.85rem;
+    }
+    nav.toc a:hover { border-color: var(--accent); color: var(--accent); }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 22px 24px;
+      margin-bottom: 16px;
+      break-inside: avoid;
+    }
+    h2 {
+      margin: 0 0 14px; font-size: 1.25rem; color: var(--accent);
+      border-bottom: 1px solid var(--line); padding-bottom: 8px;
+    }
+    h3 { margin: 18px 0 10px; font-size: 1.05rem; }
+    p, li { color: var(--ink); }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    .stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    }
+    .stat {
+      border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+      text-align: center; background: var(--soft-accent);
+    }
+    .stat strong { display: block; font-size: 1.15rem; }
+    .stat span { font-size: 0.78rem; color: var(--muted); }
+    .callout {
+      border-radius: 10px; padding: 12px 14px; margin: 12px 0;
+      border: 1px solid var(--line); font-size: 0.92rem;
+    }
+    .callout.warn { background: var(--soft-warn); border-color: #e6d2a8; }
+    .callout.info { background: var(--soft-accent); border-color: #b9cfe0; }
+    .callout.good { background: var(--soft-good); border-color: #b7dcc8; }
+    .callout strong { display: block; margin-bottom: 4px; }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 18px 1fr 18px 1fr 18px 1fr;
+      gap: 4px; align-items: stretch; margin: 12px 0;
+    }
+    .box {
+      border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+      font-size: 0.82rem; min-height: 72px;
+    }
+    .box.hi { border-color: var(--accent); background: var(--soft-accent); }
+    .box b { display: block; margin-bottom: 4px; font-size: 0.85rem; }
+    .arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .card {
+      border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+    }
+    .card h4 { margin: 0 0 8px; font-size: 0.95rem; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 0.88rem;
+      margin: 8px 0 4px;
+    }
+    th, td {
+      border: 1px solid var(--line); padding: 8px 10px; text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f0eeea; font-weight: 600; }
+    tr.ok td:last-child { color: var(--good); font-weight: 600; }
+    tr.warn td:last-child { color: var(--warn); font-weight: 600; }
+    .pill {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: 0.75rem; font-weight: 600; background: var(--soft-accent);
+      color: var(--accent); margin: 2px 2px 2px 0;
+    }
+    footer {
+      margin-top: 24px; color: var(--muted); font-size: 0.8rem; text-align: center;
+    }
+    @media (max-width: 800px) {
+      .stats, .flow, .grid2 { grid-template-columns: 1fr; }
+      .flow { display: flex; flex-direction: column; }
+      .arrow { transform: rotate(90deg); height: 20px; }
+    }
+    @media print {
+      body { background: #fff; }
+      .toolbar, .no-print { display: none !important; }
+      .wrap { max-width: none; padding: 0; }
+      section, header.hero {
+        break-inside: avoid; border: 1px solid #ccc;
+        margin-bottom: 12px;
+      }
+      a { color: inherit; text-decoration: none; }
+      nav.toc { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <h1>Detention Module — Overview for David</h1>
+      <p class="subtitle">
+        What Detention is, what is live in XXII Admin today, how it compares to Art’s Google Sheet,
+        and the decision that makes this scalable.
+      </p>
+      <div class="toolbar no-print">
+        <a class="btn primary" href="https://v2.goxxii.com/detention" target="_blank" rel="noreferrer">Open live Detention</a>
+        <button class="primary" onclick="window.print()">Print / Save as PDF</button>
+        <span class="muted">Print → “Save as PDF” if you want a file for David.</span>
+      </div>
+    </header>
+
+    <nav class="toc no-print">
+      <a href="#purpose">Purpose</a>
+      <a href="#live">What’s live</a>
+      <a href="#compare">vs Google Sheet</a>
+      <a href="#rules">Confirmed rules</a>
+      <a href="#gap">What’s missing</a>
+      <a href="#next">Scalable next step</a>
+      <a href="#ask">Decision needed</a>
+    </nav>
+
+    <section id="purpose">
+      <h2>1. Purpose</h2>
+      <p>
+        When a driver waits too long at pickup or delivery, OpenRoad sends a
+        <strong>“Detention completed”</strong> email. Today Art tracks those claims in a
+        <strong>Google Sheet</strong> (status, money, follow-ups, email threads).
+      </p>
+      <p>
+        <strong>Detention in XXII Admin</strong> brings that work into the same place as
+        Retention and Gross Profit — so Art can manage claims in one system.
+      </p>
+      <div class="callout info">
+        <strong>Primary user</strong>
+        Art (Mantas confirmed). Admins grant Detention access in Settings, same as other modules.
+      </div>
+    </section>
+
+    <section id="live">
+      <h2>2. What’s live today</h2>
+      <p class="muted">URL: <a href="https://v2.goxxii.com/detention">https://v2.goxxii.com/detention</a> — seeded with Art’s sheet export (~51 claims).</p>
+      <div class="stats" style="margin-top: 12px;">
+        <div class="stat"><strong>~51</strong><span>Claims imported</span></div>
+        <div class="stat"><strong>$25/hr</strong><span>Detention rate</span></div>
+        <div class="stat"><strong>&lt;$50</strong><span>Skip rule kept</span></div>
+        <div class="stat"><strong>7</strong><span>Status stages</span></div>
+      </div>
+      <h3>Art / team can already</h3>
+      <ul class="done-list">
+        <li>See all detentions with KPIs (open, awaiting us, follow-up due, paid, open $)</li>
+        <li>Search and filter by status</li>
+        <li>Open a claim — customer, driver, load, stop, times, amount</li>
+        <li>Change status, toggle “Awaiting us”, set follow-up date</li>
+        <li>Add notes and see history</li>
+        <li>Open OpenRoad load link and Gmail (direct thread + search by load #)</li>
+      </ul>
+      <p style="margin-top: 12px;">
+        <span class="pill">New</span>
+        <span class="pill">Pending POD</span>
+        <span class="pill">Docs Pending</span>
+        <span class="pill">Submitted</span>
+        <span class="pill">Approved</span>
+        <span class="pill">Paid</span>
+        <span class="pill">Denied</span>
+      </p>
+    </section>
+
+    <section id="compare">
+      <h2>3. XXII today vs Art’s Google Sheet</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Google Sheet (today)</th>
+            <th>XXII Detention (now)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="ok">
+            <td>Review / update existing claims</td>
+            <td>Edit rows in sheet</td>
+            <td>Board + detail panel</td>
+          </tr>
+          <tr class="ok">
+            <td>Status, notes, follow-up, awaiting us</td>
+            <td>Manual columns</td>
+            <td>Built in</td>
+          </tr>
+          <tr class="ok">
+            <td>See amounts &amp; open $</td>
+            <td>Sheet columns</td>
+            <td>KPIs + detail</td>
+          </tr>
+          <tr class="warn">
+            <td>New claim from OpenRoad email</td>
+            <td>Art / Apps Script → sheet</td>
+            <td>Not automatic yet (one-time import only)</td>
+          </tr>
+          <tr class="warn">
+            <td>Reminders if stuck</td>
+            <td>Calendar / Telegram / manual</td>
+            <td>Not built yet (Google Chat planned)</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>Important</strong>
+        What is in XXII is a <em>copy of the sheet export we received</em>. New detentions still start on Art’s sheet until we add email intake or a self-serve import.
+      </div>
+    </section>
+
+    <section id="rules">
+      <h2>4. Confirmed with Mantas</h2>
+      <div class="grid2">
+        <div class="card">
+          <h4>Scope</h4>
+          <p class="muted" style="margin:0">Aim for everything already available in Art’s flow; improve later only if needed.</p>
+        </div>
+        <div class="card">
+          <h4>Statuses &amp; money</h4>
+          <p class="muted" style="margin:0">Keep current status list. Keep $25/hr and skip under $50.</p>
+        </div>
+        <div class="card">
+          <h4>Reminders</h4>
+          <p class="muted" style="margin:0">If no progress: every day or every other day (stronger than “every 3 days”).</p>
+        </div>
+        <div class="card">
+          <h4>Spreadsheet cutover</h4>
+          <p class="muted" style="margin:0">They decide internally. Does not block development.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="gap">
+      <h2>5. Not built yet</h2>
+      <ul>
+        <li>Auto-create claims from OpenRoad “Detention completed” emails</li>
+        <li>Self-serve “Import sheet” button in XXII (optional path)</li>
+        <li>Google Chat reminders (daily / every other day)</li>
+        <li>Map view, Telegram (not required for v1)</li>
+        <li>Full automatic Gmail reply tracking (Awaiting us is manual for now)</li>
+      </ul>
+    </section>
+
+    <section id="next">
+      <h2>6. What makes this scalable</h2>
+      <p>Today’s board is useful for <strong>managing</strong> claims. Scalability depends on how <strong>new</strong> claims enter XXII.</p>
+      <div class="flow">
+        <div class="box"><b>1. OpenRoad</b>Driver finishes detention</div>
+        <div class="arrow">→</div>
+        <div class="box hi"><b>2. Email</b>“Detention completed” to company inbox</div>
+        <div class="arrow">→</div>
+        <div class="box hi"><b>3. XXII</b>Creates claim automatically</div>
+        <div class="arrow">→</div>
+        <div class="box"><b>4. Art</b>Updates status / notes in XXII</div>
+      </div>
+      <div class="callout good">
+        <strong>Why this matters</strong>
+        Without email intake (or regular sheet import), every new claim still needs the spreadsheet — XXII stays a snapshot, not the system of record.
+      </div>
+    </section>
+
+    <section id="ask">
+      <h2>7. Decision for Mantas / Art</h2>
+      <p>How should <strong>new</strong> detentions get into XXII?</p>
+      <div class="grid2">
+        <div class="card" style="border-color: #b7dcc8; background: var(--soft-good);">
+          <h4>Option A — Auto from email (recommended)</h4>
+          <p class="muted">XXII watches the OpenRoad detention emails and creates claims itself. Most scalable; sheet becomes optional backup.</p>
+        </div>
+        <div class="card" style="border-color: #e6d2a8; background: var(--soft-warn);">
+          <h4>Option B — Import sheet in XXII</h4>
+          <p class="muted">Art uploads an updated sheet export in the app when there are new rows. Faster to build; still manual.</p>
+        </div>
+      </div>
+      <p class="muted" style="margin-top: 12px;">Also confirm: reminder recipients (Art only vs Art + others), and which inbox to watch if Option A.</p>
+    </section>
+
+    <section>
+      <h2>8. One-line summary for David</h2>
+      <div class="callout info">
+        <strong>Bottom line</strong>
+        Detention v1 is live in XXII Admin with real sheet data so Art can manage claims there.
+        The next build that turns this into a daily system is <em>getting new OpenRoad detentions into XXII automatically</em> (email) — or a self-serve sheet import until then.
+      </div>
+    </section>
+
+    <footer>
+      XXII Admin · Detention module overview · Live: v2.goxxii.com/detention
+    </footer>
+  </div>
+</body>
+</html>

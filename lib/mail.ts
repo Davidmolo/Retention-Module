@@ -27,20 +27,43 @@ function fromName(): string {
   return env('SMTP_FROM_NAME', 'XXII Century Notifications');
 }
 
+function uniqueEmails(list: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of list) {
+    const email = String(raw || '')
+      .trim()
+      .toLowerCase();
+    if (!email.includes('@') || seen.has(email)) continue;
+    seen.add(email);
+    out.push(email);
+  }
+  return out;
+}
+
 export async function sendAppEmail(opts: {
-  to: string;
+  to: string | string[];
+  cc?: string | string[];
   subject: string;
   text: string;
   html?: string;
+  replyTo?: string;
 }): Promise<AppEmailResult> {
-  const to = String(opts.to || '').trim();
-  if (!to.includes('@')) {
+  const to = uniqueEmails(
+    Array.isArray(opts.to) ? opts.to : [opts.to]
+  );
+  const cc = uniqueEmails(
+    Array.isArray(opts.cc) ? opts.cc : opts.cc ? [opts.cc] : []
+  ).filter((e) => !to.includes(e));
+
+  if (!to.length) {
     return { ok: false, mocked: false, error: 'Invalid recipient email' };
   }
 
   if (!isAppSmtpConfigured()) {
     console.log('[app-email:mock]', {
       to,
+      cc,
       subject: opts.subject,
       preview: opts.text.slice(0, 300),
     });
@@ -69,7 +92,9 @@ export async function sendAppEmail(opts: {
 
     const info = await transporter.sendMail({
       from: `"${fromName()}" <${fromAddress()}>`,
-      to,
+      to: to.join(', '),
+      cc: cc.length ? cc.join(', ') : undefined,
+      replyTo: opts.replyTo || undefined,
       subject: opts.subject,
       text: opts.text,
       html: opts.html,
@@ -77,6 +102,7 @@ export async function sendAppEmail(opts: {
 
     console.log('[app-email:sent]', {
       to,
+      cc,
       subject: opts.subject,
       messageId: info.messageId,
     });

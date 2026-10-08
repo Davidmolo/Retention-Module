@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import clsx from "clsx";
 import {
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   DollarSign,
   ExternalLink,
@@ -30,6 +32,20 @@ function money(n: number | null | undefined) {
     currency: "USD",
   });
 }
+
+/** Display email/created day as M/D/YYYY. */
+function formatEmailDay(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return "—";
+    return `${Number(m[2])}/${Number(m[3])}/${m[1]}`;
+  }
+  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+}
+
+type DetentionSort = "default" | "emailDateDesc" | "emailDateAsc";
 
 function DetentionStatusPill({ status }: { status: string }) {
   const key = status.toLowerCase();
@@ -101,6 +117,8 @@ function KpiCard({
 
 type KpiFilter = "open" | "awaiting" | "followUp" | "paid" | null;
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+
 export function DetentionBoard() {
   const [items, setItems] = useState<DetentionListItem[]>([]);
   const [kpis, setKpis] = useState<DetentionKpis | null>(null);
@@ -111,12 +129,19 @@ export function DetentionBoard() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [dispatcher, setDispatcher] = useState("all");
+  const [emailDate, setEmailDate] = useState("");
+  const [sort, setSort] = useState<DetentionSort>("emailDateDesc");
   const [awaitingOnly, setAwaitingOnly] = useState(false);
   const [followUpOnly, setFollowUpOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(25);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const applyKpiFilter = useCallback((next: KpiFilter) => {
     // KPI sections are exclusive — switching always clears the others.
+    setPage(1);
     if (next === "open" || next === null) {
       setStatus("all");
       setAwaitingOnly(false);
@@ -148,9 +173,13 @@ export function DetentionBoard() {
       const sp = new URLSearchParams();
       if (status !== "all") sp.set("status", status);
       if (dispatcher !== "all") sp.set("dispatcher", dispatcher);
+      if (emailDate) sp.set("emailDate", emailDate);
+      if (sort !== "default") sp.set("sort", sort);
       if (search.trim()) sp.set("search", search.trim());
       if (awaitingOnly) sp.set("awaitingUs", "1");
       if (followUpOnly) sp.set("followUpDue", "1");
+      sp.set("page", String(page));
+      sp.set("pageSize", String(pageSize));
       const res = await fetch(`/api/detention?${sp.toString()}`, {
         credentials: "include",
       });
@@ -159,6 +188,8 @@ export function DetentionBoard() {
         throw new Error(json.error || "Failed to load detentions");
       }
       setItems(json.data.items || []);
+      setTotal(Number(json.data.total || 0));
+      setTotalPages(Math.max(1, Number(json.data.totalPages || 1)));
       setKpis(json.data.kpis || null);
       if (Array.isArray(json.data.statuses)) setStatuses(json.data.statuses);
       if (Array.isArray(json.data.dispatchers)) {
@@ -169,7 +200,22 @@ export function DetentionBoard() {
     } finally {
       setLoading(false);
     }
-  }, [status, dispatcher, search, awaitingOnly, followUpOnly]);
+  }, [
+    status,
+    dispatcher,
+    emailDate,
+    sort,
+    search,
+    awaitingOnly,
+    followUpOnly,
+    page,
+    pageSize,
+  ]);
+
+  // Reset to page 1 when filters change (not when page itself changes)
+  useEffect(() => {
+    setPage(1);
+  }, [status, dispatcher, emailDate, sort, search, awaitingOnly, followUpOnly, pageSize]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -301,6 +347,40 @@ export function DetentionBoard() {
                 </option>
               ))}
             </select>
+            <label className="flex items-center gap-1.5 text-sm text-slate-600">
+              <span className="whitespace-nowrap">Email date</span>
+              <input
+                type="date"
+                value={emailDate}
+                onChange={(e) => {
+                  setEmailDate(e.target.value);
+                  if (e.target.value && sort === "default") {
+                    setSort("emailDateDesc");
+                  }
+                }}
+                className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+                title="Show detentions received on this date"
+              />
+              {emailDate ? (
+                <button
+                  type="button"
+                  onClick={() => setEmailDate("")}
+                  className="text-xs text-slate-500 underline hover:text-slate-800"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </label>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as DetentionSort)}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              title="Sort list"
+            >
+              <option value="emailDateDesc">Newest first</option>
+              <option value="emailDateAsc">Oldest first</option>
+              <option value="default">Open first, then newest</option>
+            </select>
           </div>
         </div>
 
@@ -327,81 +407,139 @@ export function DetentionBoard() {
         ) : null}
 
         {items.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Customer / Load</th>
-                  <th className="px-4 py-3 font-medium">Driver</th>
-                  <th className="px-4 py-3 font-medium">Stop</th>
-                  <th className="px-4 py-3 font-medium">Time</th>
-                  <th className="px-4 py-3 font-medium">Amount</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Flags</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {items.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={() => setSelectedId(row.id)}
-                    className={clsx(
-                      "cursor-pointer transition hover:bg-slate-50",
-                      selectedId === row.id && "bg-sky-50/60"
-                    )}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-slate-900">
-                        {row.customer || "—"}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        Load {row.loadNumber || "—"}
-                        {row.shipmentNumber ? ` · Ship ${row.shipmentNumber}` : ""}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {row.dispatcher || "No dispatcher"}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>{row.driverName || "—"}</div>
-                      <div className="text-xs text-slate-500">
-                        #{row.driverNumber || "—"} · Truck {row.truckNumber || "—"}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{row.stopType || "—"}</td>
-                    <td className="px-4 py-3 tabular-nums">
-                      {row.detentionTimeLabel ||
-                        (row.detentionMins != null
-                          ? `${row.detentionMins}m`
-                          : "—")}
-                    </td>
-                    <td className="px-4 py-3 font-semibold tabular-nums">
-                      {money(row.amount)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <DetentionStatusPill status={row.status} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {row.awaitingUs &&
-                        !["Paid", "Denied"].includes(row.status) ? (
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
-                            Awaiting us
-                          </span>
-                        ) : null}
-                        {row.followUpDate ? (
-                          <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">
-                            <Clock size={10} />
-                            {row.followUpDate}
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[960px] text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Customer / Load</th>
+                    <th className="px-4 py-3 font-medium">Driver</th>
+                    <th className="px-4 py-3 font-medium">Stop</th>
+                    <th className="px-4 py-3 font-medium">Email date</th>
+                    <th className="px-4 py-3 font-medium">Time</th>
+                    <th className="px-4 py-3 font-medium">Amount</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Flags</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {items.map((row) => (
+                    <tr
+                      key={row.id}
+                      onClick={() => setSelectedId(row.id)}
+                      className={clsx(
+                        "cursor-pointer transition hover:bg-slate-50",
+                        selectedId === row.id && "bg-sky-50/60"
+                      )}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-900">
+                          {row.customer || "—"}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Load {row.loadNumber || "—"}
+                          {row.shipmentNumber
+                            ? ` · Ship ${row.shipmentNumber}`
+                            : ""}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {row.dispatcher || "No dispatcher"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>{row.driverName || "—"}</div>
+                        <div className="text-xs text-slate-500">
+                          #{row.driverNumber || "—"} · Truck{" "}
+                          {row.truckNumber || "—"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">{row.stopType || "—"}</td>
+                      <td className="px-4 py-3 tabular-nums text-slate-700">
+                        {formatEmailDay(row.emailDate || row.createdAt)}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums">
+                        {row.detentionTimeLabel ||
+                          (row.detentionMins != null
+                            ? `${row.detentionMins}m`
+                            : "—")}
+                      </td>
+                      <td className="px-4 py-3 font-semibold tabular-nums">
+                        {money(row.amount)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <DetentionStatusPill status={row.status} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {row.awaitingUs &&
+                          !["Paid", "Denied"].includes(row.status) ? (
+                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
+                              Awaiting us
+                            </span>
+                          ) : null}
+                          {row.followUpDate ? (
+                            <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">
+                              <Clock size={10} />
+                              {row.followUpDate}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-xs text-slate-500">
+                {total === 0
+                  ? "No results"
+                  : `Showing ${(page - 1) * pageSize + 1}–${Math.min(
+                      page * pageSize,
+                      total
+                    )} of ${total}`}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                  Rows
+                  <select
+                    value={pageSize}
+                    onChange={(e) =>
+                      setPageSize(
+                        Number(e.target.value) as (typeof PAGE_SIZE_OPTIONS)[number]
+                      )
+                    }
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={page <= 1 || loading}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-40"
+                >
+                  <ChevronLeft size={14} /> Prev
+                </button>
+                <span className="text-xs tabular-nums text-slate-600">
+                  Page {page} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages || loading}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-40"
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          </>
         ) : null}
       </div>
 
@@ -668,10 +806,12 @@ function DetentionDetailDrawer({
                 </div>
                 {(d.threadUrl || d.loadNumber) && (
                   <p className="text-xs text-slate-500">
-                    Direct thread only works in the mailbox that got the OpenRoad
-                    email (usually Art’s / shared detention inbox). Use{" "}
-                    <span className="font-medium">Search Gmail</span> if you open
-                    a different Google account.
+                    Threads live in{" "}
+                    <span className="font-medium">ar@goxxii.com</span>. Links now
+                    open that mailbox (sign into it in this browser). If Gmail
+                    still lands in your personal inbox, use{" "}
+                    <span className="font-medium">Search Gmail</span> or switch
+                    account to ar@.
                   </p>
                 )}
               </div>
