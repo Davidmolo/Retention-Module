@@ -256,7 +256,7 @@ export function DetentionBoard() {
           <KpiCard
             title="Awaiting us"
             value={String(kpis.awaitingUs)}
-            hint="Customer replied / we owe action"
+            hint="Customer replied / awaiting our reply"
             tone="warn"
             active={awaitingOnly && !followUpOnly && status === "all"}
             onClick={() =>
