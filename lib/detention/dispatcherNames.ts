@@ -25,6 +25,7 @@ const ALIAS_TO_CANONICAL: Record<string, string> = {
   chris: "Chris Nakev",
   "chris nakev": "Chris Nakev",
   nick: "Nikola Sukilovic",
+  "nick sukilovic": "Nikola Sukilovic",
   nikola: "Nikola Sukilovic",
   "nikola sukilovic": "Nikola Sukilovic",
 };
