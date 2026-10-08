@@ -7,13 +7,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
-  DollarSign,
+  Copy,
   ExternalLink,
   Filter,
   Inbox,
+  MapPin,
+  RefreshCw,
   Search,
 } from "lucide-react";
 import type {
+  DetentionAnalytics,
   DetentionKpis,
   DetentionListItem,
   DetentionNote,
@@ -24,6 +27,15 @@ import {
   gmailSearchUrl,
   normalizeGmailThreadUrl,
 } from "@/lib/detention/gmailLinks";
+import {
+  DetentionViewTabs,
+  InsightsPanel,
+  PipelineBoard,
+  ProgressiveStrip,
+  buildEmailClipboard,
+  mapsRouteUrl,
+  type BoardView,
+} from "@/components/detention/DetentionOpsViews";
 
 function money(n: number | null | undefined) {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -43,6 +55,13 @@ function formatEmailDay(iso: string | null | undefined): string {
     return `${Number(m[2])}/${Number(m[3])}/${m[1]}`;
   }
   return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+}
+
+function formatDuration(totalMins: number): string {
+  const m = Math.max(0, Math.round(totalMins));
+  const h = Math.floor(m / 60);
+  const mins = m % 60;
+  return `${h}h ${String(mins).padStart(2, "0")}m`;
 }
 
 type DetentionSort = "default" | "emailDateDesc" | "emailDateAsc";
@@ -138,6 +157,12 @@ export function DetentionBoard() {
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(25);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [view, setView] = useState<BoardView>("table");
+  const [days, setDays] = useState(90);
+  const [analytics, setAnalytics] = useState<DetentionAnalytics | null>(null);
+  const [pipelineItems, setPipelineItems] = useState<DetentionListItem[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const applyKpiFilter = useCallback((next: KpiFilter) => {
     // KPI sections are exclusive — switching always clears the others.
@@ -178,22 +203,34 @@ export function DetentionBoard() {
       if (search.trim()) sp.set("search", search.trim());
       if (awaitingOnly) sp.set("awaitingUs", "1");
       if (followUpOnly) sp.set("followUpDue", "1");
-      sp.set("page", String(page));
-      sp.set("pageSize", String(pageSize));
-      const res = await fetch(`/api/detention?${sp.toString()}`, {
-        credentials: "include",
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
+      if (days > 0) sp.set("days", String(days));
+      const useWide =
+        view === "pipeline" || view === "progressive" || view === "insights";
+      sp.set("page", useWide ? "1" : String(page));
+      sp.set("pageSize", useWide ? "200" : String(pageSize));
+      const [listRes, analyticsRes] = await Promise.all([
+        fetch(`/api/detention?${sp.toString()}`, { credentials: "include" }),
+        fetch(`/api/detention/analytics?days=${days}`, {
+          credentials: "include",
+        }),
+      ]);
+      const json = await listRes.json();
+      if (!listRes.ok || !json.ok) {
         throw new Error(json.error || "Failed to load detentions");
       }
-      setItems(json.data.items || []);
+      const listItems = json.data.items || [];
+      setItems(listItems);
+      if (useWide) setPipelineItems(listItems);
       setTotal(Number(json.data.total || 0));
       setTotalPages(Math.max(1, Number(json.data.totalPages || 1)));
       setKpis(json.data.kpis || null);
       if (Array.isArray(json.data.statuses)) setStatuses(json.data.statuses);
       if (Array.isArray(json.data.dispatchers)) {
         setDispatchers(json.data.dispatchers);
+      }
+      const ajson = await analyticsRes.json();
+      if (analyticsRes.ok && ajson.ok) {
+        setAnalytics(ajson.data);
       }
     } catch (e) {
       setError((e as Error).message || "Failed to load");
@@ -210,12 +247,24 @@ export function DetentionBoard() {
     followUpOnly,
     page,
     pageSize,
+    days,
+    view,
   ]);
 
   // Reset to page 1 when filters change (not when page itself changes)
   useEffect(() => {
     setPage(1);
-  }, [status, dispatcher, emailDate, sort, search, awaitingOnly, followUpOnly, pageSize]);
+  }, [
+    status,
+    dispatcher,
+    emailDate,
+    sort,
+    search,
+    awaitingOnly,
+    followUpOnly,
+    pageSize,
+    days,
+  ]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -224,9 +273,54 @@ export function DetentionBoard() {
     return () => clearTimeout(t);
   }, [load]);
 
+  const syncInbox = useCallback(async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch("/api/detention/intake", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Sync failed");
+      const d = json.data || {};
+      setSyncMsg(
+        `Synced: ${d.created || 0} new, ${d.updated || 0} updated, ${d.skipped || 0} skipped`
+      );
+      await load();
+    } catch (e) {
+      setSyncMsg((e as Error).message || "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [load]);
+
+  const startClaim = useCallback(
+    async (id: string) => {
+      try {
+        await fetch(`/api/detention/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "Pending POD" }),
+        });
+        await load();
+        setSelectedId(id);
+      } catch {
+        /* ignore */
+      }
+    },
+    [load]
+  );
+
   const selected = useMemo(
-    () => items.find((i) => i.id === selectedId) || null,
-    [items, selectedId]
+    () =>
+      items.find((i) => i.id === selectedId) ||
+      pipelineItems.find((i) => i.id === selectedId) ||
+      null,
+    [items, pipelineItems, selectedId]
   );
 
   return (
@@ -303,6 +397,100 @@ export function DetentionBoard() {
         </div>
       ) : null}
 
+      {/* Art Ops Tasks–style money KPIs (windowed) — kept in addition to row above */}
+      {analytics?.kpis ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <KpiCard
+            title="Billed"
+            value={money(analytics.kpis.billedAmount)}
+            hint={`${days > 0 ? `Last ${days} days` : "All time"} · ${analytics.kpis.billedCount} detentions`}
+          />
+          <KpiCard
+            title="Outstanding"
+            value={money(analytics.kpis.outstandingAmount)}
+            hint={`${analytics.kpis.newCount} new · ${analytics.kpis.pendingPodCount} pending POD · ${analytics.kpis.submittedCount} submitted`}
+            tone="warn"
+          />
+          <KpiCard
+            title="Received"
+            value={money(analytics.kpis.receivedAmount)}
+            hint={`${analytics.kpis.paid} paid · ${analytics.kpis.deniedCount} denied`}
+            tone="good"
+          />
+          <KpiCard
+            title="Success rate"
+            value={`${analytics.kpis.successRate}%`}
+            hint={`Of ${money(analytics.kpis.decidedAmount)} decided`}
+            tone={analytics.kpis.successRate >= 50 ? "good" : "risk"}
+          />
+          <KpiCard
+            title="Needs our reply"
+            value={String(analytics.kpis.awaitingUs)}
+            hint="Customer spoke last"
+            tone="warn"
+            active={awaitingOnly && !followUpOnly && status === "all"}
+            onClick={() =>
+              applyKpiFilter(
+                awaitingOnly && !followUpOnly && status === "all"
+                  ? "open"
+                  : "awaiting"
+              )
+            }
+          />
+          <KpiCard
+            title="Total time"
+            value={formatDuration(analytics.kpis.totalDetentionMins)}
+            hint={`Average ${formatDuration(analytics.kpis.avgDetentionMins)}`}
+          />
+        </div>
+      ) : null}
+
+      <DetentionViewTabs view={view} onChange={setView} />
+
+      {view === "progressive" ? (
+        <ProgressiveStrip analytics={analytics} />
+      ) : null}
+
+      {(view === "pipeline" || view === "insights") && (
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
+            className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          >
+            <option value={90}>Last 90 days</option>
+            <option value={30}>Last 30 days</option>
+            <option value={180}>Last 180 days</option>
+            <option value={365}>Last 12 months</option>
+            <option value={0}>All time</option>
+          </select>
+          <button
+            type="button"
+            disabled={syncing}
+            onClick={() => void syncInbox()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+            Sync inbox
+          </button>
+          {syncMsg ? (
+            <span className="text-xs text-slate-500">{syncMsg}</span>
+          ) : null}
+        </div>
+      )}
+
+      {view === "pipeline" ? (
+        <PipelineBoard
+          items={pipelineItems}
+          analytics={analytics}
+          onOpen={setSelectedId}
+          onStartClaim={(id) => void startClaim(id)}
+        />
+      ) : null}
+
+      {view === "insights" ? <InsightsPanel analytics={analytics} /> : null}
+
+      {view === "table" || view === "progressive" ? (
       <div className="xxii-card overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center">
           <div className="relative min-w-0 flex-1">
@@ -313,12 +501,24 @@ export function DetentionBoard() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search customer, driver, load #, truck…"
+              placeholder="Search load, driver, customer, truck…"
               className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[var(--xxii-brand,#1e4d9c)]"
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Filter size={16} className="text-slate-400" />
+            <select
+              value={days}
+              onChange={(e) => setDays(Number(e.target.value))}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              title="Date window"
+            >
+              <option value={90}>Last 90 days</option>
+              <option value={30}>Last 30 days</option>
+              <option value={180}>Last 180 days</option>
+              <option value={365}>Last 12 months</option>
+              <option value={0}>All time</option>
+            </select>
             <select
               value={status}
               onChange={(e) => {
@@ -381,8 +581,34 @@ export function DetentionBoard() {
               <option value="emailDateAsc">Oldest first</option>
               <option value="default">Open first, then newest</option>
             </select>
+            <label className="flex items-center gap-1.5 rounded-lg border border-border px-2 py-1.5 text-xs font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={awaitingOnly}
+                onChange={(e) => {
+                  setAwaitingOnly(e.target.checked);
+                  if (e.target.checked) setFollowUpOnly(false);
+                  setPage(1);
+                }}
+              />
+              Needs reply
+            </label>
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={() => void syncInbox()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+              Sync inbox
+            </button>
           </div>
         </div>
+        {syncMsg ? (
+          <div className="border-b border-border px-4 py-2 text-xs text-slate-600">
+            {syncMsg}
+          </div>
+        ) : null}
 
         {error ? (
           <div className="flex items-center gap-2 p-6 text-sm text-rose-600">
@@ -412,9 +638,13 @@ export function DetentionBoard() {
               <table className="w-full min-w-[960px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-4 py-3 font-medium">Customer / Load</th>
+                    <th className="px-4 py-3 font-medium">Customer</th>
+                    <th className="px-4 py-3 font-medium">Dispatcher</th>
+                    <th className="px-4 py-3 font-medium">Load #</th>
                     <th className="px-4 py-3 font-medium">Driver</th>
-                    <th className="px-4 py-3 font-medium">Stop</th>
+                    <th className="px-4 py-3 font-medium">PU</th>
+                    <th className="px-4 py-3 font-medium">PU Appt</th>
+                    <th className="px-4 py-3 font-medium">DEL</th>
                     <th className="px-4 py-3 font-medium">Email date</th>
                     <th className="px-4 py-3 font-medium">Time</th>
                     <th className="px-4 py-3 font-medium">Amount</th>
@@ -436,24 +666,34 @@ export function DetentionBoard() {
                         <div className="font-medium text-slate-900">
                           {row.customer || "—"}
                         </div>
-                        <div className="text-xs text-slate-500">
-                          Load {row.loadNumber || "—"}
-                          {row.shipmentNumber
-                            ? ` · Ship ${row.shipmentNumber}`
-                            : ""}
+                        <div className="truncate text-xs text-slate-500">
+                          {row.customerEmail || ""}
                         </div>
-                        <div className="text-xs text-slate-400">
-                          {row.dispatcher || "No dispatcher"}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {row.dispatcher || "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{row.loadNumber || "—"}</div>
+                        <div className="text-xs text-slate-500">
+                          {row.shipmentNumber || ""}
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <div>{row.driverName || "—"}</div>
                         <div className="text-xs text-slate-500">
-                          #{row.driverNumber || "—"} · Truck{" "}
-                          {row.truckNumber || "—"}
+                          Truck #{row.truckNumber || "—"}
                         </div>
                       </td>
-                      <td className="px-4 py-3">{row.stopType || "—"}</td>
+                      <td className="max-w-[140px] truncate px-4 py-3 text-xs text-slate-700">
+                        {row.puLocation || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-xs tabular-nums text-slate-600">
+                        {row.puAppt || "—"}
+                      </td>
+                      <td className="max-w-[140px] truncate px-4 py-3 text-xs text-slate-700">
+                        {row.delLocation || "—"}
+                      </td>
                       <td className="px-4 py-3 tabular-nums text-slate-700">
                         {formatEmailDay(row.emailDate || row.createdAt)}
                       </td>
@@ -542,6 +782,7 @@ export function DetentionBoard() {
           </>
         ) : null}
       </div>
+      ) : null}
 
       {selectedId ? (
         <DetentionDetailDrawer
@@ -720,7 +961,7 @@ function DetentionDetailDrawer({
                     ))}
                   </select>
                 </Field>
-                <Field label="Follow-up date">
+                <Field label="Follow up on">
                   <input
                     type="date"
                     value={d.followUpDate || ""}
@@ -740,32 +981,124 @@ function DetentionDetailDrawer({
                   {d.driverNumber ? ` (#${d.driverNumber})` : ""}
                 </Field>
                 <Field label="Truck">{d.truckNumber || "—"}</Field>
-                <Field label="Detention time">
+                <Field label="Billable detention">
                   {d.detentionTimeLabel ||
-                    (d.detentionMins != null ? `${d.detentionMins} min` : "—")}
+                    (d.detentionMins != null
+                      ? formatDuration(d.detentionMins)
+                      : "—")}
                 </Field>
-                <Field label="Amount">
-                  <span className="inline-flex items-center gap-1 font-semibold">
-                    <DollarSign size={14} />
-                    {money(d.amount)}
-                  </span>
-                  <span className="ml-1 text-xs text-slate-400">
-                    @ {money(d.ratePerHour)}/hr
+                <Field label="Driver departed">{d.driverDeparture || "—"}</Field>
+                <Field label="Rate per hour">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={d.ratePerHour}
+                    disabled={saving}
+                    onChange={(e) => {
+                      const rate = Number(e.target.value);
+                      if (!Number.isFinite(rate)) return;
+                      const mins = d.detentionMins;
+                      const nextAmount =
+                        mins != null && mins > 0
+                          ? Math.round((mins / 60) * rate * 100) / 100
+                          : d.amount;
+                      void patch({
+                        ratePerHour: rate,
+                        amount: nextAmount,
+                        billableAmount: nextAmount,
+                      });
+                    }}
+                    className="w-full rounded-lg border border-border px-2 py-1.5"
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    Changing this recalculates amount below
                   </span>
                 </Field>
+                <Field label="Amount billed">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={d.amount ?? ""}
+                    disabled={saving}
+                    onChange={(e) => {
+                      const v =
+                        e.target.value === "" ? null : Number(e.target.value);
+                      void patch({
+                        amount: v,
+                        billableAmount: v,
+                      });
+                    }}
+                    className="w-full rounded-lg border border-border px-2 py-1.5 font-semibold"
+                  />
+                </Field>
+                <Field label="Amount received">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="not paid yet"
+                    value={d.settledAmount ?? ""}
+                    disabled={saving}
+                    onChange={(e) => {
+                      const v =
+                        e.target.value === "" ? null : Number(e.target.value);
+                      void patch({ settledAmount: v });
+                    }}
+                    className="w-full rounded-lg border border-border px-2 py-1.5"
+                  />
+                  <span className="text-[10px] text-slate-400">
+                    Leave blank until it lands
+                  </span>
+                </Field>
+                <Field label="Shipment #">{d.shipmentNumber || "—"}</Field>
+                <Field label="Bill to / email">{d.customerEmail || "—"}</Field>
+                <Field label="Last reply from">{d.lastReplyFrom || "—"}</Field>
                 <Field label="Arrival">{d.arrivalTime || "—"}</Field>
                 <Field label="Detention start">{d.detentionStart || "—"}</Field>
-                <Field label="Departure">{d.driverDeparture || "—"}</Field>
-                <Field label="Customer email">{d.customerEmail || "—"}</Field>
               </div>
 
               <div className="space-y-2 text-sm">
                 <Field label="Pickup">{d.puLocation || "—"}</Field>
+                <Field label="PU appt">{d.puAppt || "—"}</Field>
                 <Field label="Delivery">{d.delLocation || "—"}</Field>
+                <Field label="DEL appt">{d.delAppt || "—"}</Field>
+                {mapsRouteUrl(d.puLocation, d.delLocation) ? (
+                  <a
+                    href={mapsRouteUrl(d.puLocation, d.delLocation)!}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-sm font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
+                  >
+                    <MapPin size={14} /> Open route on Google Maps
+                  </a>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-2">
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(
+                        buildEmailClipboard(d)
+                      );
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-[var(--xxii-brand,#1e4d9c)] px-3 py-1.5 text-sm font-medium text-white"
+                  >
+                    <Copy size={14} /> Copy for email
+                  </button>
+                  {normalizeGmailThreadUrl(d.threadUrl) ? (
+                    <a
+                      href={normalizeGmailThreadUrl(d.threadUrl)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
+                    >
+                      Open email thread <ExternalLink size={14} />
+                    </a>
+                  ) : null}
                   {d.loadLink ? (
                     <a
                       href={d.loadLink}
@@ -773,20 +1106,17 @@ function DetentionDetailDrawer({
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
                     >
-                      Open load <ExternalLink size={14} />
+                      Open in TMS <ExternalLink size={14} />
                     </a>
                   ) : null}
-                  {normalizeGmailThreadUrl(d.threadUrl) ? (
-                    <a
-                      href={normalizeGmailThreadUrl(d.threadUrl)!}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="Opens only if you are signed into the Gmail that received this detention email"
-                      className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
-                    >
-                      Direct thread <ExternalLink size={14} />
-                    </a>
-                  ) : null}
+                  <button
+                    type="button"
+                    disabled={saving || !d.awaitingUs}
+                    onClick={() => void patch({ awaitingUs: false })}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    Mark replied
+                  </button>
                   {gmailSearchUrl({
                     loadNumber: d.loadNumber,
                     shipmentNumber: d.shipmentNumber,
@@ -807,11 +1137,8 @@ function DetentionDetailDrawer({
                 {(d.threadUrl || d.loadNumber) && (
                   <p className="text-xs text-slate-500">
                     Threads live in{" "}
-                    <span className="font-medium">ar@goxxii.com</span>. Links now
-                    open that mailbox (sign into it in this browser). If Gmail
-                    still lands in your personal inbox, use{" "}
-                    <span className="font-medium">Search Gmail</span> or switch
-                    account to ar@.
+                    <span className="font-medium">ar@goxxii.com</span>. Sign
+                    into that mailbox for Direct thread links.
                   </p>
                 )}
               </div>
@@ -825,7 +1152,7 @@ function DetentionDetailDrawer({
                     value={noteText}
                     onChange={(e) => setNoteText(e.target.value)}
                     rows={2}
-                    placeholder="Add a note…"
+                    placeholder="Add a note for the team…"
                     className="min-h-[64px] flex-1 rounded-lg border border-border px-3 py-2 text-sm"
                   />
                   <button

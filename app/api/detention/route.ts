@@ -32,6 +32,11 @@ export async function GET(request: Request) {
     const followUpDue = searchParams.get("followUpDue") === "1";
     const page = Number(searchParams.get("page") || "1") || 1;
     const pageSize = Number(searchParams.get("pageSize") || "25") || 25;
+    const daysRaw = searchParams.get("days");
+    const days =
+      daysRaw != null && daysRaw !== ""
+        ? Number(daysRaw)
+        : undefined;
 
     const [list, kpis, dispatchers] = await Promise.all([
       listDetentions({
@@ -41,6 +46,7 @@ export async function GET(request: Request) {
         awaitingUs,
         followUpDue,
         emailDate,
+        days,
         sort,
         page,
         pageSize,

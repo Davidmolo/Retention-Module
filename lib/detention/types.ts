@@ -138,6 +138,60 @@ export type DetentionKpis = {
   openAmount: number;
   /** Sum collected on Paid claims (settled amount when set, else claim amount). */
   paidAmount: number;
+  /** Art Ops Tasks parity (windowed — usually last 90 days). */
+  billedAmount: number;
+  billedCount: number;
+  outstandingAmount: number;
+  newCount: number;
+  pendingPodCount: number;
+  submittedCount: number;
+  deniedCount: number;
+  receivedAmount: number;
+  decidedAmount: number;
+  successRate: number;
+  totalDetentionMins: number;
+  avgDetentionMins: number;
+};
+
+export type DetentionStatusBucket = {
+  key: string;
+  label: string;
+  count: number;
+  amount: number;
+};
+
+export type DetentionAgeingBucket = {
+  key: string;
+  label: string;
+  count: number;
+  amount: number;
+};
+
+export type DetentionMonthPoint = {
+  key: string;
+  label: string;
+  billed: number;
+  received: number;
+};
+
+export type DetentionPartyRow = {
+  name: string;
+  detentions: number;
+  hours: number;
+  billed: number;
+  received: number;
+  rate: number;
+};
+
+export type DetentionAnalytics = {
+  days: number;
+  kpis: DetentionKpis;
+  progressive: DetentionStatusBucket[];
+  ageing: DetentionAgeingBucket[];
+  byStatus: DetentionStatusBucket[];
+  byMonth: DetentionMonthPoint[];
+  byCustomer: DetentionPartyRow[];
+  byDispatcher: DetentionPartyRow[];
 };
 
 export const DEFAULT_RATE_PER_HOUR = 25;

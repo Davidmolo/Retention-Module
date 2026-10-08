@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
+import { canAccessModule, isAdminRole } from "@/lib/roles";
 import { isValidDetentionGmailSetupKey } from "@/lib/detention/gmailOAuth";
 import { runDetentionEmailIntake } from "@/lib/detention/intake";
 
@@ -21,7 +21,13 @@ export async function POST(request: NextRequest) {
       { status: 401 }
     );
   }
-  if (user && !isAdminRole(user.role) && !setupOk) {
+  // Logged-in Detention users can sync inbox; cron uses setup key.
+  if (
+    user &&
+    !isAdminRole(user.role) &&
+    !setupOk &&
+    !canAccessModule(user.modules, "detention")
+  ) {
     return NextResponse.json(
       { ok: false, error: "Forbidden" },
       { status: 403 }

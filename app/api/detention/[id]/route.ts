@@ -33,6 +33,9 @@ export async function PATCH(request: Request, ctx: Ctx) {
       awaitingUs?: boolean;
       followUpDate?: string | null;
       settledAmount?: number | null;
+      amount?: number | null;
+      ratePerHour?: number | null;
+      billableAmount?: number | null;
       actor?: string | null;
     };
 
@@ -41,6 +44,9 @@ export async function PATCH(request: Request, ctx: Ctx) {
       awaitingUs: body.awaitingUs,
       followUpDate: body.followUpDate,
       settledAmount: body.settledAmount,
+      amount: body.amount,
+      ratePerHour: body.ratePerHour,
+      billableAmount: body.billableAmount,
       actor: body.actor || null,
     });
     const notes = await listDetentionNotes(id);

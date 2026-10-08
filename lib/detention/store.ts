@@ -180,6 +180,8 @@ export type ListDetentionsOpts = {
   followUpDue?: boolean;
   /** YYYY-MM-DD — match email received date (falls back to created_at). */
   emailDate?: string;
+  /** Only claims with email/created date within the last N days (0 = all). */
+  days?: number;
   sort?: DetentionSort;
   /** 1-based page number */
   page?: number;
@@ -236,6 +238,11 @@ function buildDetentionListWhere(opts: ListDetentionsOpts): {
     conds.push(`${EMAIL_DAY_EXPR} = ?`);
     params.push(opts.emailDate);
   }
+  const days = Number(opts.days);
+  if (Number.isFinite(days) && days > 0) {
+    conds.push(`${EMAIL_DAY_EXPR} >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`);
+    params.push(Math.floor(days));
+  }
   if (opts.search?.trim()) {
     const q = `%${opts.search.trim()}%`;
     conds.push(
@@ -265,7 +272,7 @@ export async function listDetentions(
     orderBy = `COALESCE(d.email_date, d.created_at) DESC, d.id DESC`;
   }
 
-  const pageSize = Math.min(100, Math.max(1, Number(opts.pageSize) || 25));
+  const pageSize = Math.min(200, Math.max(1, Number(opts.pageSize) || 25));
   const page = Math.max(1, Number(opts.page) || 1);
   const offset = (page - 1) * pageSize;
 
@@ -299,29 +306,9 @@ export async function listDetentions(
 }
 
 export async function getDetentionKpis(): Promise<DetentionKpis> {
-  const pool = getPool();
-  const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT
-       COUNT(*) AS total,
-       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS open_count,
-       SUM(CASE WHEN awaiting_us = 1 AND status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS awaiting_count,
-       SUM(CASE WHEN follow_up_date IS NOT NULL AND follow_up_date <= CURDATE()
-                 AND status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS follow_up_count,
-       SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count,
-       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN COALESCE(amount,0) ELSE 0 END) AS open_amount,
-       SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END) AS paid_amount
-     FROM detentions`
-  );
-  const r = rows[0] || {};
-  return {
-    total: Number(r.total || 0),
-    open: Number(r.open_count || 0),
-    awaitingUs: Number(r.awaiting_count || 0),
-    followUpDue: Number(r.follow_up_count || 0),
-    paid: Number(r.paid_count || 0),
-    openAmount: Number(r.open_amount || 0),
-    paidAmount: Number(r.paid_amount || 0),
-  };
+  // All-time ops KPIs + Art-style money metrics (full history)
+  const { getDetentionKpisForWindow } = await import("./analytics");
+  return getDetentionKpisForWindow(0);
 }
 
 export async function listDetentionDispatchers(): Promise<string[]> {
@@ -414,6 +401,9 @@ export type UpdateDetentionPatch = {
   awaitingUs?: boolean;
   followUpDate?: string | null;
   settledAmount?: number | null;
+  amount?: number | null;
+  ratePerHour?: number | null;
+  billableAmount?: number | null;
   actor?: string | null;
 };
 
@@ -498,6 +488,46 @@ export async function updateDetention(
         field: "Settled Amount",
         from: current.settledAmount == null ? "" : String(current.settledAmount),
         to: next == null ? "" : String(next),
+      });
+    }
+  }
+
+  if (patch.amount !== undefined) {
+    const next = patch.amount;
+    if (next !== current.amount) {
+      sets.push("amount = ?");
+      params.push(next);
+      events.push({
+        type: "update",
+        timestamp: new Date().toISOString(),
+        user: actor,
+        field: "Amount Billed",
+        from: current.amount == null ? "" : String(current.amount),
+        to: next == null ? "" : String(next),
+      });
+    }
+  }
+
+  if (patch.billableAmount !== undefined) {
+    const next = patch.billableAmount;
+    if (next !== current.billableAmount) {
+      sets.push("billable_amount = ?");
+      params.push(next);
+    }
+  }
+
+  if (patch.ratePerHour !== undefined && patch.ratePerHour != null) {
+    const next = Number(patch.ratePerHour);
+    if (Number.isFinite(next) && next !== current.ratePerHour) {
+      sets.push("rate_per_hour = ?");
+      params.push(next);
+      events.push({
+        type: "update",
+        timestamp: new Date().toISOString(),
+        user: actor,
+        field: "Rate Per Hour",
+        from: String(current.ratePerHour),
+        to: String(next),
       });
     }
   }
