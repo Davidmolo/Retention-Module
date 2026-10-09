@@ -15,31 +15,55 @@ function money(n: number) {
 function SummaryTable({
   title,
   rows,
+  submittedHint,
+  collectedHint,
+  weekLimitNote,
 }: {
   title: string;
   rows: DetentionPeriodSummary[];
+  submittedHint: string;
+  collectedHint: string;
+  weekLimitNote?: string;
 }) {
   return (
     <div className="xxii-card overflow-hidden">
       <div className="border-b border-border px-4 py-3">
         <h2 className="text-base font-semibold text-foreground">{title}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Submitted = claims received in the period. Collected = Paid amount on
+          Submitted = claims received in the period. Collected = paid amount on
           those same claims.
         </p>
+        {weekLimitNote ? (
+          <p className="mt-1 text-xs text-muted-foreground">{weekLimitNote}</p>
+        ) : null}
       </div>
       {!rows.length ? (
         <div className="p-6 text-sm text-muted-foreground">No data yet.</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[720px] table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[10%]" />
+              <col className="w-[14%]" />
+              <col className="w-[13%]" />
+              <col className="w-[15%]" />
+            </colgroup>
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Period</th>
-                <th className="px-4 py-3 font-medium">Submitted</th>
-                <th className="px-4 py-3 font-medium">Submitted $</th>
+                <th className="px-4 py-3 font-medium" title={submittedHint}>
+                  Submitted
+                </th>
+                <th className="px-4 py-3 font-medium" title={submittedHint}>
+                  Submitted $
+                </th>
                 <th className="px-4 py-3 font-medium">Paid</th>
-                <th className="px-4 py-3 font-medium">Collected</th>
+                <th className="px-4 py-3 font-medium" title={collectedHint}>
+                  Collected
+                </th>
                 <th className="px-4 py-3 font-medium">Still open</th>
                 <th className="px-4 py-3 font-medium">Open $</th>
               </tr>
@@ -48,7 +72,12 @@ function SummaryTable({
               {rows.map((r) => (
                 <tr key={r.key} className="hover:bg-slate-50/80">
                   <td className="px-4 py-3 font-medium text-slate-900">
-                    {r.label}
+                    <div>{r.label}</div>
+                    {r.hint ? (
+                      <div className="text-[11px] font-normal text-slate-400">
+                        {r.hint}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 tabular-nums">{r.submitted}</td>
                   <td className="px-4 py-3 tabular-nums">
@@ -86,8 +115,7 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
             By dispatcher
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Track record: how many detentions each dispatcher submitted vs how
-            much was collected (Paid). Sorted by collected $.
+            Detention claims received and total amount collected by dispatcher.
           </p>
         </div>
         {rows.length ? (
@@ -113,7 +141,7 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
         </div>
       ) : (
         <div className="max-h-[min(60vh,560px)] overflow-auto">
-          <table className="w-full min-w-[780px] text-left text-sm">
+          <table className="w-full min-w-[780px] table-fixed text-left text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Dispatcher</th>
@@ -198,8 +226,7 @@ export function DetentionSummaryView() {
             Detention reporting
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Submitted vs paid — by week, by month, and by dispatcher — so you
-            can track collection progress over time.
+            Submitted vs collected by week, month, and dispatcher.
           </p>
         </div>
         <Link
@@ -219,14 +246,25 @@ export function DetentionSummaryView() {
 
       {loading ? (
         <div className="space-y-3">
-          <div className="h-40 animate-pulse rounded-xl bg-slate-100" />
-          <div className="h-40 animate-pulse rounded-xl bg-slate-100" />
-          <div className="h-40 animate-pulse rounded-xl bg-slate-100" />
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-40 animate-pulse rounded-xl bg-slate-100" />
+          ))}
         </div>
       ) : (
         <>
-          <SummaryTable title="By week" rows={weeks} />
-          <SummaryTable title="By month" rows={months} />
+          <SummaryTable
+            title="By week"
+            rows={weeks}
+            submittedHint="Total claims received during each period listed below."
+            collectedHint="Total amount collected for those claims."
+            weekLimitNote="Shows the latest 26 Tuesday–Monday weeks (W##, same as Gross Profit). When a newer week appears, the oldest drops off the list."
+          />
+          <SummaryTable
+            title="By month"
+            rows={months}
+            submittedHint="Total claims received during each month listed below."
+            collectedHint="Total amount collected for those claims."
+          />
           <DispatcherTable rows={dispatchers} />
         </>
       )}

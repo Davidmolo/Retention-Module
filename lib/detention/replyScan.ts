@@ -4,8 +4,11 @@
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import { getValidGmailAccessToken } from "@/lib/detention/gmailOAuth";
-
-const COMPLIANCE_WINDOW_MS = 48 * 60 * 60 * 1000;
+import {
+  COMPLIANCE_WINDOW_MS,
+  resolveDispatcherCompliance,
+  type ComplianceValue,
+} from "@/lib/detention/compliance";
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -70,9 +73,14 @@ function findDispatcherReply(opts: {
   emailStartMs: number;
   dispatcherEmail: string;
   originalMessageId?: string | null;
-}): { repliedAt: Date | null; within48h: boolean } {
+}): {
+  firstRepliedAt: Date | null;
+  lastRepliedAt: Date | null;
+  within48h: boolean;
+} {
   const deadline = opts.emailStartMs + COMPLIANCE_WINDOW_MS;
-  let repliedAt: Date | null = null;
+  let firstRepliedAt: Date | null = null;
+  let lastRepliedAt: Date | null = null;
 
   for (const msg of opts.messages) {
     if (opts.originalMessageId && msg.id === opts.originalMessageId) continue;
@@ -87,13 +95,17 @@ function findDispatcherReply(opts: {
     if (!email || email !== opts.dispatcherEmail) continue;
 
     const at = new Date(ms);
-    if (!repliedAt || at < repliedAt) repliedAt = at;
+    if (!firstRepliedAt || at < firstRepliedAt) firstRepliedAt = at;
+    if (!lastRepliedAt || at > lastRepliedAt) lastRepliedAt = at;
   }
 
-  if (!repliedAt) return { repliedAt: null, within48h: false };
+  if (!firstRepliedAt || !lastRepliedAt) {
+    return { firstRepliedAt: null, lastRepliedAt: null, within48h: false };
+  }
   return {
-    repliedAt,
-    within48h: repliedAt.getTime() <= deadline,
+    firstRepliedAt,
+    lastRepliedAt,
+    within48h: firstRepliedAt.getTime() <= deadline,
   };
 }
 
@@ -102,6 +114,7 @@ export type ComplianceScanResult = {
   ok: number;
   missed: number;
   pending: number;
+  noFollowUp: number;
   na: number;
   errors: number;
 };
@@ -116,21 +129,23 @@ export async function runDetentionComplianceScan(opts?: {
     ok: 0,
     missed: 0,
     pending: 0,
+    noFollowUp: 0,
     na: 0,
     errors: 0,
   };
 
-  // Prefer rows needing a check: never checked, still pending, or missing email.
+  // Prefer rows needing a check: never checked, still pending, open claims, or missing email.
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT id, dispatcher, dispatcher_email, thread_id, message_id, email_date, created_at,
-            dispatcher_compliance
+            status, dispatcher_compliance
        FROM detentions
       WHERE thread_id IS NOT NULL AND TRIM(thread_id) <> ''
         AND (
           dispatcher_compliance IS NULL
-          OR dispatcher_compliance = 'pending'
+          OR dispatcher_compliance IN ('pending','missed','ok','no_follow_up')
           OR dispatcher_compliance_checked_at IS NULL
           OR (dispatcher_compliance = 'n/a' AND dispatcher_email IS NULL)
+          OR status NOT IN ('Paid','Denied')
         )
       ORDER BY COALESCE(email_date, created_at) DESC
       LIMIT ?`,
@@ -178,12 +193,12 @@ export async function runDetentionComplianceScan(opts?: {
         originalMessageId: row.message_id ? String(row.message_id) : null,
       });
 
-      const now = Date.now();
-      let compliance: "ok" | "missed" | "pending";
-      if (reply.repliedAt && reply.within48h) compliance = "ok";
-      else if (reply.repliedAt && !reply.within48h) compliance = "missed";
-      else if (now <= emailStartMs + COMPLIANCE_WINDOW_MS) compliance = "pending";
-      else compliance = "missed";
+      const compliance: ComplianceValue = resolveDispatcherCompliance({
+        status: String(row.status || "New"),
+        emailDate: emailStart,
+        repliedAt: reply.lastRepliedAt,
+        nowMs: Date.now(),
+      });
 
       await pool.query<ResultSetHeader>(
         `UPDATE detentions
@@ -196,9 +211,9 @@ export async function runDetentionComplianceScan(opts?: {
           WHERE id = ?`,
         [
           dispatcherEmail,
-          reply.repliedAt,
-          reply.repliedAt ? dispatcherEmail : null,
-          reply.repliedAt,
+          reply.lastRepliedAt || reply.firstRepliedAt,
+          reply.lastRepliedAt ? dispatcherEmail : null,
+          reply.lastRepliedAt,
           compliance,
           row.id,
         ]
@@ -206,7 +221,9 @@ export async function runDetentionComplianceScan(opts?: {
 
       if (compliance === "ok") result.ok += 1;
       else if (compliance === "missed") result.missed += 1;
-      else result.pending += 1;
+      else if (compliance === "no_follow_up") result.noFollowUp += 1;
+      else if (compliance === "pending") result.pending += 1;
+      else result.na += 1;
     } catch (e) {
       result.errors += 1;
       console.error("[detention-compliance]", row.id, (e as Error).message);

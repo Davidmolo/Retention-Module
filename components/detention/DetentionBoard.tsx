@@ -397,54 +397,6 @@ export function DetentionBoard() {
         </div>
       ) : null}
 
-      {/* Art Ops Tasks–style money KPIs (windowed) — kept in addition to row above */}
-      {analytics?.kpis ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-          <KpiCard
-            title="Billed"
-            value={money(analytics.kpis.billedAmount)}
-            hint={`${days > 0 ? `Last ${days} days` : "All time"} · ${analytics.kpis.billedCount} detentions`}
-          />
-          <KpiCard
-            title="Outstanding"
-            value={money(analytics.kpis.outstandingAmount)}
-            hint={`${analytics.kpis.newCount} new · ${analytics.kpis.pendingPodCount} pending POD · ${analytics.kpis.submittedCount} submitted`}
-            tone="warn"
-          />
-          <KpiCard
-            title="Received"
-            value={money(analytics.kpis.receivedAmount)}
-            hint={`${analytics.kpis.paid} paid · ${analytics.kpis.deniedCount} denied`}
-            tone="good"
-          />
-          <KpiCard
-            title="Success rate"
-            value={`${analytics.kpis.successRate}%`}
-            hint={`Of ${money(analytics.kpis.decidedAmount)} decided`}
-            tone={analytics.kpis.successRate >= 50 ? "good" : "risk"}
-          />
-          <KpiCard
-            title="Needs our reply"
-            value={String(analytics.kpis.awaitingUs)}
-            hint="Customer spoke last"
-            tone="warn"
-            active={awaitingOnly && !followUpOnly && status === "all"}
-            onClick={() =>
-              applyKpiFilter(
-                awaitingOnly && !followUpOnly && status === "all"
-                  ? "open"
-                  : "awaiting"
-              )
-            }
-          />
-          <KpiCard
-            title="Total time"
-            value={formatDuration(analytics.kpis.totalDetentionMins)}
-            hint={`Average ${formatDuration(analytics.kpis.avgDetentionMins)}`}
-          />
-        </div>
-      ) : null}
-
       <DetentionViewTabs view={view} onChange={setView} />
 
       {view === "progressive" ? (

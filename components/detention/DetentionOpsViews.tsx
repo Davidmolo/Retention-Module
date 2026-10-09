@@ -290,41 +290,13 @@ export function InsightsPanel({
         <h2 className="text-lg font-bold text-slate-900">Detention performance</h2>
         <p className="text-sm text-muted-foreground">
           Last {analytics.days || "all"} days · {k.billedCount} detentions in
-          window
+          window · avg {formatDetentionDuration(k.avgDetentionMins)} · success{" "}
+          {k.successRate}%
         </p>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <InsightStat label="Billed" value={money(k.billedAmount)} hint="All detentions raised" />
-        <InsightStat
-          label="Received"
-          value={money(k.receivedAmount)}
-          hint="Money actually in"
-          tone="good"
-        />
-        <InsightStat
-          label="Outstanding"
-          value={money(k.outstandingAmount)}
-          hint="Still being chased"
-          tone="warn"
-        />
-        <InsightStat
-          label="Success rate"
-          value={`${k.successRate}%`}
-          hint="Of decided detentions"
-          tone={k.successRate >= 50 ? "good" : "risk"}
-        />
-        <InsightStat
-          label="Average detention"
-          value={formatDetentionDuration(k.avgDetentionMins)}
-          hint="Per detention"
-        />
-        <InsightStat
-          label="Needs our reply"
-          value={String(k.awaitingUs)}
-          hint="Customer spoke last"
-          tone="risk"
-        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Money by week/month/dispatcher lives on Summary. This view keeps charts
+          Art’s app has that Summary does not.
+        </p>
       </div>
 
       <div className="xxii-card p-4">
@@ -402,39 +374,6 @@ export function InsightsPanel({
       </div>
 
       <PartyTable title="Customers by detention billed" rows={analytics.byCustomer} />
-      <PartyTable title="By dispatcher" rows={analytics.byDispatcher} />
-    </div>
-  );
-}
-
-function InsightStat({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  tone?: "good" | "warn" | "risk";
-}) {
-  return (
-    <div className="xxii-card px-4 py-3">
-      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-        {label}
-      </div>
-      <div
-        className={clsx(
-          "mt-0.5 text-2xl font-bold tabular-nums",
-          tone === "good" && "text-emerald-700",
-          tone === "warn" && "text-amber-700",
-          tone === "risk" && "text-rose-700",
-          !tone && "text-slate-900"
-        )}
-      >
-        {value}
-      </div>
-      <div className="text-xs text-slate-500">{hint}</div>
     </div>
   );
 }

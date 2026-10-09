@@ -20,7 +20,12 @@ export type DetentionHistoryEvent = {
   to?: string;
 };
 
-export type DispatcherCompliance = "ok" | "missed" | "pending" | "n/a";
+export type DispatcherCompliance =
+  | "ok"
+  | "missed"
+  | "pending"
+  | "no_follow_up"
+  | "n/a";
 
 export type Detention = {
   id: string;
@@ -70,6 +75,8 @@ export type Detention = {
 export type DetentionPeriodSummary = {
   key: string;
   label: string;
+  /** Optional date range subtitle (e.g. Tue–Mon for W##). */
+  hint?: string;
   submitted: number;
   submittedAmount: number;
   paid: number;
@@ -113,6 +120,7 @@ export type DetentionComplianceGroup = {
   ok: number;
   missed: number;
   pending: number;
+  noFollowUp: number;
   na: number;
   items: DetentionComplianceItem[];
 };

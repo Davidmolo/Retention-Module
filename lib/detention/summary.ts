@@ -1,6 +1,8 @@
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
+import { resolveDispatcherCompliance } from "@/lib/detention/compliance";
 import { canonicalDispatcherName } from "@/lib/detention/dispatcherNames";
+import { weekOf, weekRange } from "@/lib/week";
 import type {
   DetentionComplianceGroup,
   DetentionComplianceItem,
@@ -15,57 +17,82 @@ function money(n: unknown): number {
   return Number.isFinite(v) ? v : 0;
 }
 
-function mondayOfIsoWeek(isoYear: number, isoWeek: number): Date {
-  // ISO week: week 1 has Jan 4; Monday start
-  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
-  const day = jan4.getUTCDay() || 7;
-  const monday = new Date(jan4);
-  monday.setUTCDate(jan4.getUTCDate() - day + 1 + (isoWeek - 1) * 7);
-  return monday;
-}
-
-function fmtMdY(d: Date): string {
-  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`;
-}
-
 export async function getDetentionWeeklySummary(
   limit = 26
 ): Promise<DetentionPeriodSummary[]> {
   const pool = getPool();
+  // Aggregate in app using Tuesday-start fleet weeks (same W## as Gross Profit).
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT
-       YEARWEEK(${EMAIL_DAY}, 3) AS yw,
-       COUNT(*) AS submitted,
-       COALESCE(SUM(COALESCE(amount, 0)), 0) AS submitted_amount,
-       SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count,
-       COALESCE(SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END), 0) AS collected_amount,
-       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS open_count,
-       COALESCE(SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN COALESCE(amount, 0) ELSE 0 END), 0) AS open_amount
+       COALESCE(email_date, created_at) AS when_at,
+       status,
+       COALESCE(amount, 0) AS amount,
+       COALESCE(settled_amount, amount, 0) AS settled
      FROM detentions
-     GROUP BY YEARWEEK(${EMAIL_DAY}, 3)
-     ORDER BY yw DESC
-     LIMIT ?`,
-    [limit]
+     WHERE COALESCE(email_date, created_at) IS NOT NULL`
   );
 
-  return rows.map((r) => {
-    const yw = Number(r.yw);
-    const isoYear = Math.floor(yw / 100);
-    const isoWeek = yw % 100;
-    const monday = mondayOfIsoWeek(isoYear, isoWeek);
-    const sunday = new Date(monday);
-    sunday.setUTCDate(monday.getUTCDate() + 6);
-    return {
-      key: String(yw),
-      label: `Week of ${fmtMdY(monday)} – ${fmtMdY(sunday)}`,
-      submitted: Number(r.submitted || 0),
-      submittedAmount: money(r.submitted_amount),
-      paid: Number(r.paid_count || 0),
-      collectedAmount: money(r.collected_amount),
-      open: Number(r.open_count || 0),
-      openAmount: money(r.open_amount),
-    };
-  });
+  type Acc = {
+    year: number;
+    week: number;
+    submitted: number;
+    submittedAmount: number;
+    paid: number;
+    collectedAmount: number;
+    open: number;
+    openAmount: number;
+  };
+  const map = new Map<string, Acc>();
+
+  for (const r of rows) {
+    const d = new Date(r.when_at);
+    if (Number.isNaN(d.getTime())) continue;
+    const { year, week } = weekOf(d);
+    const key = `${year}-${week}`;
+    let acc = map.get(key);
+    if (!acc) {
+      acc = {
+        year,
+        week,
+        submitted: 0,
+        submittedAmount: 0,
+        paid: 0,
+        collectedAmount: 0,
+        open: 0,
+        openAmount: 0,
+      };
+      map.set(key, acc);
+    }
+    const amt = money(r.amount);
+    acc.submitted += 1;
+    acc.submittedAmount += amt;
+    const status = String(r.status || "");
+    if (status === "Paid") {
+      acc.paid += 1;
+      acc.collectedAmount += money(r.settled);
+    } else if (status !== "Denied") {
+      acc.open += 1;
+      acc.openAmount += amt;
+    }
+  }
+
+  return [...map.values()]
+    .sort((a, b) => b.year - a.year || b.week - a.week)
+    .slice(0, limit)
+    .map((a) => {
+      const range = weekRange(a.year, a.week);
+      return {
+        key: `${a.year}-W${a.week}`,
+        label: `W${a.week}`,
+        hint: `${range.start} → ${range.end}`,
+        submitted: a.submitted,
+        submittedAmount: Math.round(a.submittedAmount * 100) / 100,
+        paid: a.paid,
+        collectedAmount: Math.round(a.collectedAmount * 100) / 100,
+        open: a.open,
+        openAmount: Math.round(a.openAmount * 100) / 100,
+      };
+    });
 }
 
 export async function getDetentionMonthlySummary(
@@ -207,6 +234,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
         ok: 0,
         missed: 0,
         pending: 0,
+        noFollowUp: 0,
         na: 0,
         items: [],
       });
@@ -216,7 +244,16 @@ export async function getDetentionComplianceByDispatcher(): Promise<
       g.dispatcherEmail = String(r.dispatcher_email);
     }
 
-    const compliance = (r.dispatcher_compliance || "n/a") as string;
+    const emailDate = r.email_date ? new Date(r.email_date) : null;
+    const repliedAt = r.dispatcher_replied_at
+      ? new Date(r.dispatcher_replied_at)
+      : null;
+    const compliance = resolveDispatcherCompliance({
+      status: String(r.status || ""),
+      emailDate,
+      repliedAt,
+      stored: r.dispatcher_compliance ? String(r.dispatcher_compliance) : null,
+    });
     const item: DetentionComplianceItem = {
       id: String(r.id),
       customer: r.customer ? String(r.customer) : null,
@@ -225,15 +262,13 @@ export async function getDetentionComplianceByDispatcher(): Promise<
       driverName: r.driver_name ? String(r.driver_name) : null,
       amount: r.amount == null ? null : Number(r.amount),
       status: String(r.status || ""),
-      emailDate: r.email_date ? new Date(r.email_date).toISOString() : null,
+      emailDate: emailDate ? emailDate.toISOString() : null,
       threadUrl: r.thread_url ? String(r.thread_url) : null,
       dispatcher,
       dispatcherEmail: r.dispatcher_email
         ? String(r.dispatcher_email)
         : null,
-      dispatcherRepliedAt: r.dispatcher_replied_at
-        ? new Date(r.dispatcher_replied_at).toISOString()
-        : null,
+      dispatcherRepliedAt: repliedAt ? repliedAt.toISOString() : null,
       dispatcherCompliance: compliance,
     };
     g.items.push(item);
@@ -241,7 +276,16 @@ export async function getDetentionComplianceByDispatcher(): Promise<
     if (compliance === "ok") g.ok += 1;
     else if (compliance === "missed") g.missed += 1;
     else if (compliance === "pending") g.pending += 1;
+    else if (compliance === "no_follow_up") g.noFollowUp += 1;
     else g.na += 1;
+  }
+
+  for (const g of groups.values()) {
+    g.items.sort((a, b) => {
+      const ta = a.emailDate ? new Date(a.emailDate).getTime() : 0;
+      const tb = b.emailDate ? new Date(b.emailDate).getTime() : 0;
+      return tb - ta;
+    });
   }
 
   return [...groups.values()].sort((a, b) =>

@@ -72,6 +72,16 @@ function ComplianceMark({ value }: { value: string | null | undefined }) {
       </span>
     );
   }
+  if (value === "no_follow_up") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-800 ring-1 ring-orange-200"
+        title="Dispatcher replied before, but no further reply for 48h+ while claim is still open"
+      >
+        No follow up
+      </span>
+    );
+  }
   return (
     <span
       className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200"
@@ -84,7 +94,7 @@ function ComplianceMark({ value }: { value: string | null | undefined }) {
 
 
 
-type StatusFilter = "all" | "ok" | "missed" | "pending" | "n/a";
+type StatusFilter = "all" | "ok" | "missed" | "pending" | "no_follow_up" | "n/a";
 
 
 
@@ -142,6 +152,7 @@ export function DetentionComplianceView() {
       if (statusFilter === "ok") return g.ok > 0;
       if (statusFilter === "missed") return g.missed > 0;
       if (statusFilter === "pending") return g.pending > 0;
+      if (statusFilter === "no_follow_up") return g.noFollowUp > 0;
       if (statusFilter === "n/a") return g.na > 0;
       return true;
     });
@@ -188,10 +199,11 @@ export function DetentionComplianceView() {
         acc.ok += g.ok;
         acc.missed += g.missed;
         acc.pending += g.pending;
+        acc.noFollowUp += g.noFollowUp || 0;
         acc.na += g.na;
         return acc;
       },
-      { total: 0, ok: 0, missed: 0, pending: 0, na: 0 }
+      { total: 0, ok: 0, missed: 0, pending: 0, noFollowUp: 0, na: 0 }
     );
   }, [groups]);
 
@@ -225,6 +237,7 @@ export function DetentionComplianceView() {
             { label: "Detentions", value: totals.total },
             { label: "Replied ≤48h", value: totals.ok, tone: "good" },
             { label: "Missed", value: totals.missed, tone: "risk" },
+            { label: "No follow up", value: totals.noFollowUp, tone: "warn" },
             { label: "Pending", value: totals.pending, tone: "warn" },
             { label: "N/A", value: totals.na },
           ].map((c) => (
@@ -267,6 +280,7 @@ export function DetentionComplianceView() {
             [
               ["all", "All"],
               ["missed", "Missed"],
+              ["no_follow_up", "No follow up"],
               ["ok", "Replied"],
               ["pending", "Pending"],
               ["n/a", "N/A"],
@@ -360,6 +374,9 @@ export function DetentionComplianceView() {
                         <span className="rounded bg-rose-50 px-1.5 py-0.5 text-rose-700">
                           ✗ {g.missed}
                         </span>
+                        <span className="rounded bg-orange-50 px-1.5 py-0.5 text-orange-800">
+                          NF {g.noFollowUp || 0}
+                        </span>
                         <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-800">
                           {g.pending}
                         </span>
@@ -395,8 +412,9 @@ export function DetentionComplianceView() {
                       {statusFilter !== "all"
                         ? ` (filtered: ${statusFilter})`
                         : ""}{" "}
-                      · totals ✓{selected.ok} ✗{selected.missed} pending{" "}
-                      {selected.pending} N/A {selected.na}
+                      · totals ✓{selected.ok} ✗{selected.missed} no follow up{" "}
+                      {selected.noFollowUp || 0} pending {selected.pending} N/A{" "}
+                      {selected.na}
                     </p>
                   </div>
                   {expanded ? (
