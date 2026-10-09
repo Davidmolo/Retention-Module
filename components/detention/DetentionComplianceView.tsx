@@ -76,9 +76,9 @@ function ComplianceMark({ value }: { value: string | null | undefined }) {
     return (
       <span
         className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-800 ring-1 ring-orange-200"
-        title="Dispatcher replied before, but no further reply for 48h+ while claim is still open"
+        title="Dispatcher replied before, but no further reply in the last 48 hours while claim is still open"
       >
-        No follow up
+        No follow up ≤48h
       </span>
     );
   }
@@ -237,7 +237,7 @@ export function DetentionComplianceView() {
             { label: "Detentions", value: totals.total },
             { label: "Replied ≤48h", value: totals.ok, tone: "good" },
             { label: "Missed", value: totals.missed, tone: "risk" },
-            { label: "No follow up", value: totals.noFollowUp, tone: "warn" },
+            { label: "No follow up ≤48h", value: totals.noFollowUp, tone: "warn" },
             { label: "Pending", value: totals.pending, tone: "warn" },
             { label: "N/A", value: totals.na },
           ].map((c) => (
@@ -280,7 +280,7 @@ export function DetentionComplianceView() {
             [
               ["all", "All"],
               ["missed", "Missed"],
-              ["no_follow_up", "No follow up"],
+              ["no_follow_up", "No follow up ≤48h"],
               ["ok", "Replied"],
               ["pending", "Pending"],
               ["n/a", "N/A"],
@@ -412,9 +412,9 @@ export function DetentionComplianceView() {
                       {statusFilter !== "all"
                         ? ` (filtered: ${statusFilter})`
                         : ""}{" "}
-                      · totals ✓{selected.ok} ✗{selected.missed} no follow up{" "}
-                      {selected.noFollowUp || 0} pending {selected.pending} N/A{" "}
-                      {selected.na}
+                      · totals ✓{selected.ok} ✗{selected.missed} no follow up
+                      ≤48h {selected.noFollowUp || 0} pending{" "}
+                      {selected.pending} N/A {selected.na}
                     </p>
                   </div>
                   {expanded ? (

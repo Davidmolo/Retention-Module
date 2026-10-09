@@ -50,14 +50,24 @@ export function gmailSearchUrl(opts: {
   loadNumber?: string | null;
   shipmentNumber?: string | null;
 }): string | null {
+  const load = opts.loadNumber?.trim().replace(/^#/, "") || "";
+  const ship = opts.shipmentNumber?.trim().replace(/^#/, "") || "";
+  if (!load && !ship) return null;
+
+  // OpenRoad subject uses shipment as "Load #NNNN"; the real load number is
+  // only in the body as "Load Number: #XXXX". Phrase-searching "Load #<load>"
+  // therefore misses. Search "Detention completed" + bare numbers (OR).
   const parts: string[] = ['"Detention completed"'];
-  if (opts.loadNumber?.trim()) {
-    parts.push(`"Load #${opts.loadNumber.trim().replace(/^#/, "")}"`);
-  } else if (opts.shipmentNumber?.trim()) {
-    parts.push(`shipment ${opts.shipmentNumber.trim()}`);
-  } else {
-    return null;
+  const ors: string[] = [];
+  if (load) ors.push(load);
+  if (ship && ship !== load) {
+    ors.push(ship);
+    // Subject-line form: Detention completed: Load #<shipment>
+    ors.push(`"Load #${ship}"`);
   }
+  if (ors.length === 1) parts.push(ors[0]);
+  else parts.push(`(${ors.join(" OR ")})`);
+
   const q = encodeURIComponent(parts.join(" "));
   const auth = encodeURIComponent(mailboxEmail());
   return `https://mail.google.com/mail/?authuser=${auth}#search/${q}`;
