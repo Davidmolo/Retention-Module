@@ -12,53 +12,17 @@ function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-/** Shared widths so By week / By month columns line up. */
-const PERIOD_COLS = (
-  <colgroup>
-    <col style={{ width: "20%" }} />
-    <col style={{ width: "12%" }} />
-    <col style={{ width: "14%" }} />
-    <col style={{ width: "10%" }} />
-    <col style={{ width: "14%" }} />
-    <col style={{ width: "14%" }} />
-    <col style={{ width: "16%" }} />
-  </colgroup>
-);
-
-function ColHead({
-  label,
-  sub,
-}: {
-  label: string;
-  sub?: string;
-}) {
-  return (
-    <th className="px-4 py-3 align-bottom font-medium normal-case">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        {label}
-      </div>
-      {sub ? (
-        <div className="mt-1 text-[10px] font-normal normal-case leading-snug tracking-normal text-slate-400">
-          {sub}
-        </div>
-      ) : null}
-    </th>
-  );
-}
-
 function SummaryTable({
   title,
   rows,
-  submittedSub,
-  collectedSub,
+  submittedHint,
+  collectedHint,
   weekLimitNote,
 }: {
   title: string;
   rows: DetentionPeriodSummary[];
-  /** Visible under Submitted / Submitted $ headers */
-  submittedSub: string;
-  /** Visible under Collected header */
-  collectedSub: string;
+  submittedHint: string;
+  collectedHint: string;
   weekLimitNote?: string;
 }) {
   return (
@@ -77,17 +41,31 @@ function SummaryTable({
         <div className="p-6 text-sm text-muted-foreground">No data yet.</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] table-fixed text-left text-sm">
-            {PERIOD_COLS}
-            <thead className="bg-slate-50 text-slate-500">
+          <table className="w-full min-w-[720px] table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[10%]" />
+              <col className="w-[14%]" />
+              <col className="w-[13%]" />
+              <col className="w-[15%]" />
+            </colgroup>
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <ColHead label="Period" />
-                <ColHead label="Submitted" sub={submittedSub} />
-                <ColHead label="Submitted $" />
-                <ColHead label="Paid" />
-                <ColHead label="Collected" sub={collectedSub} />
-                <ColHead label="Still open" />
-                <ColHead label="Open $" />
+                <th className="px-4 py-3 font-medium">Period</th>
+                <th className="px-4 py-3 font-medium" title={submittedHint}>
+                  Submitted
+                </th>
+                <th className="px-4 py-3 font-medium" title={submittedHint}>
+                  Submitted amount
+                </th>
+                <th className="px-4 py-3 font-medium">Paid</th>
+                <th className="px-4 py-3 font-medium" title={collectedHint}>
+                  Collected
+                </th>
+                <th className="px-4 py-3 font-medium">Still open</th>
+                <th className="px-4 py-3 font-medium">Open $</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -168,7 +146,7 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
               <tr>
                 <th className="px-4 py-3 font-medium">Dispatcher</th>
                 <th className="px-4 py-3 font-medium">Submitted</th>
-                <th className="px-4 py-3 font-medium">Submitted $</th>
+                <th className="px-4 py-3 font-medium">Submitted amount</th>
                 <th className="px-4 py-3 font-medium">Paid</th>
                 <th className="px-4 py-3 font-medium">Collected</th>
                 <th className="px-4 py-3 font-medium">Collection %</th>
@@ -277,15 +255,15 @@ export function DetentionSummaryView() {
           <SummaryTable
             title="By week"
             rows={weeks}
-            submittedSub="Total claims received during each period listed below."
-            collectedSub="Total amount collected for those claims."
+            submittedHint="Total claims received during each period listed below."
+            collectedHint="Total amount collected for those claims."
             weekLimitNote="Shows the latest 26 Tuesday–Monday weeks (W##, same as Gross Profit). When a newer week appears, the oldest drops off the list."
           />
           <SummaryTable
             title="By month"
             rows={months}
-            submittedSub="Total claims received during each month listed below."
-            collectedSub="Total amount collected for those claims."
+            submittedHint="Total claims received during each month listed below."
+            collectedHint="Total amount collected for those claims."
           />
           <DispatcherTable rows={dispatchers} />
         </>
