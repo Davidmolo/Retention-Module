@@ -9,6 +9,10 @@ import {
   resolveDispatcherCompliance,
   type ComplianceValue,
 } from "@/lib/detention/compliance";
+import {
+  canonicalDispatcherName,
+  dispatcherMatchKeys,
+} from "@/lib/detention/dispatcherNames";
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -21,27 +25,77 @@ function extractEmail(fromHeader: string): string | null {
   return m ? m[0].toLowerCase() : null;
 }
 
+/**
+ * Resolve dispatcher mailbox for compliance checks.
+ * Tries TMS roster (all known name aliases), then email already saved on
+ * other detentions for the same dispatcher (sibling backfill).
+ */
 async function lookupDispatcherEmail(
   dispatcherName: string | null
 ): Promise<string | null> {
   if (!dispatcherName?.trim()) return null;
   const pool = getPool();
+  const keys = dispatcherMatchKeys(dispatcherName);
+  const canonical = canonicalDispatcherName(dispatcherName);
+  const nameCandidates = [
+    ...new Set([dispatcherName.trim(), canonical].filter(Boolean)),
+  ];
+
   try {
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT email
-         FROM tms_users
-        WHERE email IS NOT NULL AND TRIM(email) <> ''
-          AND LOWER(TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,'')))) = LOWER(?)
-        LIMIT 1`,
-      [dispatcherName.trim()]
-    );
-    const email = String(rows[0]?.email || "")
-      .trim()
-      .toLowerCase();
-    return email.includes("@") ? email : null;
+    // Roster match on all known name forms (aliases are lowercased keys)
+    if (keys.length) {
+      const placeholders = keys.map(() => "?").join(",");
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT email
+           FROM tms_users
+          WHERE email IS NOT NULL AND TRIM(email) <> ''
+            AND LOWER(TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,''))))
+                IN (${placeholders})
+          LIMIT 1`,
+        keys
+      );
+      const email = String(rows[0]?.email || "")
+        .trim()
+        .toLowerCase();
+      if (email.includes("@")) return email;
+    }
+
+    for (const name of nameCandidates) {
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT email
+           FROM tms_users
+          WHERE email IS NOT NULL AND TRIM(email) <> ''
+            AND LOWER(TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,'')))) = LOWER(?)
+          LIMIT 1`,
+        [name]
+      );
+      const email = String(rows[0]?.email || "")
+        .trim()
+        .toLowerCase();
+      if (email.includes("@")) return email;
+    }
+
+    // Same dispatcher on another detention already has an email — reuse it
+    if (keys.length) {
+      const placeholders = keys.map(() => "?").join(",");
+      const [sib] = await pool.query<RowDataPacket[]>(
+        `SELECT dispatcher_email AS email
+           FROM detentions
+          WHERE dispatcher_email IS NOT NULL AND TRIM(dispatcher_email) <> ''
+            AND LOWER(TRIM(dispatcher)) IN (${placeholders})
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+        keys
+      );
+      const email = String(sib[0]?.email || "")
+        .trim()
+        .toLowerCase();
+      if (email.includes("@")) return email;
+    }
   } catch {
     return null;
   }
+  return null;
 }
 
 type ThreadMsg = {

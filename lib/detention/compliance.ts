@@ -25,9 +25,22 @@ export function resolveDispatcherCompliance(opts: {
   emailDate: Date | string | null | undefined;
   repliedAt: Date | string | null | undefined;
   stored?: string | null;
+  /** When false, we cannot scan Gmail for this dispatcher on this row. */
+  hasDispatcherEmail?: boolean;
   nowMs?: number;
 }): ComplianceValue {
-  if (opts.stored === "n/a" && !opts.repliedAt) return "n/a";
+  // Per-row: missing mailbox ⇒ N/A (even if another detention for the same
+  // person has an email — compliance is checked per thread).
+  if (opts.hasDispatcherEmail === false && !opts.repliedAt) return "n/a";
+  // Legacy rows stuck as stored n/a with no reply — keep N/A unless caller
+  // now says we have an email (re-scan will overwrite stored).
+  if (
+    opts.stored === "n/a" &&
+    !opts.repliedAt &&
+    opts.hasDispatcherEmail !== true
+  ) {
+    return "n/a";
+  }
 
   const now = opts.nowMs ?? Date.now();
   const emailMs = opts.emailDate ? new Date(opts.emailDate).getTime() : NaN;

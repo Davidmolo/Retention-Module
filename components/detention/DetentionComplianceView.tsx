@@ -85,7 +85,7 @@ function ComplianceMark({ value }: { value: string | null | undefined }) {
   return (
     <span
       className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200"
-      title="No dispatcher email on file to check"
+      title="This detention has no dispatcher email saved, so we can't check Gmail for their reply on this thread (the name above may still show an email from other detentions)."
     >
       N/A
     </span>

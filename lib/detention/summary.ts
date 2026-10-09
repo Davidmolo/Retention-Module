@@ -248,11 +248,15 @@ export async function getDetentionComplianceByDispatcher(): Promise<
     const repliedAt = r.dispatcher_replied_at
       ? new Date(r.dispatcher_replied_at)
       : null;
+    const hasDispatcherEmail = Boolean(
+      r.dispatcher_email && String(r.dispatcher_email).includes("@")
+    );
     const compliance = resolveDispatcherCompliance({
       status: String(r.status || ""),
       emailDate,
       repliedAt,
       stored: r.dispatcher_compliance ? String(r.dispatcher_compliance) : null,
+      hasDispatcherEmail,
     });
     const item: DetentionComplianceItem = {
       id: String(r.id),
