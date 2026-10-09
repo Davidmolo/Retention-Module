@@ -167,6 +167,12 @@ async function sendViaGhl(
   }
 }
 
+/** Kill switch: RETENTION_SMS_ENABLED=false forces mock (no real SMS). */
+export function isRetentionSmsEnabled(): boolean {
+  const raw = (process.env.RETENTION_SMS_ENABLED || "true").toLowerCase().trim();
+  return raw !== "0" && raw !== "false" && raw !== "off" && raw !== "no";
+}
+
 export async function sendSms(
   to: string,
   body: string,
@@ -174,6 +180,20 @@ export async function sendSms(
 ): Promise<SmsSendResult> {
   const dest = normalizePhoneE164(to);
   const provider = resolveProvider();
+
+  if (!isRetentionSmsEnabled()) {
+    console.log("[sms:disabled]", {
+      to: dest,
+      body,
+      hint: "RETENTION_SMS_ENABLED=false",
+    });
+    return {
+      ok: true,
+      mocked: true,
+      provider: "mock",
+      providerMessageId: `disabled-${Date.now()}`,
+    };
+  }
 
   if (provider === "mock") {
     console.log("[sms:mock]", { to: dest, body, providerHint: "ghl|twilio not configured" });

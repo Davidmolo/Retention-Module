@@ -34,8 +34,28 @@ export function mapDriverType(raw: string | null | undefined): DriverType {
 /**
  * OpenRoad statuses → Retention.
  * Only true "active" counts as active. suspended / suspended_new / etc. are not.
+ * If OpenRoad set date_removed (today or earlier), treat as terminated even when
+ * status is still stuck on "active".
  */
-export function mapDriverStatus(raw: string | null | undefined): DriverStatus {
+export function mapDriverStatus(
+  raw: string | null | undefined,
+  dateRemoved?: string | Date | null
+): DriverStatus {
+  if (dateRemoved != null && String(dateRemoved).trim() !== "") {
+    const rawDate =
+      dateRemoved instanceof Date
+        ? dateRemoved.toISOString().slice(0, 10)
+        : String(dateRemoved).trim().slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: process.env.APP_TIMEZONE || "America/Chicago",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+      if (rawDate <= today) return "terminated";
+    }
+  }
   const s = (raw || "").trim().toLowerCase();
   if (s === "active") return "active";
   if (s.includes("terminat") || s.includes("removed")) return "terminated";
@@ -79,6 +99,8 @@ export type GpDriverRow = {
   hireDate: string | null;
   /** ISO date YYYY-MM-DD from drivers.dob */
   birthDate?: string | null;
+  /** OpenRoad removal date — when set, driver must not get Retention SMS. */
+  dateRemoved?: string | Date | null;
   dispatcher: string | null;
   cpm: number | null;
 };
@@ -91,7 +113,7 @@ export function toGpDriver(row: GpDriverRow): GpDriver {
     email: row.email || "",
     phone: row.phone || "",
     driverType: mapDriverType(row.driverType),
-    status: mapDriverStatus(row.status),
+    status: mapDriverStatus(row.status, row.dateRemoved),
     hireDate: toCalendarDate(row.hireDate) || "1970-01-01",
     birthDate: toCalendarDate(row.birthDate),
     dispatcher: row.dispatcher?.trim() || "Unassigned",

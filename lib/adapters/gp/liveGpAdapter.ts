@@ -16,6 +16,7 @@ import { getPool } from "@/lib/db";
 import {
   isRetentionExcludedDriverId,
   retentionExcludedDriversSql,
+  retentionRosterActiveSql,
 } from "@/lib/retention/rosterExclusions";
 
 export type LiveGpDb = {
@@ -72,6 +73,7 @@ const DRIVER_SELECT = `
     d.status,
     ${HIRE_DATE_SQL} AS hireDate,
     DATE_FORMAT(d.dob, '%Y-%m-%d') AS birthDate,
+    DATE_FORMAT(d.date_removed, '%Y-%m-%d') AS dateRemoved,
     NULLIF(TRIM(CONCAT_WS(' ', mgr.first_name, mgr.last_name)), '') AS dispatcher,
     c.loaded_mile_rate AS cpm
   FROM drivers d
@@ -79,34 +81,35 @@ const DRIVER_SELECT = `
   LEFT JOIN tms_users mgr ON mgr.id = d.manager_id
 `;
 
+function rowToDriver(r: Record<string, unknown>) {
+  return toGpDriver({
+    id: r.id as number,
+    name: String(r.name || ""),
+    email: (r.email as string) || null,
+    phone: (r.phone as string) || null,
+    driverType: (r.driverType as string) || null,
+    status: (r.status as string) || null,
+    hireDate: (r.hireDate as string) || null,
+    birthDate: (r.birthDate as string) || null,
+    dateRemoved: (r.dateRemoved as string) || null,
+    dispatcher: (r.dispatcher as string) || null,
+    cpm: r.cpm == null ? null : Number(r.cpm),
+  });
+}
+
 export const liveGpAdapter: GpAdapter = {
   name: "live",
 
   async listDrivers({ includeInactive = false } = {}) {
     const pool = requireDb();
-    // Retention / live roster: only OpenRoad status = 'active' (not suspended).
-    // Also drop known non-drivers / test / former employees (see rosterExclusions).
-    const exclusion = retentionExcludedDriversSql("d");
+    // Active roster: OpenRoad status=active, not date_removed, not denylisted.
     const where = includeInactive
-      ? ` WHERE 1=1${exclusion}`
-      : ` WHERE d.status IS NOT NULL AND LOWER(TRIM(d.status)) = 'active'${exclusion}`;
+      ? ` WHERE 1=1${retentionExcludedDriversSql("d")}`
+      : ` WHERE ${retentionRosterActiveSql("d")}`;
     const [rows] = await pool.query(
       `${DRIVER_SELECT}${where} ORDER BY name`
     );
-    return (rows as Record<string, unknown>[]).map((r) =>
-      toGpDriver({
-        id: r.id as number,
-        name: String(r.name || ""),
-        email: (r.email as string) || null,
-        phone: (r.phone as string) || null,
-        driverType: (r.driverType as string) || null,
-        status: (r.status as string) || null,
-        hireDate: (r.hireDate as string) || null,
-        birthDate: (r.birthDate as string) || null,
-        dispatcher: (r.dispatcher as string) || null,
-        cpm: r.cpm == null ? null : Number(r.cpm),
-      })
-    );
+    return (rows as Record<string, unknown>[]).map(rowToDriver);
   },
 
   async getDriver(driverId: string) {
@@ -118,18 +121,7 @@ export const liveGpAdapter: GpAdapter = {
     );
     const r = (rows as Record<string, unknown>[])[0];
     if (!r) return null;
-    return toGpDriver({
-      id: r.id as number,
-      name: String(r.name || ""),
-      email: (r.email as string) || null,
-      phone: (r.phone as string) || null,
-      driverType: (r.driverType as string) || null,
-      status: (r.status as string) || null,
-      hireDate: (r.hireDate as string) || null,
-      birthDate: (r.birthDate as string) || null,
-      dispatcher: (r.dispatcher as string) || null,
-      cpm: r.cpm == null ? null : Number(r.cpm),
-    });
+    return rowToDriver(r);
   },
 
   async getSixWeekAverages(driverId: string): Promise<SixWeekAverages> {

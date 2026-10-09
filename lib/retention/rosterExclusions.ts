@@ -30,3 +30,38 @@ export function retentionExcludedDriversSql(alias = "d"): string {
   if (!ids.length) return "";
   return ` AND ${alias}.id NOT IN (${ids.join(", ")})`;
 }
+
+/**
+ * Drivers eligible for Retention UI + automated SMS.
+ * - OpenRoad status must be exactly active
+ * - date_removed must be empty or still in the future (recent terminations drop out)
+ * - hardcoded exclusions
+ */
+export function retentionRosterActiveSql(alias = "d"): string {
+  return (
+    ` ${alias}.status IS NOT NULL` +
+    ` AND LOWER(TRIM(${alias}.status)) = 'active'` +
+    ` AND (${alias}.date_removed IS NULL OR ${alias}.date_removed > CURDATE())` +
+    retentionExcludedDriversSql(alias)
+  );
+}
+
+/** True when a removal date is today or earlier (Chicago/SQL DATE). */
+export function isDriverDateRemoved(
+  dateRemoved: string | Date | null | undefined
+): boolean {
+  if (dateRemoved == null || dateRemoved === "") return false;
+  const raw =
+    dateRemoved instanceof Date
+      ? dateRemoved.toISOString().slice(0, 10)
+      : String(dateRemoved).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const today = new Date();
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: process.env.APP_TIMEZONE || "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(today);
+  return raw <= ymd;
+}

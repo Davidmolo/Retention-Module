@@ -23,7 +23,7 @@ import {
 } from "./occasions";
 import { retentionStore } from "./store";
 import { sendSurvey } from "./service";
-import { retentionExcludedDriversSql } from "./rosterExclusions";
+import { retentionRosterActiveSql } from "./rosterExclusions";
 
 export type OccasionSendResult = {
   driverId: string;
@@ -82,9 +82,7 @@ async function listActiveDriversForOccasions(): Promise<DriverRow[]> {
             ) AS hireDate,
             d.dob AS birthDate
        FROM drivers d
-      WHERE d.status IS NOT NULL
-        AND LOWER(d.status) = 'active'
-        ${retentionExcludedDriversSql("d")}`
+      WHERE ${retentionRosterActiveSql("d")}`
   );
   return (rows as RowDataPacket[]).map((r) => ({
     id: Number(r.id),

@@ -14,6 +14,7 @@ import {
   SURVEY_REMINDER_AFTER_DAYS,
 } from "./constants";
 import { isSurveyEligible, surveyFrequencyLabel } from "./rules";
+import { isRetentionExcludedDriverId } from "./rosterExclusions";
 import { retentionStore } from "./store";
 import { resendSurveyOccurrence, sendSurvey } from "./service";
 
@@ -214,6 +215,25 @@ export async function runSurveyReminders(opts?: {
 
     if (!firstTouch && gap > 0) {
       await sleep(gap);
+    }
+
+    // Don't remind (or leave open) surveys for drivers who left / were removed.
+    try {
+      const driver = await getGpAdapter().getDriver(String(occ.driverId));
+      if (
+        !driver ||
+        driver.status !== "active" ||
+        isRetentionExcludedDriverId(occ.driverId)
+      ) {
+        await retentionStore.updateSurveyOccurrence(occ.id, {
+          responseState: "non_response",
+        });
+        closed += 1;
+        continue;
+      }
+    } catch {
+      skipped += 1;
+      continue;
     }
 
     try {
