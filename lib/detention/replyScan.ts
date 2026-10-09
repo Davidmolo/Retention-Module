@@ -75,14 +75,15 @@ async function lookupDispatcherEmail(
       if (email.includes("@")) return email;
     }
 
-    // Same dispatcher on another detention already has an email — reuse it
+    // Same dispatcher on another detention already has an email — reuse it.
+    // Normalize trailing dots ("Alex M." → "alex m") to match alias keys.
     if (keys.length) {
       const placeholders = keys.map(() => "?").join(",");
       const [sib] = await pool.query<RowDataPacket[]>(
         `SELECT dispatcher_email AS email
            FROM detentions
           WHERE dispatcher_email IS NOT NULL AND TRIM(dispatcher_email) <> ''
-            AND LOWER(TRIM(dispatcher)) IN (${placeholders})
+            AND LOWER(TRIM(TRAILING '.' FROM TRIM(dispatcher))) IN (${placeholders})
           ORDER BY updated_at DESC
           LIMIT 1`,
         keys

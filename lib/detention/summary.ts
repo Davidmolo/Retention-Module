@@ -218,18 +218,36 @@ export async function getDetentionComplianceByDispatcher(): Promise<
      ORDER BY dispatcher ASC, COALESCE(email_date, created_at) DESC`
   );
 
-  const groups = new Map<string, DetentionComplianceGroup>();
+  // Pass 1: group + collect a known mailbox per dispatcher (from any sibling row).
+  type RawRow = {
+    r: RowDataPacket;
+    dispatcher: string;
+    key: string;
+  };
+  const raws: RawRow[] = [];
+  const groupEmail = new Map<string, string>();
 
   for (const r of rows) {
-    const rawName = String(r.dispatcher).trim();
-    const dispatcher = canonicalDispatcherName(rawName);
+    const dispatcher = canonicalDispatcherName(String(r.dispatcher).trim());
     const key = dispatcher.toLowerCase();
+    raws.push({ r, dispatcher, key });
+    const email = String(r.dispatcher_email || "")
+      .trim()
+      .toLowerCase();
+    if (email.includes("@") && !groupEmail.has(key)) {
+      groupEmail.set(key, email);
+    }
+  }
+
+  const groups = new Map<string, DetentionComplianceGroup>();
+  const emailBackfill: { id: string; email: string }[] = [];
+  const clearNa: { id: string; compliance: string }[] = [];
+
+  for (const { r, dispatcher, key } of raws) {
     if (!groups.has(key)) {
       groups.set(key, {
         dispatcher,
-        dispatcherEmail: r.dispatcher_email
-          ? String(r.dispatcher_email)
-          : null,
+        dispatcherEmail: groupEmail.get(key) || null,
         total: 0,
         ok: 0,
         missed: 0,
@@ -240,24 +258,44 @@ export async function getDetentionComplianceByDispatcher(): Promise<
       });
     }
     const g = groups.get(key)!;
-    if (!g.dispatcherEmail && r.dispatcher_email) {
-      g.dispatcherEmail = String(r.dispatcher_email);
-    }
 
     const emailDate = r.email_date ? new Date(r.email_date) : null;
     const repliedAt = r.dispatcher_replied_at
       ? new Date(r.dispatcher_replied_at)
       : null;
-    const hasDispatcherEmail = Boolean(
-      r.dispatcher_email && String(r.dispatcher_email).includes("@")
-    );
+    const rowEmail = String(r.dispatcher_email || "")
+      .trim()
+      .toLowerCase();
+    const inherited = groupEmail.get(key) || null;
+    const dispatcherEmail =
+      (rowEmail.includes("@") ? rowEmail : null) || inherited;
+    const hadEmailOnRow = rowEmail.includes("@");
+    const hasDispatcherEmail = Boolean(dispatcherEmail);
+
+    // Stuck n/a only because email was missing — recompute once we have one.
+    const storedRaw = r.dispatcher_compliance
+      ? String(r.dispatcher_compliance)
+      : null;
+    const stored =
+      storedRaw === "n/a" && hasDispatcherEmail && !repliedAt
+        ? null
+        : storedRaw;
+
     const compliance = resolveDispatcherCompliance({
       status: String(r.status || ""),
       emailDate,
       repliedAt,
-      stored: r.dispatcher_compliance ? String(r.dispatcher_compliance) : null,
+      stored,
       hasDispatcherEmail,
     });
+
+    if (!hadEmailOnRow && dispatcherEmail) {
+      emailBackfill.push({ id: String(r.id), email: dispatcherEmail });
+    }
+    if (storedRaw === "n/a" && compliance !== "n/a") {
+      clearNa.push({ id: String(r.id), compliance });
+    }
+
     const item: DetentionComplianceItem = {
       id: String(r.id),
       customer: r.customer ? String(r.customer) : null,
@@ -269,9 +307,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
       emailDate: emailDate ? emailDate.toISOString() : null,
       threadUrl: r.thread_url ? String(r.thread_url) : null,
       dispatcher,
-      dispatcherEmail: r.dispatcher_email
-        ? String(r.dispatcher_email)
-        : null,
+      dispatcherEmail,
       dispatcherRepliedAt: repliedAt ? repliedAt.toISOString() : null,
       dispatcherCompliance: compliance,
     };
@@ -282,6 +318,31 @@ export async function getDetentionComplianceByDispatcher(): Promise<
     else if (compliance === "pending") g.pending += 1;
     else if (compliance === "no_follow_up") g.noFollowUp += 1;
     else g.na += 1;
+  }
+
+  // Persist sibling email + clear stuck n/a so the next Gmail scan can score replies.
+  if (emailBackfill.length || clearNa.length) {
+    try {
+      for (const b of emailBackfill) {
+        await pool.query(
+          `UPDATE detentions
+              SET dispatcher_email = COALESCE(dispatcher_email, ?)
+            WHERE id = ?`,
+          [b.email, b.id]
+        );
+      }
+      for (const c of clearNa) {
+        await pool.query(
+          `UPDATE detentions
+              SET dispatcher_compliance = ?,
+                  dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)
+            WHERE id = ? AND dispatcher_compliance = 'n/a'`,
+          [c.compliance, c.id]
+        );
+      }
+    } catch (err) {
+      console.error("[detention-compliance] email backfill failed", err);
+    }
   }
 
   for (const g of groups.values()) {
