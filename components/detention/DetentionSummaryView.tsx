@@ -30,8 +30,7 @@ function SummaryTable({
       <div className="border-b border-border px-4 py-3">
         <h2 className="text-base font-semibold text-foreground">{title}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Submitted = claims received in the period. Collected = paid amount on
-          those same claims.
+          Submitted = {submittedHint} Collected = {collectedHint}
         </p>
         {weekLimitNote ? (
           <p className="mt-1 text-xs text-muted-foreground">{weekLimitNote}</p>
