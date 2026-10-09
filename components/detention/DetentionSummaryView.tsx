@@ -58,11 +58,11 @@ function SummaryTable({
                   Submitted
                 </th>
                 <th className="px-4 py-3 font-medium" title={submittedHint}>
-                  Submitted amount
+                  Submitted $
                 </th>
                 <th className="px-4 py-3 font-medium">Paid</th>
                 <th className="px-4 py-3 font-medium" title={collectedHint}>
-                  Collected
+                  Collected amount
                 </th>
                 <th className="px-4 py-3 font-medium">Still open</th>
                 <th className="px-4 py-3 font-medium">Open $</th>
@@ -146,9 +146,9 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
               <tr>
                 <th className="px-4 py-3 font-medium">Dispatcher</th>
                 <th className="px-4 py-3 font-medium">Submitted</th>
-                <th className="px-4 py-3 font-medium">Submitted amount</th>
+                <th className="px-4 py-3 font-medium">Submitted $</th>
                 <th className="px-4 py-3 font-medium">Paid</th>
-                <th className="px-4 py-3 font-medium">Collected</th>
+                <th className="px-4 py-3 font-medium">Collected amount</th>
                 <th className="px-4 py-3 font-medium">Collection %</th>
                 <th className="px-4 py-3 font-medium">Still open</th>
                 <th className="px-4 py-3 font-medium">Open $</th>
