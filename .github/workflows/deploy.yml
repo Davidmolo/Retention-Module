@@ -72,6 +72,7 @@ jobs:
             --exclude '.env.local' \
             --exclude '.env.production' \
             --exclude '.env*.local' \
+            --exclude 'logs/' \
             --exclude '_migrate_*.txt' \
             --exclude '_prd_extract_tmp.txt' \
             --exclude 'data/sftp-incoming/' \
