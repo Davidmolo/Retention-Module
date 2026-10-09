@@ -73,16 +73,21 @@ export function DetentionViewTabs({
     { id: "insights", label: "Insights" },
   ];
   return (
-    <div className="flex flex-wrap gap-1 border-b border-border">
+    <div
+      role="tablist"
+      className="inline-flex w-full flex-wrap gap-1 rounded-lg border border-border bg-slate-50 p-1 sm:w-auto"
+    >
       {tabs.map((t) => (
         <button
           key={t.id}
           type="button"
+          role="tab"
+          aria-selected={view === t.id}
           onClick={() => onChange(t.id)}
           className={clsx(
-            "px-3 py-2 text-sm font-semibold transition",
+            "rounded-md px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition",
             view === t.id
-              ? "border-b-2 border-[var(--xxii-brand,#1e4d9c)] text-[var(--xxii-brand,#1e4d9c)]"
+              ? "bg-white text-[var(--xxii-brand,#1e4d9c)] shadow-sm ring-1 ring-slate-200"
               : "text-slate-500 hover:text-slate-800"
           )}
         >
@@ -104,27 +109,29 @@ export function ProgressiveStrip({
     );
   }
   return (
-    <div className="flex flex-wrap items-stretch gap-1 overflow-x-auto rounded-xl border border-border bg-slate-50 p-2">
-      {analytics.progressive.map((b, i) => (
-        <div key={b.key} className="flex items-center gap-1">
-          {i > 0 ? (
-            <span className="px-1 text-slate-300" aria-hidden>
-              →
-            </span>
-          ) : null}
-          <div className="min-w-[88px] rounded-lg bg-white px-3 py-2 text-center shadow-sm ring-1 ring-slate-200">
-            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-              {b.label}
-            </div>
-            <div className="text-lg font-bold tabular-nums text-slate-900">
-              {b.count}
-            </div>
-            <div className="text-xs tabular-nums text-slate-500">
-              {money(b.amount)}
+    <div className="overflow-x-auto rounded-xl border border-border bg-slate-50 p-3">
+      <div className="flex min-w-max items-stretch gap-1">
+        {analytics.progressive.map((b, i) => (
+          <div key={b.key} className="flex items-center gap-1">
+            {i > 0 ? (
+              <span className="shrink-0 px-1 text-slate-300" aria-hidden>
+                →
+              </span>
+            ) : null}
+            <div className="w-[104px] shrink-0 rounded-lg bg-white px-3 py-2.5 text-center shadow-sm ring-1 ring-slate-200">
+              <div className="truncate text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                {b.label}
+              </div>
+              <div className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">
+                {b.count}
+              </div>
+              <div className="truncate text-xs tabular-nums text-slate-500">
+                {money(b.amount)}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -254,15 +261,20 @@ function BarRow({
           ? "bg-rose-400"
           : "bg-sky-500";
   return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs">
-        <span className="font-medium text-slate-700">{label}</span>
-        <span className="tabular-nums text-slate-500">
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-3 text-xs">
+        <span className="min-w-0 truncate font-medium text-slate-700">
+          {label}
+        </span>
+        <span className="shrink-0 tabular-nums text-slate-500">
           {money(amount)} · {count}
         </span>
       </div>
       <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-        <div className={clsx("h-full rounded-full", bg)} style={{ width: `${pct}%` }} />
+        <div
+          className={clsx("h-full rounded-full transition-[width]", bg)}
+          style={{ width: `${pct}%` }}
+        />
       </div>
     </div>
   );
@@ -284,11 +296,15 @@ export function InsightsPanel({
   const maxAge = Math.max(1, ...analytics.ageing.map((a) => a.amount));
   const maxStatus = Math.max(1, ...analytics.byStatus.map((s) => s.amount));
 
+  const hasMonths = analytics.byMonth.length > 0;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-bold text-slate-900">Detention performance</h2>
-        <p className="text-sm text-muted-foreground">
+    <div className="space-y-5">
+      <div className="xxii-card px-4 py-3 sm:px-5">
+        <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
+          Detention performance
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
           Last {analytics.days || "all"} days · {k.billedCount} detentions in
           window · avg {formatDetentionDuration(k.avgDetentionMins)} · success{" "}
           {k.successRate}%
@@ -299,81 +315,121 @@ export function InsightsPanel({
         </p>
       </div>
 
-      <div className="xxii-card p-4">
-        <h3 className="mb-3 text-sm font-semibold text-slate-800">
-          Billed vs received by month
-        </h3>
-        <div className="flex h-48 items-end gap-1.5">
-          {analytics.byMonth.map((m) => (
-            <div
-              key={m.key}
-              className="flex min-w-0 flex-1 flex-col items-center justify-end gap-0.5"
-              title={`${m.label}: billed ${money(m.billed)}, received ${money(m.received)}`}
-            >
-              <div className="flex w-full items-end justify-center gap-0.5" style={{ height: "100%" }}>
-                <div
-                  className="w-[40%] rounded-t bg-[var(--xxii-brand,#1e4d9c)]"
-                  style={{ height: `${(m.billed / maxMonth) * 100}%`, minHeight: m.billed ? 2 : 0 }}
-                />
-                <div
-                  className="w-[40%] rounded-t bg-emerald-500"
-                  style={{ height: `${(m.received / maxMonth) * 100}%`, minHeight: m.received ? 2 : 0 }}
-                />
-              </div>
-              <div className="truncate text-[9px] text-slate-400">{m.label}</div>
-            </div>
-          ))}
+      <div className="xxii-card p-4 sm:p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-800">
+            Billed vs received by month
+          </h3>
+          <div className="flex items-center gap-3 text-[11px] text-slate-500">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-[var(--xxii-brand,#1e4d9c)]" />
+              Billed
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
+              Received
+            </span>
+          </div>
         </div>
-        <p className="mt-2 text-xs text-slate-500">
-          Purple = billed · Green = received. Gap = money raised but not yet
-          collected.
+        {!hasMonths ? (
+          <div className="flex h-48 items-center justify-center text-sm text-slate-400">
+            No monthly data in this window yet.
+          </div>
+        ) : (
+          <div className="flex h-52 items-end gap-2 border-b border-slate-100 pb-1">
+            {analytics.byMonth.map((m) => {
+              const billedH = m.billed ? Math.max(4, (m.billed / maxMonth) * 100) : 0;
+              const recvH = m.received
+                ? Math.max(4, (m.received / maxMonth) * 100)
+                : 0;
+              return (
+                <div
+                  key={m.key}
+                  className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
+                  title={`${m.label}: billed ${money(m.billed)}, received ${money(m.received)}`}
+                >
+                  <div className="flex h-44 w-full items-end justify-center gap-1">
+                    <div
+                      className="w-[42%] max-w-[18px] rounded-t bg-[var(--xxii-brand,#1e4d9c)]"
+                      style={{ height: `${billedH}%` }}
+                    />
+                    <div
+                      className="w-[42%] max-w-[18px] rounded-t bg-emerald-500"
+                      style={{ height: `${recvH}%` }}
+                    />
+                  </div>
+                  <div className="w-full truncate text-center text-[10px] font-medium text-slate-500">
+                    {m.label}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <p className="mt-3 text-xs text-slate-500">
+          Gap between bars = money billed but not yet collected.
         </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="xxii-card space-y-3 p-4">
+        <div className="xxii-card space-y-3 p-4 sm:p-5">
           <h3 className="text-sm font-semibold text-slate-800">
             Ageing of unsettled detentions
           </h3>
-          {analytics.ageing.map((a) => (
-            <BarRow
-              key={a.key}
-              label={a.label}
-              amount={a.amount}
-              count={a.count}
-              max={maxAge}
-              tone={
-                a.key === "15-30" || a.key.startsWith("31") || a.key === "60+"
-                  ? "amber"
-                  : "emerald"
-              }
-            />
-          ))}
+          {analytics.ageing.every((a) => a.count === 0) ? (
+            <p className="py-6 text-center text-sm text-slate-400">
+              No unsettled detentions in window.
+            </p>
+          ) : (
+            analytics.ageing.map((a) => (
+              <BarRow
+                key={a.key}
+                label={a.label}
+                amount={a.amount}
+                count={a.count}
+                max={maxAge}
+                tone={
+                  a.key === "15-30" || a.key.startsWith("31") || a.key === "60+"
+                    ? "amber"
+                    : "emerald"
+                }
+              />
+            ))
+          )}
         </div>
-        <div className="xxii-card space-y-3 p-4">
+        <div className="xxii-card space-y-3 p-4 sm:p-5">
           <h3 className="text-sm font-semibold text-slate-800">
             Where detentions sit
           </h3>
-          {analytics.byStatus.map((s) => (
-            <BarRow
-              key={s.key}
-              label={s.label}
-              amount={s.amount}
-              count={s.count}
-              max={maxStatus}
-              tone={
-                s.key === "Paid"
-                  ? "emerald"
-                  : s.key === "Denied"
-                    ? "rose"
-                    : "amber"
-              }
-            />
-          ))}
+          {analytics.byStatus.every((s) => s.count === 0) ? (
+            <p className="py-6 text-center text-sm text-slate-400">
+              No status data in window.
+            </p>
+          ) : (
+            analytics.byStatus.map((s) => (
+              <BarRow
+                key={s.key}
+                label={s.label}
+                amount={s.amount}
+                count={s.count}
+                max={maxStatus}
+                tone={
+                  s.key === "Paid"
+                    ? "emerald"
+                    : s.key === "Denied"
+                      ? "rose"
+                      : "amber"
+                }
+              />
+            ))
+          )}
         </div>
       </div>
 
-      <PartyTable title="Customers by detention billed" rows={analytics.byCustomer} />
+      <PartyTable
+        title="Customers by detention billed"
+        rows={analytics.byCustomer}
+      />
     </div>
   );
 }

@@ -90,6 +90,28 @@ function DetentionStatusPill({ status }: { status: string }) {
   );
 }
 
+function FilterControl({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <label className={clsx("flex min-w-0 flex-col gap-1", className)}>
+      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500 whitespace-nowrap">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+const filterControlClass =
+  "h-9 w-full rounded-lg border border-border bg-background px-2.5 text-sm outline-none focus:ring-2 focus:ring-[var(--xxii-brand,#1e4d9c)]";
+
 function KpiCard({
   title,
   value,
@@ -110,17 +132,17 @@ function KpiCard({
       type="button"
       onClick={onClick}
       className={clsx(
-        "xxii-card w-full p-4 text-left transition",
+        "xxii-card w-full p-3.5 text-left transition sm:p-4",
         onClick && "hover:border-slate-300",
         active && "ring-2 ring-[var(--xxii-brand,#1e4d9c)]"
       )}
     >
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      <div className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-500">
         {title}
       </div>
       <div
         className={clsx(
-          "mt-1 text-2xl font-bold tabular-nums",
+          "mt-1 truncate text-xl font-bold tabular-nums sm:text-2xl",
           tone === "warn" && "text-amber-700",
           tone === "good" && "text-emerald-700",
           tone === "risk" && "text-rose-700",
@@ -129,7 +151,11 @@ function KpiCard({
       >
         {value}
       </div>
-      {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
+      {hint ? (
+        <div className="mt-1 truncate text-xs text-slate-500" title={hint}>
+          {hint}
+        </div>
+      ) : null}
     </button>
   );
 }
@@ -228,9 +254,11 @@ export function DetentionBoard() {
       if (Array.isArray(json.data.dispatchers)) {
         setDispatchers(json.data.dispatchers);
       }
-      const ajson = await analyticsRes.json();
-      if (analyticsRes.ok && ajson.ok) {
+      const ajson = await analyticsRes.json().catch(() => null);
+      if (analyticsRes.ok && ajson?.ok) {
         setAnalytics(ajson.data);
+      } else {
+        setAnalytics(null);
       }
     } catch (e) {
       setError((e as Error).message || "Failed to load");
@@ -337,7 +365,7 @@ export function DetentionBoard() {
       </div>
 
       {kpis ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
           <KpiCard
             title="Open"
             value={String(kpis.open)}
@@ -399,37 +427,156 @@ export function DetentionBoard() {
 
       <DetentionViewTabs view={view} onChange={setView} />
 
+      {error && view !== "table" && view !== "progressive" ? (
+        <div className="flex items-center gap-2 text-sm text-rose-600">
+          <AlertCircle size={16} />
+          {error}
+        </div>
+      ) : null}
+
+      {/* Shared filter bar — same controls for every view */}
+      <div className="xxii-card overflow-hidden">
+        <div className="space-y-3 border-b border-border p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <Filter size={14} className="text-slate-400" />
+            Filters
+          </div>
+          <div className="relative min-w-0">
+            <Search
+              size={16}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search load, driver, customer, truck…"
+              className="h-10 w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[var(--xxii-brand,#1e4d9c)]"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            <FilterControl label="Window">
+              <select
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+                className={filterControlClass}
+                title="Date window"
+              >
+                <option value={90}>Last 90 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={180}>Last 180 days</option>
+                <option value={365}>Last 12 months</option>
+                <option value={0}>All time</option>
+              </select>
+            </FilterControl>
+            <FilterControl label="Status">
+              <select
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value);
+                  setAwaitingOnly(false);
+                  setFollowUpOnly(false);
+                }}
+                className={filterControlClass}
+              >
+                <option value="all">All statuses</option>
+                {statuses.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </FilterControl>
+            <FilterControl label="Dispatcher">
+              <select
+                value={dispatcher}
+                onChange={(e) => setDispatcher(e.target.value)}
+                className={filterControlClass}
+              >
+                <option value="all">All dispatchers</option>
+                {dispatchers.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </FilterControl>
+            <FilterControl label="Email date">
+              <div className="flex h-9 items-center gap-1.5">
+                <input
+                  type="date"
+                  value={emailDate}
+                  onChange={(e) => {
+                    setEmailDate(e.target.value);
+                    if (e.target.value && sort === "default") {
+                      setSort("emailDateDesc");
+                    }
+                  }}
+                  className={clsx(filterControlClass, "min-w-0 flex-1")}
+                  title="Show detentions received on this date"
+                />
+                {emailDate ? (
+                  <button
+                    type="button"
+                    onClick={() => setEmailDate("")}
+                    className="shrink-0 text-xs text-slate-500 underline hover:text-slate-800"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+            </FilterControl>
+            <FilterControl label="Sort">
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as DetentionSort)}
+                className={filterControlClass}
+                title="Sort list"
+              >
+                <option value="emailDateDesc">Newest first</option>
+                <option value="emailDateAsc">Oldest first</option>
+                <option value="default">Open first, then newest</option>
+              </select>
+            </FilterControl>
+            <FilterControl label="Actions">
+              <div className="flex h-9 items-center gap-2">
+                <label className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium text-slate-600 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={awaitingOnly}
+                    onChange={(e) => {
+                      setAwaitingOnly(e.target.checked);
+                      if (e.target.checked) setFollowUpOnly(false);
+                      setPage(1);
+                    }}
+                  />
+                  Needs reply
+                </label>
+                <button
+                  type="button"
+                  disabled={syncing}
+                  onClick={() => void syncInbox()}
+                  className="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-slate-700 whitespace-nowrap hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    size={14}
+                    className={syncing ? "animate-spin" : ""}
+                  />
+                  Sync
+                </button>
+              </div>
+            </FilterControl>
+          </div>
+        </div>
+        {syncMsg ? (
+          <div className="border-b border-border px-4 py-2 text-xs text-slate-600">
+            {syncMsg}
+          </div>
+        ) : null}
+      </div>
+
       {view === "progressive" ? (
         <ProgressiveStrip analytics={analytics} />
       ) : null}
-
-      {(view === "pipeline" || view === "insights") && (
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-          >
-            <option value={90}>Last 90 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={180}>Last 180 days</option>
-            <option value={365}>Last 12 months</option>
-            <option value={0}>All time</option>
-          </select>
-          <button
-            type="button"
-            disabled={syncing}
-            onClick={() => void syncInbox()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
-            Sync inbox
-          </button>
-          {syncMsg ? (
-            <span className="text-xs text-slate-500">{syncMsg}</span>
-          ) : null}
-        </div>
-      )}
 
       {view === "pipeline" ? (
         <PipelineBoard
@@ -444,123 +591,6 @@ export function DetentionBoard() {
 
       {view === "table" || view === "progressive" ? (
       <div className="xxii-card overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center">
-          <div className="relative min-w-0 flex-1">
-            <Search
-              size={16}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search load, driver, customer, truck…"
-              className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[var(--xxii-brand,#1e4d9c)]"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Filter size={16} className="text-slate-400" />
-            <select
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              title="Date window"
-            >
-              <option value={90}>Last 90 days</option>
-              <option value={30}>Last 30 days</option>
-              <option value={180}>Last 180 days</option>
-              <option value={365}>Last 12 months</option>
-              <option value={0}>All time</option>
-            </select>
-            <select
-              value={status}
-              onChange={(e) => {
-                setStatus(e.target.value);
-                setAwaitingOnly(false);
-                setFollowUpOnly(false);
-              }}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value="all">All statuses</option>
-              {statuses.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <select
-              value={dispatcher}
-              onChange={(e) => setDispatcher(e.target.value)}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value="all">All dispatchers</option>
-              {dispatchers.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-            <label className="flex items-center gap-1.5 text-sm text-slate-600">
-              <span className="whitespace-nowrap">Email date</span>
-              <input
-                type="date"
-                value={emailDate}
-                onChange={(e) => {
-                  setEmailDate(e.target.value);
-                  if (e.target.value && sort === "default") {
-                    setSort("emailDateDesc");
-                  }
-                }}
-                className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
-                title="Show detentions received on this date"
-              />
-              {emailDate ? (
-                <button
-                  type="button"
-                  onClick={() => setEmailDate("")}
-                  className="text-xs text-slate-500 underline hover:text-slate-800"
-                >
-                  Clear
-                </button>
-              ) : null}
-            </label>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as DetentionSort)}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              title="Sort list"
-            >
-              <option value="emailDateDesc">Newest first</option>
-              <option value="emailDateAsc">Oldest first</option>
-              <option value="default">Open first, then newest</option>
-            </select>
-            <label className="flex items-center gap-1.5 rounded-lg border border-border px-2 py-1.5 text-xs font-medium text-slate-600">
-              <input
-                type="checkbox"
-                checked={awaitingOnly}
-                onChange={(e) => {
-                  setAwaitingOnly(e.target.checked);
-                  if (e.target.checked) setFollowUpOnly(false);
-                  setPage(1);
-                }}
-              />
-              Needs reply
-            </label>
-            <button
-              type="button"
-              disabled={syncing}
-              onClick={() => void syncInbox()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
-              Sync inbox
-            </button>
-          </div>
-        </div>
-        {syncMsg ? (
-          <div className="border-b border-border px-4 py-2 text-xs text-slate-600">
-            {syncMsg}
-          </div>
-        ) : null}
 
         {error ? (
           <div className="flex items-center gap-2 p-6 text-sm text-rose-600">
@@ -587,21 +617,35 @@ export function DetentionBoard() {
         {items.length ? (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[960px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <table className="w-full min-w-[1100px] table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[14%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[6%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                </colgroup>
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-4 py-3 font-medium">Customer</th>
-                    <th className="px-4 py-3 font-medium">Dispatcher</th>
-                    <th className="px-4 py-3 font-medium">Load #</th>
-                    <th className="px-4 py-3 font-medium">Driver</th>
-                    <th className="px-4 py-3 font-medium">PU</th>
-                    <th className="px-4 py-3 font-medium">PU Appt</th>
-                    <th className="px-4 py-3 font-medium">DEL</th>
-                    <th className="px-4 py-3 font-medium">Email date</th>
-                    <th className="px-4 py-3 font-medium">Time</th>
-                    <th className="px-4 py-3 font-medium">Amount</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">Flags</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Customer</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Dispatcher</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Load #</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Driver</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">PU</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">PU Appt</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">DEL</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Email date</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Time</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Amount</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Status</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Flags</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -614,63 +658,63 @@ export function DetentionBoard() {
                         selectedId === row.id && "bg-sky-50/60"
                       )}
                     >
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">
+                      <td className="px-3 py-3">
+                        <div className="truncate font-medium text-slate-900" title={row.customer || undefined}>
                           {row.customer || "—"}
                         </div>
-                        <div className="truncate text-xs text-slate-500">
+                        <div className="truncate text-xs text-slate-500" title={row.customerEmail || undefined}>
                           {row.customerEmail || ""}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm">
+                      <td className="truncate px-3 py-3 text-sm" title={row.dispatcher || undefined}>
                         {row.dispatcher || "—"}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{row.loadNumber || "—"}</div>
-                        <div className="text-xs text-slate-500">
+                      <td className="px-3 py-3">
+                        <div className="truncate font-medium">{row.loadNumber || "—"}</div>
+                        <div className="truncate text-xs text-slate-500">
                           {row.shipmentNumber || ""}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <div>{row.driverName || "—"}</div>
-                        <div className="text-xs text-slate-500">
+                      <td className="px-3 py-3">
+                        <div className="truncate">{row.driverName || "—"}</div>
+                        <div className="truncate text-xs text-slate-500">
                           Truck #{row.truckNumber || "—"}
                         </div>
                       </td>
-                      <td className="max-w-[140px] truncate px-4 py-3 text-xs text-slate-700">
+                      <td className="truncate px-3 py-3 text-xs text-slate-700" title={row.puLocation || undefined}>
                         {row.puLocation || "—"}
                       </td>
-                      <td className="px-4 py-3 text-xs tabular-nums text-slate-600">
+                      <td className="truncate px-3 py-3 text-xs tabular-nums text-slate-600">
                         {row.puAppt || "—"}
                       </td>
-                      <td className="max-w-[140px] truncate px-4 py-3 text-xs text-slate-700">
+                      <td className="truncate px-3 py-3 text-xs text-slate-700" title={row.delLocation || undefined}>
                         {row.delLocation || "—"}
                       </td>
-                      <td className="px-4 py-3 tabular-nums text-slate-700">
+                      <td className="whitespace-nowrap px-3 py-3 tabular-nums text-slate-700">
                         {formatEmailDay(row.emailDate || row.createdAt)}
                       </td>
-                      <td className="px-4 py-3 tabular-nums">
+                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">
                         {row.detentionTimeLabel ||
                           (row.detentionMins != null
                             ? `${row.detentionMins}m`
                             : "—")}
                       </td>
-                      <td className="px-4 py-3 font-semibold tabular-nums">
+                      <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums">
                         {money(row.amount)}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <DetentionStatusPill status={row.status} />
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
+                      <td className="px-3 py-3">
+                        <div className="flex flex-col gap-1">
                           {row.awaitingUs &&
                           !["Paid", "Denied"].includes(row.status) ? (
-                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
+                            <span className="w-fit rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800 whitespace-nowrap">
                               Awaiting us
                             </span>
                           ) : null}
                           {row.followUpDate ? (
-                            <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600">
+                            <span className="inline-flex w-fit items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600 whitespace-nowrap">
                               <Clock size={10} />
                               {row.followUpDate}
                             </span>
