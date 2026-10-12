@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Search, Send } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  Send,
+  Sparkles,
+} from "lucide-react";
 import clsx from "clsx";
 import { MAX_SURVEY_REMINDERS } from "@/lib/retention/constants";
 import { StatusPill, Stars, DepartmentRatingsCell } from "./ui";
@@ -11,6 +17,25 @@ import {
   navigateRetentionView,
   type ResponsesFilter,
 } from "@/lib/retention/viewNav";
+
+type DepartmentInsight = {
+  department: string;
+  average: number | null;
+  count: number;
+  lowCount: number;
+  summary: string;
+  highlights: string[];
+  sampleComments: string[];
+};
+
+type InsightsData = {
+  month: string | null;
+  monthsAvailable: string[];
+  totalAverage: number | null;
+  totalRated: number;
+  departments: DepartmentInsight[];
+  aiUsed: boolean;
+};
 
 type ResponseRow = {
   id: string;
@@ -167,6 +192,8 @@ export function ResponsesPanel({
           Back to Overview
         </button>
       </div>
+
+      <DepartmentInsightsBlock />
 
       <section className="xxii-card overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-[var(--xxii-line)] px-4 py-4 sm:px-5">
@@ -434,6 +461,175 @@ export function ResponsesPanel({
         )}
       </section>
     </div>
+  );
+}
+
+function monthOptionLabel(key: string) {
+  const [y, m] = key.split("-").map(Number);
+  if (!y || !m) return key;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function DepartmentInsightsBlock() {
+  const [month, setMonth] = useState("");
+  const [data, setData] = useState<InsightsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams();
+    if (month) params.set("month", month);
+    fetch(`/api/retention/responses/insights?${params}`, { cache: "no-store" })
+      .then(async (res) => {
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || "Failed to load insights");
+        }
+        if (!cancelled) setData(json.data as InsightsData);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message || "Failed to load insights");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
+
+  return (
+    <section className="xxii-card overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-[var(--xxii-line)] px-4 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-5">
+        <div>
+          <h3 className="text-sm font-bold text-[var(--xxii-text)]">
+            Department rating averages
+          </h3>
+          <p className="mt-0.5 text-xs text-[var(--xxii-muted)]">
+            Overall and per-department averages from completed driver surveys.
+            Low ratings (≤3★) are summarized below.
+          </p>
+        </div>
+        <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+          Month
+          <select
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="h-9 min-w-[160px] rounded-xl border border-[var(--xxii-line)] bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-[var(--xxii-blue)]"
+          >
+            <option value="">All time</option>
+            {(data?.monthsAvailable || []).map((m) => (
+              <option key={m} value={m}>
+                {monthOptionLabel(m)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {error ? (
+        <div className="px-4 py-6 text-sm text-rose-600 sm:px-5">{error}</div>
+      ) : loading && !data ? (
+        <div className="grid gap-3 p-4 sm:grid-cols-5 sm:px-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-20 animate-pulse rounded-xl bg-slate-100" />
+          ))}
+        </div>
+      ) : data ? (
+        <div className="space-y-4 p-4 sm:p-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="rounded-xl border border-[var(--xxii-line)] bg-slate-50/80 px-3 py-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                Total average
+              </div>
+              <div className="mt-1 text-2xl font-extrabold tabular-nums text-[var(--xxii-text)]">
+                {data.totalAverage != null ? data.totalAverage.toFixed(1) : "—"}
+                <span className="text-sm font-semibold text-slate-400">★</span>
+              </div>
+              <div className="mt-0.5 text-[11px] text-slate-500">
+                {data.totalRated} rated survey
+                {data.totalRated === 1 ? "" : "s"}
+              </div>
+            </div>
+            {data.departments.map((d) => (
+              <div
+                key={d.department}
+                className="rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-3"
+              >
+                <div className="truncate text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  {d.department}
+                </div>
+                <div className="mt-1 text-2xl font-extrabold tabular-nums text-[var(--xxii-text)]">
+                  {d.average != null ? d.average.toFixed(1) : "—"}
+                  <span className="text-sm font-semibold text-slate-400">★</span>
+                </div>
+                <div className="mt-0.5 text-[11px] text-slate-500">
+                  {d.count} rating{d.count === 1 ? "" : "s"}
+                  {d.lowCount > 0 ? ` · ${d.lowCount} low` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+              <Sparkles size={14} className="text-[var(--xxii-blue)]" />
+              Issues from low ratings / comments
+              {data.aiUsed ? (
+                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 ring-1 ring-sky-200">
+                  AI summary
+                </span>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                  Auto summary
+                </span>
+              )}
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {data.departments.map((d) => (
+                <div
+                  key={`sum-${d.department}`}
+                  className="rounded-xl border border-[var(--xxii-line)] bg-slate-50/50 p-3"
+                >
+                  <div className="text-sm font-bold text-[var(--xxii-text)]">
+                    {d.department}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                    {d.summary}
+                  </p>
+                  {d.highlights.length ? (
+                    <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-slate-700">
+                      {d.highlights.map((h) => (
+                        <li key={h}>{h}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {d.sampleComments.length ? (
+                    <div className="mt-2 space-y-1 border-t border-[var(--xxii-line)] pt-2">
+                      {d.sampleComments.slice(0, 2).map((c) => (
+                        <p
+                          key={c.slice(0, 40)}
+                          className="line-clamp-2 text-[11px] italic text-slate-500"
+                        >
+                          “{c}”
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

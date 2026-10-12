@@ -62,13 +62,13 @@ export async function birthdayMessage(opts: {
 }
 
 /**
- * Anniversary SMS to driver — includes survey link.
- * Covers 3 months, 6 months, 1 year, and every year after.
+ * Anniversary SMS to driver. Greeting by default; include surveyUrl only
+ * when the saved template still contains {surveyUrl}.
  */
 export async function anniversaryMessage(opts: {
   driverName: string;
   milestone: NonNullable<RenderMessageVars["milestone"]>;
-  surveyUrl: string;
+  surveyUrl?: string;
 }): Promise<string> {
   return renderRetentionSms("anniversary", opts);
 }
@@ -76,7 +76,7 @@ export async function anniversaryMessage(opts: {
 export async function holidayMessage(opts: {
   driverName: string;
   holidayName: string;
-  surveyUrl: string;
+  surveyUrl?: string;
 }): Promise<string> {
   return renderRetentionSms("holiday", opts);
 }

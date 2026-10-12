@@ -10,7 +10,12 @@ import { getPool } from "@/lib/db";
 import { getGpAdapter } from "@/lib/adapters/gp";
 import { isSurveyEligible } from "./rules";
 import { birthdayLeadershipNotice } from "./messages";
-import { birthdayMessage, buildOccasionMessage } from "./messageSend";
+import {
+  birthdayMessage,
+  buildOccasionMessage,
+  getMessageTemplateBody,
+} from "./messageSend";
+import { sendSms } from "./sms";
 import {
   anniversaryMilestoneOn,
   holidaysOn,
@@ -196,6 +201,7 @@ async function sendBirthdayWish(opts: {
 async function sendSurveyOccasion(opts: {
   driverId: string;
   driverName: string;
+  phone?: string | null;
   occasionType: "anniversary" | "holiday";
   occasionKey: string;
   holidayName?: string;
@@ -215,6 +221,74 @@ async function sendSurveyOccasion(opts: {
       occasionKey: opts.occasionKey,
       holidayName: opts.holidayName,
       skipped: "already_sent",
+    };
+  }
+
+  const templateBody = await getMessageTemplateBody(opts.occasionType);
+  const wantsSurvey = templateBody.includes("{surveyUrl}");
+
+  // Survey-linked occasions still require tenure eligibility.
+  if (wantsSurvey) {
+    const gp = await getGpAdapter().getDriver(opts.driverId);
+    if (!gp || !isSurveyEligible(gp)) {
+      return {
+        driverId: opts.driverId,
+        name: opts.driverName,
+        occasionType: opts.occasionType,
+        occasionKey: opts.occasionKey,
+        holidayName: opts.holidayName,
+        skipped: "not_eligible",
+      };
+    }
+  }
+
+  // Greeting-only (no {surveyUrl} in template) — same as birthday: SMS, no survey.
+  if (!wantsSurvey) {
+    const smsBody = await buildOccasionMessage(opts.occasionType, {
+      driverName: opts.driverName,
+      milestone: opts.milestone,
+      holidayName: opts.holidayName,
+    });
+    const phone = opts.phone?.trim();
+    if (!phone) {
+      return {
+        driverId: opts.driverId,
+        name: opts.driverName,
+        occasionType: opts.occasionType,
+        occasionKey: opts.occasionKey,
+        holidayName: opts.holidayName,
+        skipped: "no_phone",
+      };
+    }
+    if (await retentionStore.isOptedOut(phone)) {
+      return {
+        driverId: opts.driverId,
+        name: opts.driverName,
+        occasionType: opts.occasionType,
+        occasionKey: opts.occasionKey,
+        holidayName: opts.holidayName,
+        skipped: "opted_out",
+      };
+    }
+    const sms = await sendSms(phone, smsBody, { contactName: opts.driverName });
+    if (!sms.ok) {
+      throw new Error(sms.error || "SMS send failed");
+    }
+    await retentionStore.recordOccasionSend({
+      driverId: opts.driverId,
+      occasionType: opts.occasionType,
+      occasionKey: opts.occasionKey,
+      holidayName: opts.holidayName ?? null,
+      surveyOccurrenceId: null,
+      messageBody: smsBody,
+    });
+    return {
+      driverId: opts.driverId,
+      name: opts.driverName,
+      occasionType: opts.occasionType,
+      occasionKey: opts.occasionKey,
+      holidayName: opts.holidayName,
+      smsBody,
     };
   }
 
@@ -282,9 +356,6 @@ export async function runDailyOccasionSends(now = new Date()): Promise<{
       );
     }
 
-    // Anniversary + holidays need survey-eligible drivers
-    if (!isSurveyEligible(gp)) continue;
-
     if (row.hireDate) {
       const milestone = anniversaryMilestoneOn(row.hireDate, todayIso);
       if (milestone) {
@@ -292,6 +363,7 @@ export async function runDailyOccasionSends(now = new Date()): Promise<{
           await sendSurveyOccasion({
             driverId: String(row.id),
             driverName: row.name || gp.name,
+            phone: row.phone || gp.phone || null,
             occasionType: "anniversary",
             occasionKey: milestone.occasionKey,
             milestone,
@@ -311,6 +383,7 @@ export async function runDailyOccasionSends(now = new Date()): Promise<{
         await sendSurveyOccasion({
           driverId: String(row.id),
           driverName: row.name || gp.name,
+          phone: row.phone || gp.phone || null,
           occasionType: "holiday",
           occasionKey: `holiday-${h.key}-${year}`,
           holidayName: h.name,

@@ -54,10 +54,13 @@ export async function PUT(request: Request) {
       throw err;
     }
 
-    const meta = (
-      await listMessageTemplatesForEditor()
-    ).find((t) => t.id === id);
-    const requiresSurvey = meta?.placeholders.some((p) => p.token === "{surveyUrl}");
+    // Only require {surveyUrl} on templates where it is marked required
+    // (anniversary/holiday allow greeting-only without a link).
+    const requiresSurvey =
+      id === "survey-invite" ||
+      id === "survey-reminder" ||
+      id === "post-resolve" ||
+      id === "post-resolve-resend";
     if (requiresSurvey && !trimmed.includes("{surveyUrl}")) {
       const err = new Error(
         "This message must include {surveyUrl} so the survey link can be inserted."

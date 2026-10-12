@@ -101,7 +101,7 @@ export const OverviewPanels = memo(function OverviewPanels({
           onClick={onPending}
         />
         <KpiCard
-          title="Total Responses"
+          title="Total Surveys"
           value={String(data.kpis.totalResponses)}
           hint="Submitted + pending + no response"
           tone="purple"

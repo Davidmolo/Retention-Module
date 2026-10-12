@@ -159,10 +159,11 @@ export function ConfigureMessagesPanel({
             Write in a clear, personal tone. Prefer one short paragraph. Aim for
             under ~320 characters when you can. Always include{" "}
             <code className="rounded bg-white px-1 text-xs">{"{FirstName}"}</code>{" "}
-            for personalization. For any survey message, keep{" "}
-            <code className="rounded bg-white px-1 text-xs">{"{surveyUrl}"}</code>{" "}
-            in the text — do not paste a real link. Each card below lists the
-            placeholders that card supports.
+            for personalization. Survey invite / reminder / post-resolve messages
+            must keep{" "}
+            <code className="rounded bg-white px-1 text-xs">{"{surveyUrl}"}</code>
+            . Anniversary and holiday greetings can omit it for a message-only
+            SMS. Do not paste a real link. Each card lists its placeholders.
           </p>
         </div>
       </div>

@@ -55,12 +55,9 @@ export const DEFAULT_MESSAGE_BODIES: Record<MessageTemplateId, string> = {
   anniversary:
     `Happy {MilestoneLabel} work anniversary, {FirstName}! ` +
     `We have hit this milestone together. We appreciate your dedication and commitment, ` +
-    `and we hope you feel that you are getting the support and commitment from our team as well. ` +
-    `Please take a moment to provide feedback on the {FeedbackPeriod} you've been with us ` +
-    `and if there's anything we should do to make improvements for you: {surveyUrl}`,
+    `and we hope you feel that you are getting the support and commitment from our team as well.`,
   holiday:
-    `Happy {HolidayName}, {FirstName}! Warm wishes from the XXII team. ` +
-    `If you have a moment, we'd appreciate your feedback: {surveyUrl}`,
+    `Happy {HolidayName}, {FirstName}! Warm wishes from the XXII team.`,
   "survey-invite": `Hi {FirstName}, XXII wants your feedback: {surveyUrl}`,
   "survey-reminder":
     `Hi {FirstName}, quick reminder — XXII still wants your feedback: {surveyUrl}`,
@@ -88,10 +85,10 @@ export const MESSAGE_TEMPLATES: MessageTemplateMeta[] = [
     id: "anniversary",
     title: "Work anniversary",
     description:
-      "Sent at 3 months, 6 months, 1 year, and each year after. Includes a survey link.",
+      "Sent at 3 months, 6 months, 1 year, and each year after. Greeting by default — add {surveyUrl} only if you also want a survey link.",
     channel: "SMS to driver",
     editorGuide:
-      "Congratulate the milestone, reinforce support, then ask for feedback. Always keep {surveyUrl} in the message.",
+      "Congratulate the milestone and reinforce support. Leave out {surveyUrl} for a greeting-only SMS. Add {surveyUrl} only if you want this message to include a feedback survey.",
     placeholders: [
       { token: "{FirstName}", meaning: "Driver’s first name" },
       {
@@ -102,7 +99,10 @@ export const MESSAGE_TEMPLATES: MessageTemplateMeta[] = [
         token: "{FeedbackPeriod}",
         meaning: 'Period being reviewed, e.g. "first 3 months"',
       },
-      { token: "{surveyUrl}", meaning: "Unique survey link (required)" },
+      {
+        token: "{surveyUrl}",
+        meaning: "Optional survey link — omit for greeting-only",
+      },
     ],
     defaultBody: DEFAULT_MESSAGE_BODIES.anniversary,
   },
@@ -110,14 +110,17 @@ export const MESSAGE_TEMPLATES: MessageTemplateMeta[] = [
     id: "holiday",
     title: "Holiday greeting",
     description:
-      "Sent on configured company holidays. Includes a survey link.",
+      "Sent on configured company holidays. Greeting by default — add {surveyUrl} only if you also want a survey link.",
     channel: "SMS to driver",
     editorGuide:
-      "Lead with the holiday greeting, then a soft ask for feedback. Keep {HolidayName} and {surveyUrl}.",
+      "Lead with the holiday greeting. Leave out {surveyUrl} for a greeting-only SMS. Add {surveyUrl} only if you want this message to include a feedback survey.",
     placeholders: [
       { token: "{FirstName}", meaning: "Driver’s first name" },
       { token: "{HolidayName}", meaning: "Holiday name, e.g. Thanksgiving" },
-      { token: "{surveyUrl}", meaning: "Unique survey link (required)" },
+      {
+        token: "{surveyUrl}",
+        meaning: "Optional survey link — omit for greeting-only",
+      },
     ],
     defaultBody: DEFAULT_MESSAGE_BODIES.holiday,
   },
