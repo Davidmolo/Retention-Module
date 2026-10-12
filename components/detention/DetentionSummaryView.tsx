@@ -1,17 +1,53 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Filter,
+  Search,
+} from "lucide-react";
 import clsx from "clsx";
-import type {
-  DetentionDispatcherSummary,
-  DetentionPeriodSummary,
+import {
+  DETENTION_STATUSES,
+  type DetentionDispatcherSummary,
+  type DetentionPeriodSummary,
 } from "@/lib/detention/types";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
+
+function FilterControl({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <label className={clsx("flex min-w-0 flex-col gap-1", className)}>
+      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500 whitespace-nowrap">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+const filterControlClass =
+  "h-9 w-full rounded-lg border border-border bg-background px-2.5 text-sm outline-none focus:ring-2 focus:ring-[var(--xxii-brand,#1e4d9c)]";
 
 type SortDir = "asc" | "desc";
 
@@ -421,36 +457,57 @@ export function DetentionSummaryView() {
   const [dispatchers, setDispatchers] = useState<DetentionDispatcherSummary[]>(
     []
   );
+  const [dispatcherOptions, setDispatcherOptions] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([...DETENTION_STATUSES]);
+  const [days, setDays] = useState(90);
+  const [status, setStatus] = useState("all");
+  const [dispatcher, setDispatcher] = useState("all");
+  const [emailDate, setEmailDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch("/api/detention/summary", {
-          credentials: "include",
-        });
-        const json = await res.json();
-        if (!res.ok || !json.ok) {
-          throw new Error(json.error || "Failed to load summary");
-        }
-        if (cancelled) return;
-        setWeeks(json.data.weeks || []);
-        setMonths(json.data.months || []);
-        setDispatchers(json.data.dispatchers || []);
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const sp = new URLSearchParams();
+      sp.set("days", String(days));
+      if (status !== "all") sp.set("status", status);
+      if (dispatcher !== "all") sp.set("dispatcher", dispatcher);
+      if (emailDate) sp.set("emailDate", emailDate);
+      const res = await fetch(`/api/detention/summary?${sp.toString()}`, {
+        credentials: "include",
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to load summary");
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      setWeeks(json.data.weeks || []);
+      setMonths(json.data.months || []);
+      setDispatchers(json.data.dispatchers || []);
+      const opts = json.data.filterOptions;
+      if (opts?.dispatchers?.length) setDispatcherOptions(opts.dispatchers);
+      if (opts?.statuses?.length) setStatuses(opts.statuses);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [days, status, dispatcher, emailDate]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const clearFilters = () => {
+    setDays(90);
+    setStatus("all");
+    setDispatcher("all");
+    setEmailDate("");
+  };
+
+  const filtersActive =
+    days !== 90 || status !== "all" || dispatcher !== "all" || Boolean(emailDate);
 
   return (
     <div className="space-y-6">
@@ -469,6 +526,90 @@ export function DetentionSummaryView() {
         >
           ← Back to board
         </Link>
+      </div>
+
+      <div className="xxii-card overflow-hidden">
+        <div className="space-y-3 border-b border-border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <Filter size={14} className="text-slate-400" />
+              Filters
+            </div>
+            {filtersActive ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-xs font-medium text-slate-500 underline hover:text-slate-800"
+              >
+                Reset to last 90 days
+              </button>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <FilterControl label="Window">
+              <select
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+                className={filterControlClass}
+                title="Date window"
+              >
+                <option value={90}>Last 90 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={180}>Last 180 days</option>
+                <option value={365}>Last 12 months</option>
+                <option value={0}>All time</option>
+              </select>
+            </FilterControl>
+            <FilterControl label="Status">
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className={filterControlClass}
+              >
+                <option value="all">All statuses</option>
+                {statuses.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </FilterControl>
+            <FilterControl label="Dispatcher">
+              <select
+                value={dispatcher}
+                onChange={(e) => setDispatcher(e.target.value)}
+                className={filterControlClass}
+              >
+                <option value="all">All dispatchers</option>
+                {dispatcherOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </FilterControl>
+            <FilterControl label="Email date">
+              <div className="flex h-9 items-center gap-1.5">
+                <input
+                  type="date"
+                  value={emailDate}
+                  onChange={(e) => setEmailDate(e.target.value)}
+                  className={clsx(filterControlClass, "min-w-0 flex-1")}
+                  title="Show claims received on this date"
+                />
+                {emailDate ? (
+                  <button
+                    type="button"
+                    onClick={() => setEmailDate("")}
+                    className="shrink-0 text-xs text-slate-500 underline hover:text-slate-800"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+            </FilterControl>
+          </div>
+        </div>
       </div>
 
       {error ? (
@@ -491,7 +632,7 @@ export function DetentionSummaryView() {
             rows={weeks}
             submittedHint="Total claims received during each period listed below."
             collectedHint="Total amount collected for those claims."
-            weekLimitNote="Shows the latest 26 Tuesday–Monday weeks (W##, same as Gross Profit). When a newer week appears, the oldest drops off the list."
+            weekLimitNote="Shows the latest 26 Tuesday–Monday weeks (W##, same as Gross Profit) inside the selected filters. When a newer week appears, the oldest drops off the list."
             currentBadge="Current week"
           />
           <SummaryTable

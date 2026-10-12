@@ -3,18 +3,45 @@ import {
   getDetentionDispatcherSummary,
   getDetentionMonthlySummary,
   getDetentionWeeklySummary,
+  listDetentionSummaryDispatchers,
+  type DetentionSummaryFilters,
 } from "@/lib/detention/summary";
+import { DETENTION_STATUSES } from "@/lib/detention/types";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+function parseFilters(searchParams: URLSearchParams): DetentionSummaryFilters {
+  const daysRaw = searchParams.get("days");
+  const days =
+    daysRaw == null || daysRaw === ""
+      ? 90
+      : Math.max(0, Math.floor(Number(daysRaw)) || 0);
+  const status = searchParams.get("status") || undefined;
+  const dispatcher = searchParams.get("dispatcher") || undefined;
+  const emailDate = searchParams.get("emailDate") || undefined;
+  return { days, status, dispatcher, emailDate };
+}
+
+export async function GET(request: Request) {
   try {
-    const [weeks, months, dispatchers] = await Promise.all([
-      getDetentionWeeklySummary(26),
-      getDetentionMonthlySummary(18),
-      getDetentionDispatcherSummary(),
+    const { searchParams } = new URL(request.url);
+    const filters = parseFilters(searchParams);
+    const [weeks, months, dispatchers, dispatcherOptions] = await Promise.all([
+      getDetentionWeeklySummary(26, filters),
+      getDetentionMonthlySummary(18, filters),
+      getDetentionDispatcherSummary(filters),
+      listDetentionSummaryDispatchers(),
     ]);
-    return ok({ weeks, months, dispatchers });
+    return ok({
+      weeks,
+      months,
+      dispatchers,
+      filters,
+      filterOptions: {
+        statuses: [...DETENTION_STATUSES],
+        dispatchers: dispatcherOptions,
+      },
+    });
   } catch (error) {
     return fail(error);
   }

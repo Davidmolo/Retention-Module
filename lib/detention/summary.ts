@@ -1,7 +1,11 @@
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import { resolveDispatcherCompliance } from "@/lib/detention/compliance";
-import { canonicalDispatcherName } from "@/lib/detention/dispatcherNames";
+import {
+  canonicalDispatcherName,
+  dispatcherMatchKeys,
+  uniqueCanonicalDispatchers,
+} from "@/lib/detention/dispatcherNames";
 import { weekOf, weekRange } from "@/lib/week";
 import type {
   DetentionComplianceGroup,
@@ -12,15 +16,80 @@ import type {
 
 const EMAIL_DAY = "DATE(COALESCE(email_date, created_at))";
 
+export type DetentionSummaryFilters = {
+  /** Only claims with email/created date within the last N days (0 = all). */
+  days?: number;
+  status?: string;
+  dispatcher?: string;
+  /** YYYY-MM-DD — match email received date. */
+  emailDate?: string;
+};
+
 function money(n: unknown): number {
   const v = Number(n || 0);
   return Number.isFinite(v) ? v : 0;
 }
 
+function isYmd(value: string | undefined): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function buildSummaryWhere(opts: DetentionSummaryFilters = {}): {
+  whereSql: string;
+  params: unknown[];
+} {
+  const conds: string[] = ["COALESCE(email_date, created_at) IS NOT NULL"];
+  const params: unknown[] = [];
+
+  if (opts.status && opts.status !== "all") {
+    conds.push("status = ?");
+    params.push(opts.status);
+  }
+  if (opts.dispatcher?.trim() && opts.dispatcher !== "all") {
+    const keys = dispatcherMatchKeys(opts.dispatcher);
+    if (keys.length === 1) {
+      conds.push("LOWER(TRIM(dispatcher)) = ?");
+      params.push(keys[0]);
+    } else if (keys.length > 1) {
+      conds.push(
+        `LOWER(TRIM(dispatcher)) IN (${keys.map(() => "?").join(",")})`
+      );
+      params.push(...keys);
+    }
+  }
+  if (isYmd(opts.emailDate)) {
+    conds.push(`${EMAIL_DAY} = ?`);
+    params.push(opts.emailDate);
+  }
+  const days = Number(opts.days);
+  if (Number.isFinite(days) && days > 0) {
+    conds.push(`${EMAIL_DAY} >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`);
+    params.push(Math.floor(days));
+  }
+
+  return { whereSql: conds.join(" AND "), params };
+}
+
+/** Canonical dispatcher names for the Summary filter dropdown (unfiltered). */
+export async function listDetentionSummaryDispatchers(): Promise<string[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT DISTINCT TRIM(dispatcher) AS name
+     FROM detentions
+     WHERE dispatcher IS NOT NULL AND TRIM(dispatcher) <> ''
+     ORDER BY name ASC`
+  );
+  return uniqueCanonicalDispatchers(
+    rows.map((r) => String(r.name || "")).filter(Boolean)
+  );
+}
+
 export async function getDetentionWeeklySummary(
-  limit = 26
+  limit = 26,
+  filters: DetentionSummaryFilters = {}
 ): Promise<DetentionPeriodSummary[]> {
   const pool = getPool();
+  const { whereSql, params } = buildSummaryWhere(filters);
   // Aggregate in app using Tuesday-start fleet weeks (same W## as Gross Profit).
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT
@@ -29,7 +98,8 @@ export async function getDetentionWeeklySummary(
        COALESCE(amount, 0) AS amount,
        COALESCE(settled_amount, amount, 0) AS settled
      FROM detentions
-     WHERE COALESCE(email_date, created_at) IS NOT NULL`
+     WHERE ${whereSql}`,
+    params
   );
 
   type Acc = {
@@ -101,9 +171,11 @@ export async function getDetentionWeeklySummary(
 }
 
 export async function getDetentionMonthlySummary(
-  limit = 18
+  limit = 18,
+  filters: DetentionSummaryFilters = {}
 ): Promise<DetentionPeriodSummary[]> {
   const pool = getPool();
+  const { whereSql, params } = buildSummaryWhere(filters);
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT
        DATE_FORMAT(${EMAIL_DAY}, '%Y-%m') AS ym,
@@ -114,10 +186,11 @@ export async function getDetentionMonthlySummary(
        SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS open_count,
        COALESCE(SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN COALESCE(amount, 0) ELSE 0 END), 0) AS open_amount
      FROM detentions
+     WHERE ${whereSql}
      GROUP BY DATE_FORMAT(${EMAIL_DAY}, '%Y-%m')
      ORDER BY ym DESC
      LIMIT ?`,
-    [limit]
+    [...params, limit]
   );
 
   const currentYm = new Intl.DateTimeFormat("en-CA", {
@@ -153,10 +226,11 @@ export async function getDetentionMonthlySummary(
   });
 }
 
-export async function getDetentionDispatcherSummary(): Promise<
-  DetentionDispatcherSummary[]
-> {
+export async function getDetentionDispatcherSummary(
+  filters: DetentionSummaryFilters = {}
+): Promise<DetentionDispatcherSummary[]> {
   const pool = getPool();
+  const { whereSql, params } = buildSummaryWhere(filters);
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT
        COALESCE(NULLIF(TRIM(dispatcher), ''), 'Unassigned') AS dispatcher_name,
@@ -167,8 +241,10 @@ export async function getDetentionDispatcherSummary(): Promise<
        SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS open_count,
        COALESCE(SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN COALESCE(amount, 0) ELSE 0 END), 0) AS open_amount
      FROM detentions
+     WHERE ${whereSql}
      GROUP BY COALESCE(NULLIF(TRIM(dispatcher), ''), 'Unassigned')
-     ORDER BY collected_amount DESC, submitted_amount DESC, dispatcher_name ASC`
+     ORDER BY collected_amount DESC, submitted_amount DESC, dispatcher_name ASC`,
+    params
   );
 
   // Merge short-name / full-name duplicates (e.g. Andre + Andre Colton)
