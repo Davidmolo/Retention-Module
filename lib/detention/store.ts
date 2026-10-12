@@ -5,6 +5,7 @@ import {
   dispatcherMatchKeys,
   uniqueCanonicalDispatchers,
 } from "./dispatcherNames";
+import { resolveDispatcherCompliance } from "./compliance";
 import {
   DETENTION_STATUSES,
   type Detention,
@@ -442,6 +443,21 @@ export async function updateDetention(
       from: current.status,
       to: patch.status,
     });
+
+    // Paid / Denied → drop “No follow up” (follow-up no longer required).
+    if (patch.status === "Paid" || patch.status === "Denied") {
+      const nextCompliance = resolveDispatcherCompliance({
+        status: patch.status,
+        emailDate: current.emailDate,
+        repliedAt: current.dispatcherRepliedAt,
+        hasDispatcherEmail: Boolean(current.dispatcherEmail?.includes("@")),
+      });
+      if (nextCompliance !== current.dispatcherCompliance) {
+        sets.push("dispatcher_compliance = ?");
+        params.push(nextCompliance);
+        sets.push("dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)");
+      }
+    }
   }
 
   if (

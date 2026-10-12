@@ -385,6 +385,14 @@ export async function getDetentionComplianceByDispatcher(): Promise<
     if (storedRaw === "n/a" && compliance !== "n/a") {
       clearNa.push({ id: String(r.id), compliance });
     }
+    // Paid/Denied stuck on no_follow_up — sync stored badge with live rules.
+    if (
+      storedRaw === "no_follow_up" &&
+      compliance !== "no_follow_up" &&
+      (String(r.status || "") === "Paid" || String(r.status || "") === "Denied")
+    ) {
+      clearNa.push({ id: String(r.id), compliance });
+    }
 
     const item: DetentionComplianceItem = {
       id: String(r.id),
