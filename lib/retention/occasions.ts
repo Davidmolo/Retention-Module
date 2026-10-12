@@ -2,7 +2,7 @@
  * Occasion calendar helpers (America/Chicago).
  * Birthday = drivers.dob month/day (wish only)
  * Anniversary = 3 mo, 6 mo, 1 year, then every year on hire anniversary
- * Holidays = all US federal + Truck Driver Appreciation Week
+ * Holidays = major observances only + Truck Driver Appreciation Week
  */
 
 export type HolidayDef = {
@@ -50,18 +50,6 @@ function laborDay(year: number) {
   return nthWeekdayOfMonth(year, 9, 1, 1);
 }
 
-function mlkDay(year: number) {
-  return nthWeekdayOfMonth(year, 1, 1, 3);
-}
-
-function presidentsDay(year: number) {
-  return nthWeekdayOfMonth(year, 2, 1, 3);
-}
-
-function columbusDay(year: number) {
-  return nthWeekdayOfMonth(year, 10, 1, 2);
-}
-
 /** National Truck Driver Appreciation Week — week starting the 2nd Sunday of September. */
 function truckerAppreciationWeek(year: number): { start: Date; end: Date } {
   const secondSunday = nthWeekdayOfMonth(year, 9, 0, 2);
@@ -71,13 +59,14 @@ function truckerAppreciationWeek(year: number): { start: Date; end: Date } {
   return { start, end };
 }
 
-/** All US federal holidays + Truck Driver Appreciation Week. */
+/**
+ * Major holidays only for Retention greetings (Mantas / fleet ops).
+ * Skips lesser federal days (MLK, Presidents’, Juneteenth, Columbus, Veterans)
+ * so drivers are not messaged on every bank holiday.
+ */
 export const US_HOLIDAYS: HolidayDef[] = [
   { key: "new_years", name: "New Year's Day", month: 1, day: 1 },
-  { key: "mlk_day", name: "Martin Luther King Jr. Day", dateForYear: mlkDay },
-  { key: "presidents_day", name: "Presidents' Day", dateForYear: presidentsDay },
   { key: "memorial_day", name: "Memorial Day", dateForYear: memorialDay },
-  { key: "juneteenth", name: "Juneteenth", month: 6, day: 19 },
   { key: "independence_day", name: "Independence Day", month: 7, day: 4 },
   { key: "labor_day", name: "Labor Day", dateForYear: laborDay },
   {
@@ -86,12 +75,6 @@ export const US_HOLIDAYS: HolidayDef[] = [
     rangeForYear: truckerAppreciationWeek,
     rangeSendOnStartOnly: true,
   },
-  {
-    key: "columbus_day",
-    name: "Columbus Day",
-    dateForYear: columbusDay,
-  },
-  { key: "veterans_day", name: "Veterans Day", month: 11, day: 11 },
   { key: "thanksgiving", name: "Thanksgiving", dateForYear: thanksgiving },
   { key: "christmas", name: "Christmas", month: 12, day: 25 },
 ];

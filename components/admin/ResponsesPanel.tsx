@@ -18,6 +18,13 @@ import {
   type ResponsesFilter,
 } from "@/lib/retention/viewNav";
 
+type InsightComment = {
+  text: string;
+  dispatcher: string | null;
+  driverId: string;
+  driverName: string | null;
+};
+
 type DepartmentInsight = {
   department: string;
   average: number | null;
@@ -25,7 +32,7 @@ type DepartmentInsight = {
   lowCount: number;
   summary: string;
   highlights: string[];
-  sampleComments: string[];
+  sampleComments: InsightComment[];
 };
 
 type InsightsData = {
@@ -612,14 +619,27 @@ function DepartmentInsightsBlock() {
                     </ul>
                   ) : null}
                   {d.sampleComments.length ? (
-                    <div className="mt-2 space-y-1 border-t border-[var(--xxii-line)] pt-2">
+                    <div className="mt-2 space-y-2 border-t border-[var(--xxii-line)] pt-2">
                       {d.sampleComments.slice(0, 2).map((c) => (
-                        <p
-                          key={c.slice(0, 40)}
-                          className="line-clamp-2 text-[11px] italic text-slate-500"
-                        >
-                          “{c}”
-                        </p>
+                        <div key={`${c.driverId}-${c.text.slice(0, 40)}`}>
+                          {d.department === "Dispatch" || c.dispatcher ? (
+                            <div className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                              Dispatcher:{" "}
+                              <span className="text-slate-800">
+                                {c.dispatcher || "Unassigned"}
+                              </span>
+                              {c.driverName ? (
+                                <span className="font-medium normal-case tracking-normal text-slate-400">
+                                  {" "}
+                                  · driver {c.driverName}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          <p className="line-clamp-2 text-[11px] italic text-slate-500">
+                            “{c.text}”
+                          </p>
+                        </div>
                       ))}
                     </div>
                   ) : null}

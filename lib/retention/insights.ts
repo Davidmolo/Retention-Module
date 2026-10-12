@@ -1,6 +1,7 @@
 /**
  * Responses-page department rating averages + bad-feedback summaries.
  */
+import { getGpAdapter } from "@/lib/adapters/gp";
 import { DEPARTMENTS, type Department } from "./types";
 import { retentionStore } from "./store";
 
@@ -11,6 +12,15 @@ export type DepartmentAvg = {
   lowCount: number;
 };
 
+/** Low-rating comment sample — includes assigned dispatcher for Dispatch (and context). */
+export type InsightComment = {
+  text: string;
+  /** Driver’s OpenRoad manager / dispatcher at time of lookup. */
+  dispatcher: string | null;
+  driverId: string;
+  driverName: string | null;
+};
+
 export type DepartmentInsight = {
   department: Department;
   average: number | null;
@@ -18,7 +28,7 @@ export type DepartmentInsight = {
   lowCount: number;
   summary: string;
   highlights: string[];
-  sampleComments: string[];
+  sampleComments: InsightComment[];
 };
 
 export type ResponsesInsights = {
@@ -180,14 +190,35 @@ export async function getResponsesInsights(opts?: {
     DEPARTMENTS.map((d) => [d, { sum: 0, n: 0, low: 0 }])
   ) as Record<Department, { sum: number; n: number; low: number }>;
   const deptComments = Object.fromEntries(
-    DEPARTMENTS.map((d) => [d, [] as string[]])
-  ) as Record<Department, string[]>;
+    DEPARTMENTS.map((d) => [d, [] as InsightComment[]])
+  ) as Record<Department, InsightComment[]>;
+
+  // Resolve each driver’s assigned dispatcher (OpenRoad manager) once.
+  const driverIds = [...new Set(filtered.map((r) => String(r.driverId)))];
+  const dispatcherByDriver = new Map<
+    string,
+    { dispatcher: string | null; name: string | null }
+  >();
+  try {
+    const drivers = await getGpAdapter().listDrivers({ includeInactive: true });
+    const byId = new Map(drivers.map((d) => [String(d.id), d]));
+    for (const id of driverIds) {
+      const d = byId.get(id);
+      dispatcherByDriver.set(id, {
+        dispatcher: d?.dispatcher?.trim() || null,
+        name: d?.name?.trim() || null,
+      });
+    }
+  } catch (e) {
+    console.error("[retention-insights] driver lookup", (e as Error).message);
+  }
 
   for (const r of filtered) {
     if (r.overallRating >= 1 && r.overallRating <= 5) {
       overallSum += r.overallRating;
       overallN += 1;
     }
+    const meta = dispatcherByDriver.get(String(r.driverId));
     for (const d of r.departmentFeedback || []) {
       if (!DEPARTMENTS.includes(d.department as Department)) continue;
       if (!(d.rating >= 1 && d.rating <= 5)) continue;
@@ -200,7 +231,14 @@ export async function getResponsesInsights(opts?: {
           .map((x) => (x || "").trim())
           .filter(Boolean)
           .join(" — ");
-        if (note) deptComments[dept].push(note);
+        if (note) {
+          deptComments[dept].push({
+            text: note,
+            dispatcher: meta?.dispatcher || null,
+            driverId: String(r.driverId),
+            driverName: meta?.name || null,
+          });
+        }
       }
     }
   }
@@ -209,14 +247,40 @@ export async function getResponsesInsights(opts?: {
   const departments: DepartmentInsight[] = [];
   for (const department of DEPARTMENTS) {
     const stats = deptSums[department];
-    const comments = [...new Set(deptComments[department])];
+    // Dedupe by comment text + dispatcher so the same complaint isn’t repeated.
+    const seen = new Set<string>();
+    const comments: InsightComment[] = [];
+    for (const c of deptComments[department]) {
+      const key = `${c.dispatcher || ""}|${c.text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      comments.push(c);
+    }
+    const commentTexts = comments.map((c) => c.text);
     const average = stats.n > 0 ? round1(stats.sum / stats.n) : null;
-    let summaryPack = heuristicSummary(department, comments, stats.low);
-    if (comments.length && process.env.OPENAI_API_KEY?.trim()) {
-      const ai = await aiSummarizeDepartment(department, comments);
+    let summaryPack = heuristicSummary(department, commentTexts, stats.low);
+    if (commentTexts.length && process.env.OPENAI_API_KEY?.trim()) {
+      const ai = await aiSummarizeDepartment(department, commentTexts);
       if (ai) {
         summaryPack = ai;
         aiUsed = true;
+      }
+    }
+    // For Dispatch, surface which dispatcher’s drivers left low ratings.
+    if (department === "Dispatch") {
+      const names = [
+        ...new Set(
+          comments
+            .map((c) => c.dispatcher)
+            .filter((n): n is string => Boolean(n && n !== "Unassigned"))
+        ),
+      ];
+      if (names.length) {
+        summaryPack = {
+          ...summaryPack,
+          summary:
+            `${summaryPack.summary} Dispatcher(s) on these low ratings: ${names.join(", ")}.`,
+        };
       }
     }
     departments.push({
