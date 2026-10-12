@@ -2,13 +2,13 @@
  * Daily occasion runner (additive — does not replace regular survey cadence).
  *
  * Birthday  → wish SMS to driver + notice to leadership (no survey)
- * Anniversary → wish + feedback survey (3 mo, 6 mo, 1 yr, every year)
- * Holiday   → wish + survey (federal holidays + trucker appreciation week)
+ * Anniversary / holiday → greeting by default; survey only if template has
+ * {surveyUrl} AND driver is outside the normal 14/30-day cadence window.
  */
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import { getGpAdapter } from "@/lib/adapters/gp";
-import { isSurveyEligible } from "./rules";
+import { isSurveyEligible, surveyFrequencyLabel } from "./rules";
 import { birthdayLeadershipNotice } from "./messages";
 import {
   birthdayMessage,
@@ -228,6 +228,9 @@ async function sendSurveyOccasion(opts: {
   const wantsSurvey = templateBody.includes("{surveyUrl}");
 
   // Survey-linked occasions still require tenure eligibility.
+  // Also: never mint a second survey inside the normal 14/30-day cadence window
+  // (or while a regular link is still open) — fall back to greeting-only instead.
+  let forceGreetingOnly = !wantsSurvey;
   if (wantsSurvey) {
     const gp = await getGpAdapter().getDriver(opts.driverId);
     if (!gp || !isSurveyEligible(gp)) {
@@ -240,15 +243,63 @@ async function sendSurveyOccasion(opts: {
         skipped: "not_eligible",
       };
     }
+
+    const occurrences = await retentionStore.listSurveyOccurrences(
+      opts.driverId
+    );
+    const openRegular = occurrences.find(
+      (o) =>
+        (o.surveyKind || "regular") === "regular" &&
+        ["pending", "sent", "reminded"].includes(o.responseState)
+    );
+    if (openRegular) {
+      forceGreetingOnly = true;
+    } else {
+      const lastRegular = occurrences
+        .filter(
+          (o) =>
+            (o.surveyKind || "regular") === "regular" &&
+            (o.sentAt || o.completedAt)
+        )
+        .sort((a, b) => {
+          const ta = new Date(
+            a.completedAt || a.sentAt || a.createdAt
+          ).getTime();
+          const tb = new Date(
+            b.completedAt || b.sentAt || b.createdAt
+          ).getTime();
+          return tb - ta;
+        })[0];
+      if (lastRegular) {
+        const gapDays =
+          surveyFrequencyLabel(gp) === "every_2_weeks" ? 14 : 30;
+        const lastAt = new Date(
+          lastRegular.completedAt ||
+            lastRegular.sentAt ||
+            lastRegular.createdAt
+        ).getTime();
+        if (Date.now() - lastAt < gapDays * 86_400_000) {
+          forceGreetingOnly = true;
+        }
+      }
+    }
   }
 
-  // Greeting-only (no {surveyUrl} in template) — same as birthday: SMS, no survey.
-  if (!wantsSurvey) {
-    const smsBody = await buildOccasionMessage(opts.occasionType, {
+  // Greeting-only (no {surveyUrl} in template, or cadence cooldown) — SMS, no survey.
+  if (forceGreetingOnly) {
+    let smsBody = await buildOccasionMessage(opts.occasionType, {
       driverName: opts.driverName,
       milestone: opts.milestone,
       holidayName: opts.holidayName,
+      surveyUrl: "",
     });
+    // If a custom template still contains {surveyUrl}, drop the token so we
+    // never SMS a broken placeholder when falling back to greeting-only.
+    smsBody = smsBody
+      .replaceAll("{surveyUrl}", "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\s+([.!?])/g, "$1")
+      .trim();
     const phone = opts.phone?.trim();
     if (!phone) {
       return {

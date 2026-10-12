@@ -214,7 +214,11 @@ export function varsForMessage(
   const name = firstName(opts.driverName);
   const base: Record<string, string> = {
     FirstName: name,
-    surveyUrl: opts.surveyUrl || "{surveyUrl}",
+    // Empty string = deliberately omit link (greeting-only / cadence fallback).
+    surveyUrl:
+      opts.surveyUrl === ""
+        ? ""
+        : opts.surveyUrl || "{surveyUrl}",
   };
   if (id === "anniversary") {
     const m = opts.milestone ?? {
