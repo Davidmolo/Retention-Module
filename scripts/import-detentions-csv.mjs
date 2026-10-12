@@ -136,18 +136,46 @@ function parseHistory(raw) {
 }
 
 const rows = parseCsv(fs.readFileSync(csvPath, "utf8"));
-const { upsertDetention } = await import("../lib/detention/store.ts");
+const {
+  findDetentionByLoadNearEmail,
+  upsertDetention,
+} = await import("../lib/detention/store.ts");
 
 let upserted = 0;
+let skippedDup = 0;
 for (const r of rows) {
   const id = String(r.id || "").trim();
   if (!id) continue;
+  const loadNumber = r["Load #"] || null;
+  const amount = money(r.Amount);
+  const emailDate = datetimeOrNull(r["Email Date"]);
+
+  // If Gmail (or another sheet row) already owns this load, do not insert a
+  // second claim under a different Art sheet id.
+  if (loadNumber) {
+    const existing = await findDetentionByLoadNearEmail({
+      loadNumber: String(loadNumber),
+      shipmentNumber: r["Shipment #"] || null,
+      amount,
+      emailDateMysql: emailDate,
+      hoursWindow: 48,
+      excludeId: id,
+    });
+    if (existing && existing.id !== id) {
+      console.log(
+        `skip duplicate load ${loadNumber}: already ${existing.id} (${existing.source})`
+      );
+      skippedDup += 1;
+      continue;
+    }
+  }
+
   await upsertDetention({
     id,
     customer: r.Customer || null,
     customerEmail: r["Customer Email"] || null,
     dispatcher: r.Dispatcher || null,
-    loadNumber: r["Load #"] || null,
+    loadNumber,
     shipmentNumber: r["Shipment #"] || null,
     driverName: r.Driver || null,
     driverNumber: r["Driver #"] || null,
@@ -163,7 +191,7 @@ for (const r of rows) {
     detentionMins: intOrNull(r["Detention Mins"]),
     detentionTimeLabel: r["Detention time"] || null,
     ratePerHour: money(r.Rate) ?? 25,
-    amount: money(r.Amount),
+    amount,
     billableAmount: money(r["Billable Amount"]),
     settledAmount: money(r["Settled Amount"]),
     status: r.Status || "New",
@@ -174,7 +202,7 @@ for (const r of rows) {
     messageId: r.messageId || null,
     threadId: r.threadId || null,
     calendarEventId: r.calendarEventId || null,
-    emailDate: datetimeOrNull(r["Email Date"]),
+    emailDate,
     lastReplyFrom: r["Last Reply From"] || null,
     lastReplyAt: datetimeOrNull(r["Last Reply At"]),
     history: parseHistory(r.history),
@@ -185,5 +213,8 @@ for (const r of rows) {
   upserted += 1;
 }
 
-console.log(`Imported ${upserted} detentions from ${csvPath}`);
+console.log(
+  `Imported ${upserted} detentions from ${csvPath}` +
+    (skippedDup ? ` (skipped ${skippedDup} load duplicates)` : "")
+);
 process.exit(0);

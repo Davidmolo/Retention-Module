@@ -18,6 +18,7 @@ import {
 } from "@/lib/detention/parseOpenRoadEmail";
 import {
   findDetentionByLoadNearEmail,
+  findDetentionByThreadId,
   mergeGmailIntoDetention,
   upsertDetention,
 } from "@/lib/detention/store";
@@ -320,40 +321,42 @@ export async function runDetentionEmailIntake(opts?: {
           msg.dateHeader ? new Date(msg.dateHeader) : null
         );
 
-      // Same load already from Art's sheet (or prior ingest) → merge Gmail
-      // identity onto that row instead of creating a twin claim.
+      // Never create a twin: same Gmail thread, or same load already on file
+      // (Art sheet import / prior gmail) → merge onto that row.
+      const existingByThread = await findDetentionByThreadId(msg.threadId);
       const existingByLoad = parsed.loadNumber?.trim()
         ? await findDetentionByLoadNearEmail({
             loadNumber: parsed.loadNumber,
             shipmentNumber: parsed.shipmentNumber,
             amount: parsed.amount,
             emailDateMysql: emailDate,
-            hoursWindow: 24,
+            hoursWindow: 48,
           })
         : null;
+      const existing = existingByThread || existingByLoad;
 
-      if (existingByLoad) {
+      if (existing) {
         await mergeGmailIntoDetention({
-          detentionId: existingByLoad.id,
+          detentionId: existing.id,
           messageId: msg.id,
           threadId: msg.threadId,
           threadUrl: gmailThreadUrl(msg.threadId),
           emailDate,
-          historyNote: `Merged Gmail message into existing claim (${existingByLoad.source || "import"}): ${parsed.subject}`,
+          historyNote: `Merged Gmail message into existing claim (${existing.source || "import"}): ${parsed.subject}`,
         });
         await writeLog({
           gmailMessageId: item.id,
           gmailThreadId: item.threadId,
-          detentionId: existingByLoad.id,
+          detentionId: existing.id,
           subject: msg.subject,
           result: "skipped_duplicate",
-          detail: `Merged into ${existingByLoad.id} · Load ${parsed.loadNumber || "—"}`,
+          detail: `Merged into ${existing.id} · Load ${parsed.loadNumber || "—"}`,
         });
         result.skippedDuplicate += 1;
         result.details.push({
           gmailMessageId: item.id,
           result: "merged_existing",
-          detentionId: existingByLoad.id,
+          detentionId: existing.id,
           detail: parsed.loadNumber || parsed.shipmentNumber || undefined,
         });
         continue;
