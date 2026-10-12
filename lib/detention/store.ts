@@ -668,9 +668,14 @@ export async function findDetentionByLoadNearEmail(opts: {
       );
       params.push(ship.replace(/\s+/g, ""), ship.replace(/\s+/g, ""));
     }
+    // Amount is required for load dedupe — same load can legitimately have
+    // two claims (e.g. shipper vs consignee) with different dollar amounts.
     if (opts.amount != null && Number.isFinite(opts.amount)) {
       conds.push(`ABS(COALESCE(amount, 0) - ?) < 0.02`);
       params.push(opts.amount);
+    } else {
+      // Without amount, only match empty/null amount rows (avoid false merges).
+      conds.push(`(amount IS NULL OR amount = 0)`);
     }
     if (withTime && opts.emailDateMysql) {
       conds.push(

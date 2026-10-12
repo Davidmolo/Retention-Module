@@ -333,30 +333,30 @@ export async function runDetentionEmailIntake(opts?: {
             hoursWindow: 48,
           })
         : null;
-      const existing = existingByThread || existingByLoad;
+      const existingClaim = existingByThread || existingByLoad;
 
-      if (existing) {
+      if (existingClaim) {
         await mergeGmailIntoDetention({
-          detentionId: existing.id,
+          detentionId: existingClaim.id,
           messageId: msg.id,
           threadId: msg.threadId,
           threadUrl: gmailThreadUrl(msg.threadId),
           emailDate,
-          historyNote: `Merged Gmail message into existing claim (${existing.source || "import"}): ${parsed.subject}`,
+          historyNote: `Merged Gmail message into existing claim (${existingClaim.source || "import"}): ${parsed.subject}`,
         });
         await writeLog({
           gmailMessageId: item.id,
           gmailThreadId: item.threadId,
-          detentionId: existing.id,
+          detentionId: existingClaim.id,
           subject: msg.subject,
           result: "skipped_duplicate",
-          detail: `Merged into ${existing.id} · Load ${parsed.loadNumber || "—"}`,
+          detail: `Merged into ${existingClaim.id} · Load ${parsed.loadNumber || "—"}`,
         });
         result.skippedDuplicate += 1;
         result.details.push({
           gmailMessageId: item.id,
           result: "merged_existing",
-          detentionId: existing.id,
+          detentionId: existingClaim.id,
           detail: parsed.loadNumber || parsed.shipmentNumber || undefined,
         });
         continue;
