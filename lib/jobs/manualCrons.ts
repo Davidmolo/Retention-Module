@@ -85,10 +85,10 @@ export const CRON_JOBS: CronJobMeta[] = [
   },
   {
     id: 'sync-tms-drivers',
-    label: 'Sync TMS drivers',
+    label: 'Sync TMS drivers (OpenRoad status / terminated → Retention roster)',
     script: 'sync:tms-drivers',
     schedule: '0 4 * * *',
-    scheduleLabel: 'Daily 4:00 AM ET',
+    scheduleLabel: 'Daily 4:00 AM ET (+ again before Retention 8 AM)',
   },
   {
     id: 'sync-tms-trucks',

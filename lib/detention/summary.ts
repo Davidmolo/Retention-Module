@@ -76,15 +76,20 @@ export async function getDetentionWeeklySummary(
     }
   }
 
+  const nowWeek = weekOf(new Date());
+  const currentKey = `${nowWeek.year}-W${nowWeek.week}`;
+
   return [...map.values()]
     .sort((a, b) => b.year - a.year || b.week - a.week)
     .slice(0, limit)
     .map((a) => {
       const range = weekRange(a.year, a.week);
+      const key = `${a.year}-W${a.week}`;
       return {
-        key: `${a.year}-W${a.week}`,
+        key,
         label: `W${a.week}`,
         hint: `${range.start} → ${range.end}`,
+        isCurrent: key === currentKey,
         submitted: a.submitted,
         submittedAmount: Math.round(a.submittedAmount * 100) / 100,
         paid: a.paid,
@@ -115,6 +120,14 @@ export async function getDetentionMonthlySummary(
     [limit]
   );
 
+  const currentYm = new Intl.DateTimeFormat("en-CA", {
+    timeZone: process.env.APP_TIMEZONE || "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+  })
+    .format(new Date())
+    .slice(0, 7);
+
   return rows.map((r) => {
     const ym = String(r.ym || "");
     const [y, m] = ym.split("-").map(Number);
@@ -129,6 +142,7 @@ export async function getDetentionMonthlySummary(
     return {
       key: ym,
       label,
+      isCurrent: ym === currentYm,
       submitted: Number(r.submitted || 0),
       submittedAmount: money(r.submitted_amount),
       paid: Number(r.paid_count || 0),

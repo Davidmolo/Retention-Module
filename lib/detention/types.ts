@@ -77,6 +77,8 @@ export type DetentionPeriodSummary = {
   label: string;
   /** Optional date range subtitle (e.g. Tue–Mon for W##). */
   hint?: string;
+  /** True when this row is the in-progress week or month (not closed yet). */
+  isCurrent?: boolean;
   submitted: number;
   submittedAmount: number;
   paid: number;

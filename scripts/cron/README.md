@@ -21,7 +21,7 @@
 # | */30            | fuel             |
 # | Daily 03:00     | daily-tms        |
 # | Tue 05:00       | weekly-gp        |
-# | Daily 08:00     | daily-retention  |
+# | Daily 08:00     | daily-retention  |  (re-syncs OpenRoad drivers, then SMS) |
 #
 # Manual
 #   bash scripts/cron/daily-tms.sh

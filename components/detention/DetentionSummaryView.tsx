@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Search } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
+import clsx from "clsx";
 import type {
   DetentionDispatcherSummary,
   DetentionPeriodSummary,
@@ -12,19 +13,109 @@ function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
+type SortDir = "asc" | "desc";
+
+function SortTh<K extends string>({
+  label,
+  col,
+  sortKey,
+  sortDir,
+  onSort,
+  title,
+  className,
+}: {
+  label: string;
+  col: K;
+  sortKey: K;
+  sortDir: SortDir;
+  onSort: (col: K) => void;
+  title?: string;
+  className?: string;
+}) {
+  const active = sortKey === col;
+  return (
+    <th className={clsx("px-4 py-3 font-medium", className)} title={title}>
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className={clsx(
+          "inline-flex items-center gap-1 uppercase tracking-wide transition-colors hover:text-slate-800",
+          active ? "text-slate-800" : "text-slate-500"
+        )}
+      >
+        {label}
+        {active ? (
+          sortDir === "asc" ? (
+            <ArrowUp size={12} className="shrink-0" />
+          ) : (
+            <ArrowDown size={12} className="shrink-0" />
+          )
+        ) : (
+          <ArrowUpDown size={12} className="shrink-0 opacity-40" />
+        )}
+      </button>
+    </th>
+  );
+}
+
+type PeriodSortKey =
+  | "label"
+  | "submitted"
+  | "submittedAmount"
+  | "paid"
+  | "collectedAmount"
+  | "open"
+  | "openAmount";
+
+function comparePeriod(
+  a: DetentionPeriodSummary,
+  b: DetentionPeriodSummary,
+  key: PeriodSortKey,
+  dir: SortDir
+): number {
+  const mul = dir === "asc" ? 1 : -1;
+  if (key === "label") {
+    return mul * a.label.localeCompare(b.label, undefined, { numeric: true });
+  }
+  return mul * ((a[key] as number) - (b[key] as number));
+}
+
 function SummaryTable({
   title,
   rows,
   submittedHint,
   collectedHint,
   weekLimitNote,
+  currentBadge,
 }: {
   title: string;
   rows: DetentionPeriodSummary[];
   submittedHint: string;
   collectedHint: string;
   weekLimitNote?: string;
+  currentBadge: string;
 }) {
+  const [sortKey, setSortKey] = useState<PeriodSortKey>("label");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Default: keep API order (newest period first). First click on a column sorts.
+  const [userSorted, setUserSorted] = useState(false);
+
+  const onSort = (col: PeriodSortKey) => {
+    setUserSorted(true);
+    if (sortKey === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(col);
+      setSortDir(col === "label" ? "desc" : "desc");
+    }
+  };
+
+  const sorted = useMemo(() => {
+    if (!userSorted) return rows;
+    return [...rows].sort((a, b) => comparePeriod(a, b, sortKey, sortDir));
+  }, [rows, userSorted, sortKey, sortDir]);
+
   return (
     <div className="xxii-card overflow-hidden">
       <div className="border-b border-border px-4 py-3">
@@ -35,6 +126,10 @@ function SummaryTable({
         {weekLimitNote ? (
           <p className="mt-1 text-xs text-muted-foreground">{weekLimitNote}</p>
         ) : null}
+        <p className="mt-1 text-xs text-muted-foreground">
+          Click a column header to sort. The in-progress period is marked{" "}
+          <span className="font-semibold text-sky-800">{currentBadge}</span>.
+        </p>
       </div>
       {!rows.length ? (
         <div className="p-6 text-sm text-muted-foreground">No data yet.</div>
@@ -52,26 +147,78 @@ function SummaryTable({
             </colgroup>
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3 font-medium">Period</th>
-                <th className="px-4 py-3 font-medium" title={submittedHint}>
-                  Submitted
-                </th>
-                <th className="px-4 py-3 font-medium" title={submittedHint}>
-                  Submitted $
-                </th>
-                <th className="px-4 py-3 font-medium">Paid</th>
-                <th className="px-4 py-3 font-medium" title={collectedHint}>
-                  Collected amount
-                </th>
-                <th className="px-4 py-3 font-medium">Still open</th>
-                <th className="px-4 py-3 font-medium">Open $</th>
+                <SortTh
+                  label="Period"
+                  col="label"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Submitted"
+                  col="submitted"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                  title={submittedHint}
+                />
+                <SortTh
+                  label="Submitted $"
+                  col="submittedAmount"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                  title={submittedHint}
+                />
+                <SortTh
+                  label="Paid"
+                  col="paid"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Collected amount"
+                  col="collectedAmount"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                  title={collectedHint}
+                />
+                <SortTh
+                  label="Still open"
+                  col="open"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Open $"
+                  col="openAmount"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map((r) => (
-                <tr key={r.key} className="hover:bg-slate-50/80">
+              {sorted.map((r) => (
+                <tr
+                  key={r.key}
+                  className={clsx(
+                    "hover:bg-slate-50/80",
+                    r.isCurrent && "bg-sky-50/90 ring-1 ring-inset ring-sky-200"
+                  )}
+                >
                   <td className="px-4 py-3 font-medium text-slate-900">
-                    <div>{r.label}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{r.label}</span>
+                      {r.isCurrent ? (
+                        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-800 ring-1 ring-sky-200">
+                          {currentBadge}
+                        </span>
+                      ) : null}
+                    </div>
                     {r.hint ? (
                       <div className="text-[11px] font-normal text-slate-400">
                         {r.hint}
@@ -98,13 +245,52 @@ function SummaryTable({
   );
 }
 
+type DispatcherSortKey =
+  | "dispatcher"
+  | "submitted"
+  | "submittedAmount"
+  | "paid"
+  | "collectedAmount"
+  | "collectionRate"
+  | "open"
+  | "openAmount";
+
+function compareDispatcher(
+  a: DetentionDispatcherSummary,
+  b: DetentionDispatcherSummary,
+  key: DispatcherSortKey,
+  dir: SortDir
+): number {
+  const mul = dir === "asc" ? 1 : -1;
+  if (key === "dispatcher") {
+    return mul * a.dispatcher.localeCompare(b.dispatcher);
+  }
+  return mul * ((a[key] as number) - (b[key] as number));
+}
+
 function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
   const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<DispatcherSortKey>("collectedAmount");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const onSort = (col: DispatcherSortKey) => {
+    if (sortKey === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(col);
+      setSortDir(col === "dispatcher" ? "asc" : "desc");
+    }
+  };
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((r) => r.dispatcher.toLowerCase().includes(needle));
-  }, [rows, q]);
+    const base = !needle
+      ? rows
+      : rows.filter((r) => r.dispatcher.toLowerCase().includes(needle));
+    return [...base].sort((a, b) =>
+      compareDispatcher(a, b, sortKey, sortDir)
+    );
+  }, [rows, q, sortKey, sortDir]);
 
   return (
     <div className="xxii-card overflow-hidden">
@@ -115,6 +301,7 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Detention claims received and total amount collected by dispatcher.
+            Click a column to sort.
           </p>
         </div>
         {rows.length ? (
@@ -143,14 +330,62 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
           <table className="w-full min-w-[780px] table-fixed text-left text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3 font-medium">Dispatcher</th>
-                <th className="px-4 py-3 font-medium">Submitted</th>
-                <th className="px-4 py-3 font-medium">Submitted $</th>
-                <th className="px-4 py-3 font-medium">Paid</th>
-                <th className="px-4 py-3 font-medium">Collected amount</th>
-                <th className="px-4 py-3 font-medium">Collection %</th>
-                <th className="px-4 py-3 font-medium">Still open</th>
-                <th className="px-4 py-3 font-medium">Open $</th>
+                <SortTh
+                  label="Dispatcher"
+                  col="dispatcher"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Submitted"
+                  col="submitted"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Submitted $"
+                  col="submittedAmount"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Paid"
+                  col="paid"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Collected amount"
+                  col="collectedAmount"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Collection %"
+                  col="collectionRate"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Still open"
+                  col="open"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
+                <SortTh
+                  label="Open $"
+                  col="openAmount"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -257,12 +492,14 @@ export function DetentionSummaryView() {
             submittedHint="Total claims received during each period listed below."
             collectedHint="Total amount collected for those claims."
             weekLimitNote="Shows the latest 26 Tuesday–Monday weeks (W##, same as Gross Profit). When a newer week appears, the oldest drops off the list."
+            currentBadge="Current week"
           />
           <SummaryTable
             title="By month"
             rows={months}
             submittedHint="Total claims received during each month listed below."
             collectedHint="Total amount collected for those claims."
+            currentBadge="Current month"
           />
           <DispatcherTable rows={dispatchers} />
         </>

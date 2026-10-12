@@ -95,7 +95,7 @@ export const OverviewPanels = memo(function OverviewPanels({
         <KpiCard
           title="Pending Surveys"
           value={String(data.kpis.pendingSurveys)}
-          hint="Sent / reminded, awaiting reply"
+          hint="Sent / reminded, awaiting reply (active drivers only)"
           tone="blue"
           icon={<Mail size={18} />}
           onClick={onPending}

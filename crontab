@@ -24,7 +24,8 @@
 #                      backfill:drivers
 #                      sync:relay-fuel
 #                      generate:report
-#   daily-retention  → retention:occasions / schedule-surveys / reminders
+#   daily-retention  → sync:tms-drivers (active/terminated for roster)
+#                      retention:occasions / schedule-surveys / reminders
 #
 # Admin "Run job" UI (manualCrons.ts) still runs each script individually.
 #
