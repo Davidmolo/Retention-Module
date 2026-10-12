@@ -1,8 +1,10 @@
 /**
  * Responses-page department rating averages + bad-feedback summaries.
  */
-import { getGpAdapter } from "@/lib/adapters/gp";
+import type { RowDataPacket } from "mysql2";
+import { getPool } from "@/lib/db";
 import { DEPARTMENTS, type Department } from "./types";
+import { isRetentionExcludedDriverId } from "./rosterExclusions";
 import { retentionStore } from "./store";
 
 export type DepartmentAvg = {
@@ -163,12 +165,54 @@ async function aiSummarizeDepartment(
   }
 }
 
+async function loadDriverMeta(
+  driverIds: string[]
+): Promise<Map<string, { dispatcher: string | null; name: string | null }>> {
+  const out = new Map<
+    string,
+    { dispatcher: string | null; name: string | null }
+  >();
+  if (!driverIds.length) return out;
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT
+       d.id,
+       NULLIF(TRIM(CONCAT_WS(' ', d.first_name, d.last_name)), '') AS name,
+       NULLIF(TRIM(CONCAT_WS(' ', mgr.first_name, mgr.last_name)), '') AS dispatcher
+     FROM drivers d
+     LEFT JOIN tms_users mgr ON mgr.id = d.manager_id
+     WHERE d.id IN (${driverIds.map(() => "?").join(",")})`,
+    driverIds.map((id) => Number(id))
+  );
+  for (const r of rows) {
+    out.set(String(r.id), {
+      dispatcher: r.dispatcher ? String(r.dispatcher).trim() : null,
+      name: r.name ? String(r.name).trim() : null,
+    });
+  }
+  return out;
+}
+
 export async function getResponsesInsights(opts?: {
   month?: string | null;
 }): Promise<ResponsesInsights> {
-  const responses = await retentionStore.listSurveyResponses();
+  const [responses, occurrences] = await Promise.all([
+    retentionStore.listSurveyResponses(),
+    retentionStore.listSurveyOccurrences(),
+  ]);
+  const resolutionOccIds = new Set(
+    occurrences
+      .filter((o) => o.surveyKind === "resolution")
+      .map((o) => o.id)
+  );
+
+  // Match Overview charts: real driver submits only — no admin tests, no
+  // excluded/test roster ids, no post-resolve surveys.
   const driverSubmitted = responses.filter(
-    (r) => (r.submittedBy || "driver") === "driver"
+    (r) =>
+      (r.submittedBy || "driver") === "driver" &&
+      !isRetentionExcludedDriverId(r.driverId) &&
+      !resolutionOccIds.has(r.surveyOccurrenceId)
   );
 
   const monthsSet = new Set<string>();
@@ -193,22 +237,13 @@ export async function getResponsesInsights(opts?: {
     DEPARTMENTS.map((d) => [d, [] as InsightComment[]])
   ) as Record<Department, InsightComment[]>;
 
-  // Resolve each driver’s assigned dispatcher (OpenRoad manager) once.
   const driverIds = [...new Set(filtered.map((r) => String(r.driverId)))];
-  const dispatcherByDriver = new Map<
+  let dispatcherByDriver = new Map<
     string,
     { dispatcher: string | null; name: string | null }
   >();
   try {
-    const drivers = await getGpAdapter().listDrivers({ includeInactive: true });
-    const byId = new Map(drivers.map((d) => [String(d.id), d]));
-    for (const id of driverIds) {
-      const d = byId.get(id);
-      dispatcherByDriver.set(id, {
-        dispatcher: d?.dispatcher?.trim() || null,
-        name: d?.name?.trim() || null,
-      });
-    }
+    dispatcherByDriver = await loadDriverMeta(driverIds);
   } catch (e) {
     console.error("[retention-insights] driver lookup", (e as Error).message);
   }

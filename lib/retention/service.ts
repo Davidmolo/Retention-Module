@@ -300,31 +300,37 @@ export async function getOverview() {
   };
 }
 
+/** Shift a YYYY-MM-DD calendar date by whole days (no TZ drift). */
+function shiftYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + deltaDays));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 function buildSurveyTrend(
   occurrences: SurveyOccurrence[],
   responses: SurveyResponse[]
 ) {
   const days = 8;
+  const todayKey =
+    toAppCalendarDate(new Date().toISOString()) ||
+    new Date().toISOString().slice(0, 10);
   const out = [];
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setHours(12, 0, 0, 0);
-    d.setDate(d.getDate() - i);
-    const key =
-      toAppCalendarDate(d.toISOString()) || d.toISOString().slice(0, 10);
-    const label = d.toLocaleDateString("en-US", {
+    const key = shiftYmd(todayKey, -i);
+    const label = new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
-      timeZone: process.env.APP_TIMEZONE?.trim() || "America/Chicago",
+      timeZone: "UTC",
     });
     const sent = occurrences.filter(
-      (o) =>
-        o.sentAt &&
-        (toAppCalendarDate(o.sentAt) || o.sentAt.slice(0, 10)) === key
+      (o) => o.sentAt && toAppCalendarDate(o.sentAt) === key
     ).length;
     const responded = responses.filter(
-      (r) =>
-        (toAppCalendarDate(r.submittedAt) || r.submittedAt.slice(0, 10)) === key
+      (r) => toAppCalendarDate(r.submittedAt) === key
     ).length;
     out.push({ date: key, label, sent, responded });
   }
