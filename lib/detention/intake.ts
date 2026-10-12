@@ -1,6 +1,8 @@
 /**
  * Poll ar@ for OpenRoad Detention completed emails and create claims.
  * Idempotent via detention_gmail_intake_log + detentions.message_id.
+ * Also merges into an existing sheet_import row for the same load (avoids
+ * twin claims with a ~6h email_date skew and conflicting compliance).
  */
 import { nanoid } from "nanoid";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
@@ -14,7 +16,11 @@ import {
   isBelowMinBillable,
   parseOpenRoadDetentionEmail,
 } from "@/lib/detention/parseOpenRoadEmail";
-import { upsertDetention } from "@/lib/detention/store";
+import {
+  findDetentionByLoadNearEmail,
+  mergeGmailIntoDetention,
+  upsertDetention,
+} from "@/lib/detention/store";
 import { getDetentionGmailConnection } from "@/lib/detention/gmailOAuth";
 
 export type IntakeRunResult = {
@@ -40,9 +46,26 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
+/**
+ * Store email_date as America/Chicago wall time (naive DATETIME).
+ * Sheet imports used local fleet time; storing Gmail as UTC caused a ~5–6h
+ * duplicate twin of the same claim with conflicting compliance.
+ */
 function toMysqlDateTime(d: Date | null): string | null {
   if (!d || Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 23).replace("T", " ");
+  const tz = process.env.APP_TIMEZONE?.trim() || "America/Chicago";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}.000`;
 }
 
 function followUpDateYmd(daysAhead = 3): string {
@@ -291,12 +314,52 @@ export async function runDetentionEmailIntake(opts?: {
         dispatcherLookup.name || parsed.dispatcherHint || null;
       const dispatcherEmail = dispatcherLookup.email;
 
-      const id = nanoid(16);
       const emailDate =
         toMysqlDateTime(msg.internalDate) ||
         toMysqlDateTime(
           msg.dateHeader ? new Date(msg.dateHeader) : null
         );
+
+      // Same load already from Art's sheet (or prior ingest) → merge Gmail
+      // identity onto that row instead of creating a twin claim.
+      const existingByLoad = parsed.loadNumber?.trim()
+        ? await findDetentionByLoadNearEmail({
+            loadNumber: parsed.loadNumber,
+            shipmentNumber: parsed.shipmentNumber,
+            amount: parsed.amount,
+            emailDateMysql: emailDate,
+            hoursWindow: 24,
+          })
+        : null;
+
+      if (existingByLoad) {
+        await mergeGmailIntoDetention({
+          detentionId: existingByLoad.id,
+          messageId: msg.id,
+          threadId: msg.threadId,
+          threadUrl: gmailThreadUrl(msg.threadId),
+          emailDate,
+          historyNote: `Merged Gmail message into existing claim (${existingByLoad.source || "import"}): ${parsed.subject}`,
+        });
+        await writeLog({
+          gmailMessageId: item.id,
+          gmailThreadId: item.threadId,
+          detentionId: existingByLoad.id,
+          subject: msg.subject,
+          result: "skipped_duplicate",
+          detail: `Merged into ${existingByLoad.id} · Load ${parsed.loadNumber || "—"}`,
+        });
+        result.skippedDuplicate += 1;
+        result.details.push({
+          gmailMessageId: item.id,
+          result: "merged_existing",
+          detentionId: existingByLoad.id,
+          detail: parsed.loadNumber || parsed.shipmentNumber || undefined,
+        });
+        continue;
+      }
+
+      const id = nanoid(16);
 
       await upsertDetention({
         id,

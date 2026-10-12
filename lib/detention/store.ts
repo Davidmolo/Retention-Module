@@ -595,6 +595,116 @@ export type UpsertDetentionInput = {
   updatedAt?: string | null;
 };
 
+/**
+ * Find an existing claim for the same load (sheet import + Gmail double-ingest).
+ * Matches load_number (+ optional shipment) within ±hours of emailDate.
+ */
+export async function findDetentionByLoadNearEmail(opts: {
+  loadNumber: string;
+  shipmentNumber?: string | null;
+  amount?: number | null;
+  emailDateMysql?: string | null;
+  hoursWindow?: number;
+}): Promise<{
+  id: string;
+  source: string;
+  messageId: string | null;
+  threadId: string | null;
+  status: string;
+} | null> {
+  const load = opts.loadNumber?.trim();
+  if (!load) return null;
+  const hours =
+    Number.isFinite(opts.hoursWindow) && (opts.hoursWindow as number) > 0
+      ? Math.floor(opts.hoursWindow as number)
+      : 24;
+  const pool = getPool();
+  const conds = [`TRIM(load_number) = ?`];
+  const params: unknown[] = [load];
+  const ship = opts.shipmentNumber?.trim();
+  if (ship) {
+    // Sheet often drops a leading zero on shipment # — compare digit-normalized.
+    conds.push(
+      `(shipment_number IS NULL OR TRIM(shipment_number) = '' OR REPLACE(TRIM(shipment_number),' ','') = ? OR TRIM(LEADING '0' FROM TRIM(shipment_number)) = TRIM(LEADING '0' FROM ?))`
+    );
+    params.push(ship.replace(/\s+/g, ""), ship.replace(/\s+/g, ""));
+  }
+  if (opts.amount != null && Number.isFinite(opts.amount)) {
+    conds.push(`ABS(COALESCE(amount, 0) - ?) < 0.02`);
+    params.push(opts.amount);
+  }
+  if (opts.emailDateMysql) {
+    conds.push(
+      `email_date IS NOT NULL AND ABS(TIMESTAMPDIFF(HOUR, email_date, ?)) <= ?`
+    );
+    params.push(opts.emailDateMysql, hours);
+  }
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, source, message_id, thread_id, status
+     FROM detentions
+     WHERE ${conds.join(" AND ")}
+     ORDER BY
+       CASE WHEN source = 'sheet_import' THEN 0 ELSE 1 END,
+       created_at ASC
+     LIMIT 1`,
+    params
+  );
+  const r = rows[0];
+  if (!r?.id) return null;
+  return {
+    id: String(r.id),
+    source: String(r.source || ""),
+    messageId: r.message_id ? String(r.message_id) : null,
+    threadId: r.thread_id ? String(r.thread_id) : null,
+    status: String(r.status || ""),
+  };
+}
+
+/** Attach Gmail identity onto an existing sheet row (no second claim). */
+export async function mergeGmailIntoDetention(opts: {
+  detentionId: string;
+  messageId: string;
+  threadId: string;
+  threadUrl: string;
+  emailDate: string | null;
+  historyNote: string;
+}): Promise<void> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT history_json FROM detentions WHERE id = ? LIMIT 1`,
+    [opts.detentionId]
+  );
+  const history = parseHistory(rows[0]?.history_json);
+  history.push({
+    type: "gmail_merged",
+    timestamp: new Date().toISOString(),
+    user: "gmail-intake",
+    text: opts.historyNote,
+  });
+  // Prefer Gmail message/thread ids (needed for reply scan). Keep existing
+  // sheet email_date so we do not re-introduce the UTC vs local twin skew.
+  await pool.query(
+    `UPDATE detentions SET
+       message_id = ?,
+       thread_id = ?,
+       thread_url = ?,
+       source = CASE
+         WHEN source IN ('sheet_import', 'sheet_import+gmail') THEN 'sheet_import+gmail'
+         ELSE 'gmail_intake'
+       END,
+       history_json = ?,
+       updated_at = CURRENT_TIMESTAMP(3)
+     WHERE id = ?`,
+    [
+      opts.messageId,
+      opts.threadId,
+      opts.threadUrl,
+      JSON.stringify(history),
+      opts.detentionId,
+    ]
+  );
+}
+
 export async function upsertDetention(
   input: UpsertDetentionInput
 ): Promise<void> {
