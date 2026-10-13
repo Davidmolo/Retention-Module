@@ -70,16 +70,19 @@ function SortTh<K extends string>({
 }) {
   const active = sortKey === col;
   return (
-    <th className={clsx("px-4 py-3 font-medium", className)} title={title}>
+    <th
+      className={clsx("px-3 py-3 font-medium sm:px-4", className)}
+      title={title || label}
+    >
       <button
         type="button"
         onClick={() => onSort(col)}
         className={clsx(
-          "inline-flex items-center gap-1 uppercase tracking-wide transition-colors hover:text-slate-800",
+          "inline-flex max-w-full items-center gap-1 whitespace-nowrap uppercase tracking-wide transition-colors hover:text-slate-800",
           active ? "text-slate-800" : "text-slate-500"
         )}
       >
-        {label}
+        <span className="truncate">{label}</span>
         {active ? (
           sortDir === "asc" ? (
             <ArrowUp size={12} className="shrink-0" />
@@ -214,7 +217,7 @@ function SummaryTable({
                   onSort={onSort}
                 />
                 <SortTh
-                  label="Collected amount"
+                  label="Collected $"
                   col="collectedAmount"
                   sortKey={sortKey}
                   sortDir={sortDir}
@@ -330,18 +333,17 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
 
   return (
     <div className="xxii-card overflow-hidden">
-      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground">
             By dispatcher
           </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Detention claims received and total amount collected by dispatcher.
-            Click a column to sort.
+          <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
+            Claims received and collected by dispatcher. Click a column to sort.
           </p>
         </div>
         {rows.length ? (
-          <div className="relative w-full sm:w-64">
+          <div className="relative w-full shrink-0 sm:w-56">
             <Search
               size={14}
               className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
@@ -363,7 +365,17 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
         </div>
       ) : (
         <div className="max-h-[min(60vh,560px)] overflow-auto">
-          <table className="w-full min-w-[780px] table-fixed text-left text-sm">
+          <table className="w-full min-w-[860px] table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[11%]" />
+              <col className="w-[12%]" />
+              <col className="w-[8%]" />
+              <col className="w-[13%]" />
+              <col className="w-[10%]" />
+              <col className="w-[11%]" />
+              <col className="w-[12%]" />
+            </colgroup>
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <SortTh
@@ -395,18 +407,20 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
                   onSort={onSort}
                 />
                 <SortTh
-                  label="Collected amount"
+                  label="Collected $"
                   col="collectedAmount"
                   sortKey={sortKey}
                   sortDir={sortDir}
                   onSort={onSort}
+                  title="Total amount collected"
                 />
                 <SortTh
-                  label="Collection %"
+                  label="Rate %"
                   col="collectionRate"
                   sortKey={sortKey}
                   sortDir={sortDir}
                   onSort={onSort}
+                  title="Collection rate"
                 />
                 <SortTh
                   label="Still open"
@@ -427,20 +441,33 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
             <tbody className="divide-y divide-border">
               {filtered.map((r) => (
                 <tr key={r.dispatcher} className="hover:bg-slate-50/80">
-                  <td className="px-4 py-3 font-medium text-slate-900">
+                  <td
+                    className="truncate px-3 py-3 font-medium text-slate-900 sm:px-4"
+                    title={r.dispatcher}
+                  >
                     {r.dispatcher}
                   </td>
-                  <td className="px-4 py-3 tabular-nums">{r.submitted}</td>
-                  <td className="px-4 py-3 tabular-nums">
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
+                    {r.submitted}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
                     {money(r.submittedAmount)}
                   </td>
-                  <td className="px-4 py-3 tabular-nums">{r.paid}</td>
-                  <td className="px-4 py-3 font-semibold tabular-nums text-emerald-700">
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
+                    {r.paid}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums text-emerald-700 sm:px-4">
                     {money(r.collectedAmount)}
                   </td>
-                  <td className="px-4 py-3 tabular-nums">{r.collectionRate}%</td>
-                  <td className="px-4 py-3 tabular-nums">{r.open}</td>
-                  <td className="px-4 py-3 tabular-nums">{money(r.openAmount)}</td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
+                    {r.collectionRate}%
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
+                    {r.open}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
+                    {money(r.openAmount)}
+                  </td>
                 </tr>
               ))}
             </tbody>
