@@ -51,10 +51,13 @@ function formatWhen(iso: string): string {
 export function DriverSmsThread({
   driverId,
   tall = false,
+  /** Fill parent height; composer stays pinned (use in inbox panels). */
+  fill = false,
   apiBase,
 }: {
   driverId: string;
   tall?: boolean;
+  fill?: boolean;
   /** Default retention messages API; Driver Comms can override. */
   apiBase?: string;
 }) {
@@ -66,7 +69,7 @@ export function DriverSmsThread({
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,7 +91,9 @@ export function DriverSmsThread({
   }, [load]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   }, [messages.length]);
 
   async function send() {
@@ -112,12 +117,19 @@ export function DriverSmsThread({
     }
   }
 
+  const listClass = fill
+    ? "min-h-0 flex-1 overflow-y-auto"
+    : tall
+      ? "max-h-[min(420px,50vh)] min-h-[240px] overflow-y-auto"
+      : "max-h-[min(360px,45vh)] min-h-[200px] overflow-y-auto";
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className={`flex min-h-0 flex-col ${fill ? "h-full flex-1" : ""}`}
+    >
       <div
-        className={`flex-1 space-y-3 overflow-y-auto rounded-lg border border-border bg-muted/20 p-3 ${
-          tall ? "min-h-[420px]" : "min-h-[280px] max-h-[480px]"
-        }`}
+        ref={listRef}
+        className={`space-y-3 rounded-lg border border-border bg-muted/20 p-3 ${listClass}`}
       >
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading thread…</p>
@@ -155,20 +167,19 @@ export function DriverSmsThread({
             </div>
           );
         })}
-        <div ref={bottomRef} />
       </div>
 
       {error ? (
-        <p className="mt-2 text-xs text-destructive">{error}</p>
+        <p className="mt-2 shrink-0 text-xs text-destructive">{error}</p>
       ) : null}
 
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex shrink-0 gap-2">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={2}
           placeholder="Write a text to this driver…"
-          className="min-h-[64px] flex-1 resize-y rounded-md border border-border bg-background px-3 py-2 text-sm"
+          className="min-h-[64px] max-h-28 flex-1 resize-y rounded-md border border-border bg-background px-3 py-2 text-sm"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();

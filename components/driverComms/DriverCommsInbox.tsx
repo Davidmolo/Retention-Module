@@ -66,8 +66,8 @@ export function DriverCommsInbox() {
   const selected = drivers.find((d) => d.id === selectedId) || null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="flex h-[calc(100dvh-7.5rem)] min-h-[420px] flex-col gap-3 md:h-[calc(100dvh-3rem)]">
+      <div className="flex shrink-0 flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Driver Comms</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -84,12 +84,12 @@ export function DriverCommsInbox() {
       </div>
 
       {error ? (
-        <p className="text-sm text-destructive">{error}</p>
+        <p className="shrink-0 text-sm text-destructive">{error}</p>
       ) : null}
 
-      <div className="grid min-h-[560px] gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col rounded-xl border border-border bg-card">
-          <div className="border-b border-border p-3">
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
+          <div className="shrink-0 border-b border-border p-3">
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -97,7 +97,7 @@ export function DriverCommsInbox() {
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
           </div>
-          <ul className="flex-1 overflow-y-auto">
+          <ul className="min-h-0 flex-1 overflow-y-auto">
             {loading && !drivers.length ? (
               <li className="p-4 text-sm text-muted-foreground">Loading…</li>
             ) : null}
@@ -135,10 +135,10 @@ export function DriverCommsInbox() {
           </ul>
         </aside>
 
-        <section className="flex min-h-0 flex-col rounded-xl border border-border bg-card p-4">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-4">
           {selected ? (
             <>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+              <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
                 <div>
                   <h2 className="text-lg font-semibold">{selected.name}</h2>
                   <p className="text-xs text-muted-foreground">
@@ -155,7 +155,7 @@ export function DriverCommsInbox() {
               <DriverSmsThread
                 key={selected.id}
                 driverId={selected.id}
-                tall
+                fill
                 apiBase={`/api/driver-comms/drivers/${encodeURIComponent(selected.id)}/messages`}
               />
             </>
