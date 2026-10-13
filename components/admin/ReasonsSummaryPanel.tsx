@@ -6,6 +6,11 @@ import { AlertTriangle, MessageSquareWarning, Search } from "lucide-react";
 import { Stars, StatusPill } from "./ui";
 import { DEPARTMENTS } from "@/lib/retention/types";
 import { prefetchDriverDetail } from "@/lib/retention/driverCache";
+import {
+  ListPagination,
+  LIST_PAGE_SIZE,
+  usePagedSlice,
+} from "./ListPagination";
 
 type NegativeItem = {
   id: string;
@@ -49,6 +54,7 @@ export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
   const [dept, setDept] = useState<DeptFilter>("all");
   const [q, setQ] = useState("");
   const [commentsOnly, setCommentsOnly] = useState(false);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,6 +98,20 @@ export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
       );
     });
   }, [data, dept, q, commentsOnly]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [dept, q, commentsOnly]);
+
+  const { slice, total, totalPages, safePage, from, to } = usePagedSlice(
+    filtered,
+    page,
+    LIST_PAGE_SIZE
+  );
+
+  useEffect(() => {
+    if (safePage !== page) setPage(safePage);
+  }, [safePage, page]);
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
@@ -232,14 +252,14 @@ export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
             </label>
           </div>
 
-          <ul className="max-h-[min(640px,60vh)] divide-y divide-[var(--xxii-line)] overflow-y-auto">
+          <ul className="max-h-[min(560px,55vh)] divide-y divide-[var(--xxii-line)] overflow-y-auto">
             {loading ? (
               <li className="px-4 py-10 text-center text-sm text-slate-400">
                 Loading negative feedback…
               </li>
             ) : null}
             {!loading &&
-              filtered.map((item) => (
+              slice.map((item) => (
                 <li key={item.id}>
                   <Link
                     href={`/retention/drivers/${item.driverId}?tab=Survey%20History`}
@@ -292,12 +312,22 @@ export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
                   </Link>
                 </li>
               ))}
-            {!loading && !filtered.length ? (
+            {!loading && !total ? (
               <li className="px-4 py-10 text-center text-sm text-slate-400">
                 No negative feedback matches these filters
               </li>
             ) : null}
           </ul>
+          {!loading ? (
+            <ListPagination
+              page={safePage}
+              totalPages={totalPages}
+              total={total}
+              from={from}
+              to={to}
+              onPageChange={setPage}
+            />
+          ) : null}
         </section>
       </div>
     </div>

@@ -20,6 +20,11 @@ import { ResponsesPanel } from "./ResponsesPanel";
 import { ConfigureMessagesPanel } from "./ConfigureMessagesPanel";
 import { ReasonsSummaryPanel } from "./ReasonsSummaryPanel";
 import {
+  ListPagination,
+  LIST_PAGE_SIZE,
+  usePagedSlice,
+} from "./ListPagination";
+import {
   MESSAGE_TEMPLATES,
   type MessageTemplateId,
 } from "@/lib/retention/messages";
@@ -261,7 +266,7 @@ function DriverListPanel({
   onSetView: (v: ViewKey) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(40);
+  const [page, setPage] = useState(1);
 
   const filteredDrivers = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -283,14 +288,15 @@ function DriverListPanel({
   }, [drivers, query, riskOnly]);
 
   useEffect(() => {
-    setVisibleCount(40);
+    setPage(1);
   }, [query, riskOnly]);
 
-  const visibleDrivers = useMemo(
-    () => filteredDrivers.slice(0, visibleCount),
-    [filteredDrivers, visibleCount]
-  );
-  const hasMore = visibleDrivers.length < filteredDrivers.length;
+  const { slice: visibleDrivers, total, totalPages, safePage, from, to } =
+    usePagedSlice(filteredDrivers, page, LIST_PAGE_SIZE);
+
+  useEffect(() => {
+    if (safePage !== page) setPage(safePage);
+  }, [safePage, page]);
 
   return (
     <section
@@ -309,7 +315,9 @@ function DriverListPanel({
               {riskOnly ? "At Risk Drivers" : "Driver Retention List"}
             </h3>
             <p className="mt-0.5 text-xs text-[var(--xxii-muted)]">
-              Showing {visibleDrivers.length} of {filteredDrivers.length}
+              {total
+                ? `${from}–${to} of ${total}`
+                : "0"}
               {riskOnly ? " flagged for follow-up" : " from live roster"}
             </p>
           </div>
@@ -478,17 +486,14 @@ function DriverListPanel({
         </table>
       </div>
 
-      {hasMore && (
-        <div className="border-t border-[var(--xxii-line)] p-4 text-center">
-          <button
-            type="button"
-            onClick={() => setVisibleCount((n) => n + 40)}
-            className="rounded-xl bg-muted px-4 py-2 text-sm font-bold text-foreground hover:bg-muted/80"
-          >
-            Load more ({filteredDrivers.length - visibleDrivers.length} remaining)
-          </button>
-        </div>
-      )}
+      <ListPagination
+        page={safePage}
+        totalPages={totalPages}
+        total={total}
+        from={from}
+        to={to}
+        onPageChange={setPage}
+      />
     </section>
   );
 }
@@ -524,6 +529,22 @@ function SecondaryView({
   );
 
   const title = view === "follow-ups" ? "Follow-ups" : "Exit / Turnover";
+  const rows = view === "follow-ups" ? followUps : resolved;
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [view]);
+
+  const { slice, total, totalPages, safePage, from, to } = usePagedSlice(
+    rows,
+    page,
+    LIST_PAGE_SIZE
+  );
+
+  useEffect(() => {
+    if (safePage !== page) setPage(safePage);
+  }, [safePage, page]);
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
@@ -553,7 +574,7 @@ function SecondaryView({
             </p>
           </div>
           <ul className="divide-y divide-[var(--xxii-line)]">
-            {followUps.map((d) => (
+            {slice.map((d) => (
               <li key={d.driverId}>
                 <Link
                   href={`/retention/drivers/${d.driverId}`}
@@ -573,12 +594,20 @@ function SecondaryView({
                 </Link>
               </li>
             ))}
-            {!followUps.length && (
+            {!total && (
               <li className="px-5 py-10 text-center text-sm text-slate-400">
                 No open follow-ups right now
               </li>
             )}
           </ul>
+          <ListPagination
+            page={safePage}
+            totalPages={totalPages}
+            total={total}
+            from={from}
+            to={to}
+            onPageChange={setPage}
+          />
           <div className="border-t border-[var(--xxii-line)] px-4 py-3 sm:px-5">
             <button
               type="button"
@@ -599,7 +628,7 @@ function SecondaryView({
             </p>
           </div>
           <ul className="divide-y divide-[var(--xxii-line)]">
-            {resolved.map((d) => (
+            {slice.map((d) => (
               <li key={d.driverId}>
                 <Link
                   href={`/retention/drivers/${d.driverId}`}
@@ -614,12 +643,20 @@ function SecondaryView({
                 </Link>
               </li>
             ))}
-            {!resolved.length && (
+            {!total && (
               <li className="px-5 py-10 text-center text-sm text-slate-400">
                 No resolved cases yet
               </li>
             )}
           </ul>
+          <ListPagination
+            page={safePage}
+            totalPages={totalPages}
+            total={total}
+            from={from}
+            to={to}
+            onPageChange={setPage}
+          />
         </section>
       )}
     </div>
