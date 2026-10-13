@@ -10,12 +10,6 @@ export const SURVEY_REMINDER_AFTER_DAYS = 3;
  */
 export const DEFAULT_SEND_STAGGER_MS = 5_000;
 
-/**
- * After OpenRoad reactivates a driver (e.g. back from vacation / suspended→active),
- * wait this many days before automated survey SMS.
- */
-export const POST_RETURN_SURVEY_GRACE_DAYS = 7;
-
 export const RESOLUTION_ASPECTS = [
   { key: "quickly", label: "How quickly was the issue resolved?" },
   { key: "efficiently", label: "How efficiently was it handled?" },
