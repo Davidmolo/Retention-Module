@@ -259,15 +259,112 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Send SMS through GHL Conversations (FMS sendLeadSms shape). */
+function collectHttpUrls(value: unknown, out: string[] = []): string[] {
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (/^https?:\/\//i.test(s)) out.push(s);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectHttpUrls(item, out);
+    return out;
+  }
+  if (value && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      collectHttpUrls(v, out);
+    }
+  }
+  return out;
+}
+
+/** Upload files to GHL Media Library; returns public URLs for SMS/MMS attachments. */
+export async function uploadGhlMessageAttachments(opts: {
+  contactId: string;
+  files: { buffer: Buffer; filename: string; contentType: string }[];
+}): Promise<string[]> {
+  const { locationId, token, version } = getGhlSmsConfig();
+  const contactId = String(opts.contactId || "").trim();
+  if (!locationId || !token) {
+    throw new Error("GHL is not configured for media uploads");
+  }
+  if (!contactId) {
+    throw new Error("GHL contactId is required to upload attachments");
+  }
+  const files = opts.files || [];
+  if (!files.length) return [];
+
+  const form = new FormData();
+  form.append("locationId", locationId);
+  form.append("contactId", contactId);
+  for (const f of files) {
+    const bytes = new Uint8Array(f.buffer);
+    form.append(
+      "fileAttachment",
+      new Blob([bytes], {
+        type: f.contentType || "application/octet-stream",
+      }),
+      f.filename || "attachment"
+    );
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  try {
+    const res = await fetch(`${GHL_API_BASE}/conversations/messages/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Version: version,
+      },
+      body: form,
+      signal: controller.signal,
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      const msg =
+        (data.message as string) ||
+        (data.error as string) ||
+        `GHL upload failed (${res.status})`;
+      throw new Error(msg);
+    }
+    const urls = [
+      ...collectHttpUrls(data.uploadedFiles),
+      ...collectHttpUrls(data.attachmentUrls),
+      ...collectHttpUrls(data.files),
+    ];
+    const unique = [...new Set(urls)];
+    if (!unique.length) {
+      throw new Error("GHL upload returned no attachment URLs");
+    }
+    return unique;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Send SMS/MMS through GHL Conversations (FMS sendLeadSms shape). */
 export async function sendGhlSms(opts: {
   phoneE164: string;
   body: string;
   contactName?: string;
-}): Promise<{ messageId: string | null; contactId: string; conversationId: string | null }> {
+  /** Public media URLs (MMS / Media Library links). */
+  attachments?: string[];
+  /** Upload these first, then attach the resulting URLs. */
+  files?: { buffer: Buffer; filename: string; contentType: string }[];
+}): Promise<{
+  messageId: string | null;
+  contactId: string;
+  conversationId: string | null;
+  attachmentUrls: string[];
+}> {
   const message = String(opts.body || "").trim();
-  if (!message) {
-    throw new Error("SMS body is required");
+  const preset = (opts.attachments || [])
+    .map((u) => String(u || "").trim())
+    .filter((u) => /^https?:\/\//i.test(u));
+  const files = opts.files || [];
+
+  if (!message && !preset.length && !files.length) {
+    throw new Error("SMS body or attachment is required");
   }
   if (message.length > 1600) {
     throw new Error("Message is too long (max 1600 characters)");
@@ -280,12 +377,21 @@ export async function sendGhlSms(opts: {
 
   await clearGhlSmsDnd(contactId);
 
-  const payload: Record<string, string> = {
+  let uploaded: string[] = [];
+  if (files.length) {
+    uploaded = await uploadGhlMessageAttachments({ contactId, files });
+  }
+  const attachmentUrls = [...new Set([...preset, ...uploaded])];
+
+  const payload: Record<string, unknown> = {
     type: "SMS",
     contactId,
-    message,
+    message: message || (attachmentUrls.length ? " " : ""),
     toNumber: opts.phoneE164,
   };
+  if (attachmentUrls.length) {
+    payload.attachments = attachmentUrls;
+  }
 
   let result: Record<string, unknown>;
   try {
@@ -347,5 +453,6 @@ export async function sendGhlSms(opts: {
       ? String(result.conversationId)
       : null,
     messageId,
+    attachmentUrls,
   };
 }

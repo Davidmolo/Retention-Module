@@ -1,10 +1,12 @@
 import { getAuthUser } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { listDriverSmsThread } from "@/lib/driverComms/smsLog";
+import { parseSmsComposeRequest } from "@/lib/driverComms/smsMedia";
 import { sendSms } from "@/lib/retention/sms";
 import { getGpAdapter } from "@/lib/adapters/gp";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET(
   _req: Request,
@@ -26,10 +28,9 @@ export async function POST(
   try {
     const { driverId } = await params;
     const user = await getAuthUser();
-    const body = (await req.json().catch(() => ({}))) as { text?: string };
-    const text = String(body.text || "").trim();
-    if (!text) {
-      const err = new Error("Message text is required");
+    const { text, files } = await parseSmsComposeRequest(req);
+    if (!text && !files.length) {
+      const err = new Error("Message text or attachment is required");
       (err as Error & { status?: number }).status = 400;
       throw err;
     }
@@ -53,6 +54,7 @@ export async function POST(
       driverId: driver.id,
       source: "manual",
       sentBy,
+      files,
     });
     if (!sms.ok) {
       const err = new Error(sms.error || "SMS send failed");
@@ -66,6 +68,7 @@ export async function POST(
         messages,
         smsMocked: sms.mocked,
         smsProvider: sms.provider,
+        attachmentUrls: sms.attachmentUrls || [],
       },
       { status: 201 }
     );

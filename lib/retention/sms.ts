@@ -18,6 +18,7 @@ import {
   isGhlSmsConfigured,
   sendGhlSms,
 } from "./ghlSms";
+import { composeLoggedSmsBody } from "@/lib/driverComms/smsMedia";
 import { logDriverSms } from "@/lib/driverComms/smsLog";
 
 export type SmsSendResult = {
@@ -26,6 +27,13 @@ export type SmsSendResult = {
   provider: "ghl" | "twilio" | "mock";
   providerMessageId: string | null;
   error?: string;
+  attachmentUrls?: string[];
+};
+
+export type SmsMediaUpload = {
+  buffer: Buffer;
+  filename: string;
+  contentType: string;
 };
 
 export type SmsSendOptions = {
@@ -35,6 +43,10 @@ export type SmsSendOptions = {
   driverId?: string | number;
   source?: string;
   sentBy?: string | null;
+  /** Public media URLs already hosted (optional). */
+  attachments?: string[];
+  /** Files to upload via GHL then attach as MMS / media links. */
+  files?: SmsMediaUpload[];
 };
 
 function envFirst(...keys: string[]): string {
@@ -80,7 +92,8 @@ function resolveProvider(): "ghl" | "twilio" | "mock" {
 
 async function sendViaTwilio(
   dest: string,
-  body: string
+  body: string,
+  attachmentUrls: string[] = []
 ): Promise<SmsSendResult> {
   const sid = envFirst("TWILIO_ACCOUNT_SID");
   const token = envFirst("TWILIO_AUTH_TOKEN");
@@ -95,8 +108,11 @@ async function sendViaTwilio(
     const params = new URLSearchParams({
       To: dest,
       From: from,
-      Body: String(body || "").trim(),
+      Body: String(body || "").trim() || (attachmentUrls.length ? " " : ""),
     });
+    for (const url of attachmentUrls) {
+      params.append("MediaUrl", url);
+    }
     const res = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
       {
@@ -125,6 +141,7 @@ async function sendViaTwilio(
       mocked: false,
       provider: "twilio",
       providerMessageId: json.sid || null,
+      attachmentUrls,
     };
   } catch (e) {
     console.error("[sms:twilio]", (e as Error).message);
@@ -148,17 +165,21 @@ async function sendViaGhl(
       phoneE164: dest,
       body,
       contactName: opts?.contactName,
+      attachments: opts?.attachments,
+      files: opts?.files,
     });
     console.log("[sms:ghl]", {
       to: dest,
       messageId: out.messageId,
       contactId: out.contactId,
+      attachments: out.attachmentUrls.length,
     });
     return {
       ok: true,
       mocked: false,
       provider: "ghl",
       providerMessageId: out.messageId,
+      attachmentUrls: out.attachmentUrls,
     };
   } catch (e) {
     console.error("[sms:ghl]", (e as Error).message);
@@ -186,10 +207,14 @@ async function maybeLogOutbound(
 ) {
   if (!result.ok || !opts?.driverId) return;
   try {
+    const logBody = composeLoggedSmsBody(
+      body,
+      result.attachmentUrls || opts.attachments || []
+    );
     await logDriverSms({
       driverId: opts.driverId,
       direction: "outbound",
-      body,
+      body: logBody || body || "(attachment)",
       phone: dest,
       provider: result.provider,
       providerMessageId: result.providerMessageId,
@@ -209,6 +234,20 @@ export async function sendSms(
   const dest = normalizePhoneE164(to);
   const provider = resolveProvider();
   const text = String(body || "").trim();
+  const hasMedia = Boolean(
+    (opts?.files && opts.files.length) ||
+      (opts?.attachments && opts.attachments.length)
+  );
+
+  if (!text && !hasMedia) {
+    return {
+      ok: false,
+      mocked: false,
+      provider,
+      providerMessageId: null,
+      error: "Message text or attachment is required",
+    };
+  }
 
   if (!isRetentionSmsEnabled()) {
     console.log("[sms:disabled]", {
@@ -221,6 +260,7 @@ export async function sendSms(
       mocked: true,
       provider: "mock",
       providerMessageId: `disabled-${Date.now()}`,
+      attachmentUrls: opts?.attachments || [],
     };
     await maybeLogOutbound(result, dest, text, opts);
     return result;
@@ -230,6 +270,7 @@ export async function sendSms(
     console.log("[sms:mock]", {
       to: dest,
       body: text,
+      files: opts?.files?.length || 0,
       providerHint: "ghl|twilio not configured",
     });
     const result: SmsSendResult = {
@@ -237,6 +278,7 @@ export async function sendSms(
       mocked: true,
       provider: "mock",
       providerMessageId: `mock-${Date.now()}`,
+      attachmentUrls: opts?.attachments || [],
     };
     await maybeLogOutbound(result, dest, text, opts);
     return result;
@@ -252,10 +294,21 @@ export async function sendSms(
     };
   }
 
+  if (provider === "twilio" && opts?.files?.length) {
+    return {
+      ok: false,
+      mocked: false,
+      provider: "twilio",
+      providerMessageId: null,
+      error:
+        "File upload requires GHL. Attach public URLs or switch SMS provider to GHL.",
+    };
+  }
+
   const result =
     provider === "ghl"
       ? await sendViaGhl(dest, text, opts)
-      : await sendViaTwilio(dest, text);
+      : await sendViaTwilio(dest, text, opts?.attachments || []);
   await maybeLogOutbound(result, dest, text, opts);
   return result;
 }

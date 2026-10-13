@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { getPool } from "@/lib/db";
+import { retentionExcludedDriversSql } from "@/lib/retention/rosterExclusions";
 
 /** Local copy — avoid circular import with lib/retention/sms. */
 function normalizePhoneE164(raw: string): string {
@@ -264,8 +265,10 @@ export async function listActiveDriversForComms(opts?: {
 
   const nameSql = `TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name))`;
   const params: (string | number)[] = [];
+  // Hide test/staff accounts (Accounting example, Milos, etc.) — same IDs as Retention.
   let where =
-    "WHERE LOWER(COALESCE(d.status,'')) IN ('active','employed') OR d.status IS NULL OR d.status = ''";
+    `WHERE (LOWER(COALESCE(d.status,'')) IN ('active','employed') OR d.status IS NULL OR d.status = '')` +
+    retentionExcludedDriversSql("d");
   if (q) {
     where += ` AND (${nameSql} LIKE ? OR d.phone LIKE ? OR CAST(d.id AS CHAR) LIKE ?)`;
     const like = `%${q}%`;

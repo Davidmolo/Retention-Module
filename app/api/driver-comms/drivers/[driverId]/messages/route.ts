@@ -1,10 +1,12 @@
 import { getAuthUser } from "@/lib/auth";
 import { getGpAdapter } from "@/lib/adapters/gp";
 import { listDriverSmsThread } from "@/lib/driverComms/smsLog";
+import { parseSmsComposeRequest } from "@/lib/driverComms/smsMedia";
 import { fail, ok } from "@/lib/http";
 import { sendSms } from "@/lib/retention/sms";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ driverId: string }> };
 
@@ -22,10 +24,9 @@ export async function POST(req: Request, ctx: Ctx) {
   try {
     const { driverId } = await ctx.params;
     const user = await getAuthUser();
-    const body = (await req.json().catch(() => ({}))) as { text?: string };
-    const text = String(body.text || "").trim();
-    if (!text) {
-      const err = new Error("Message text is required");
+    const { text, files } = await parseSmsComposeRequest(req);
+    if (!text && !files.length) {
+      const err = new Error("Message text or attachment is required");
       (err as Error & { status?: number }).status = 400;
       throw err;
     }
@@ -49,6 +50,7 @@ export async function POST(req: Request, ctx: Ctx) {
       driverId: driver.id,
       source: "manual",
       sentBy,
+      files,
     });
     if (!sms.ok) {
       const err = new Error(sms.error || "SMS send failed");
@@ -61,6 +63,7 @@ export async function POST(req: Request, ctx: Ctx) {
         messages: await listDriverSmsThread(driverId),
         smsMocked: sms.mocked,
         smsProvider: sms.provider,
+        attachmentUrls: sms.attachmentUrls || [],
       },
       { status: 201 }
     );
