@@ -175,7 +175,15 @@ export function ConfigureMessagesPanel({
       )}
 
       {loading ? (
-        <div className="xxii-card h-40 animate-pulse bg-slate-100" />
+        <div className="space-y-3" aria-busy="true" aria-label="Loading templates">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="xxii-card space-y-3 p-4 sm:p-5">
+              <div className="xxii-skeleton h-4 w-40 rounded" />
+              <div className="xxii-skeleton h-3 w-64 max-w-full rounded" />
+              <div className="xxii-skeleton h-28 w-full rounded-xl" />
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="space-y-3">
           {templates.map((tpl) => {

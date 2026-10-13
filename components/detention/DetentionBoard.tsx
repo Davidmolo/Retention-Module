@@ -600,9 +600,12 @@ export function DetentionBoard() {
         ) : null}
 
         {loading && !items.length ? (
-          <div className="space-y-2 p-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-14 animate-pulse rounded-lg bg-slate-100" />
+          <div className="space-y-2 p-4" aria-busy="true" aria-label="Loading detentions">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div
+                key={i}
+                className="xxii-skeleton h-12 w-full rounded-lg"
+              />
             ))}
           </div>
         ) : null}
@@ -923,7 +926,12 @@ function DetentionDetailDrawer({
             </div>
           ) : null}
           {loading && !d ? (
-            <div className="h-40 animate-pulse rounded-lg bg-slate-100" />
+            <div className="space-y-3" aria-busy="true" aria-label="Loading claim">
+              <div className="xxii-skeleton h-8 w-32 rounded-full" />
+              <div className="xxii-skeleton h-4 w-48 rounded" />
+              <div className="xxii-skeleton h-24 w-full rounded-lg" />
+              <div className="xxii-skeleton h-20 w-full rounded-lg" />
+            </div>
           ) : null}
           {d ? (
             <>

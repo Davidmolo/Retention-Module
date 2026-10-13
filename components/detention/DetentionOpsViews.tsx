@@ -105,7 +105,11 @@ export function ProgressiveStrip({
 }) {
   if (!analytics) {
     return (
-      <div className="h-16 animate-pulse rounded-xl bg-slate-100" />
+      <div
+        className="xxii-skeleton h-16 w-full rounded-xl"
+        aria-busy="true"
+        aria-label="Loading pipeline"
+      />
     );
   }
   return (
@@ -286,7 +290,20 @@ export function InsightsPanel({
   analytics: DetentionAnalytics | null;
 }) {
   if (!analytics) {
-    return <div className="h-64 animate-pulse rounded-xl bg-slate-100" />;
+    return (
+      <div
+        className="xxii-card space-y-4 p-4"
+        aria-busy="true"
+        aria-label="Loading insights"
+      >
+        <div className="grid gap-3 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="xxii-skeleton h-20 rounded-xl" />
+          ))}
+        </div>
+        <div className="xxii-skeleton h-40 w-full rounded-xl" />
+      </div>
+    );
   }
   const k = analytics.kpis;
   const maxMonth = Math.max(

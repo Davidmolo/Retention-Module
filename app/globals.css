@@ -183,6 +183,35 @@
   border-radius: var(--radius-lg);
 }
 
+/* Loading skeletons — pulse tied to API fetches */
+.xxii-skeleton {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--muted) 70%, transparent) 0%,
+    color-mix(in oklch, var(--muted) 40%, white) 45%,
+    color-mix(in oklch, var(--muted) 70%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: xxii-skeleton-shimmer 1.35s ease-in-out infinite;
+  border-radius: 0.375rem;
+}
+
+@keyframes xxii-skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xxii-skeleton {
+    animation: none;
+    background: color-mix(in oklch, var(--muted) 55%, transparent);
+  }
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;

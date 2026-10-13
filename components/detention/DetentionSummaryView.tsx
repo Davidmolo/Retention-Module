@@ -22,6 +22,7 @@ import {
   type DetentionDispatcherSummary,
   type DetentionPeriodSummary,
 } from "@/lib/detention/types";
+import { SkeletonSummaryCards } from "@/components/ui/skeleton";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -647,11 +648,7 @@ export function DetentionSummaryView() {
       ) : null}
 
       {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-40 animate-pulse rounded-xl bg-slate-100" />
-          ))}
-        </div>
+        <SkeletonSummaryCards count={3} />
       ) : (
         <>
           <SummaryTable

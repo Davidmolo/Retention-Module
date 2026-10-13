@@ -25,6 +25,7 @@ import {
   patchOverviewCaseStatus,
 } from "@/lib/retention/driverCache";
 import { DriverSmsThread } from "./DriverSmsThread";
+import { SkeletonDriverDetail } from "@/components/ui/skeleton";
 
 type SurveyResponse = {
   id: string;
@@ -410,21 +411,7 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
           <ArrowLeft size={16} />
           Back to Retention
         </Link>
-        <div className="xxii-card animate-pulse space-y-4 p-4 sm:p-6">
-          <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-2xl bg-slate-200 sm:h-16 sm:w-16" />
-            <div className="space-y-2">
-              <div className="h-5 w-48 rounded bg-slate-200" />
-              <div className="h-3 w-32 rounded bg-slate-100" />
-            </div>
-          </div>
-          <div className="h-10 w-full rounded-xl bg-slate-100" />
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-16 rounded-xl bg-slate-100" />
-            ))}
-          </div>
-        </div>
+        <SkeletonDriverDetail />
       </div>
     );
   }

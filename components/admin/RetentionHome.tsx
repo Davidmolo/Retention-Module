@@ -8,6 +8,7 @@ import {
   OVERVIEW_UPDATED_EVENT,
 } from "@/lib/retention/driverCache";
 import type { RetentionView } from "@/lib/retention/viewNav";
+import { SkeletonOverview } from "@/components/ui/skeleton";
 
 type Overview = Parameters<typeof RetentionDashboard>[0]["data"];
 
@@ -52,21 +53,7 @@ export function RetentionHome({ initialView }: { initialView: RetentionView }) {
   }
 
   if (!data) {
-    return (
-      <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
-        <div className="grid animate-pulse gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="xxii-card h-28 bg-slate-100" />
-          ))}
-        </div>
-        <div className="grid animate-pulse gap-4 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="xxii-card h-56 bg-slate-100" />
-          ))}
-        </div>
-        <div className="xxii-card h-64 animate-pulse bg-slate-100" />
-      </div>
-    );
+    return <SkeletonOverview />;
   }
 
   return <RetentionDashboard data={data} initialView={initialView} />;

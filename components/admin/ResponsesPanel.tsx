@@ -17,6 +17,7 @@ import {
   navigateRetentionView,
   type ResponsesFilter,
 } from "@/lib/retention/viewNav";
+import { Skeleton, SkeletonKpiRow } from "@/components/ui/skeleton";
 
 type InsightComment = {
   text: string;
@@ -321,12 +322,19 @@ export function ResponsesPanel({
                 </div>
               )}
               {loading && !rows.length && (
-                <div className="space-y-3">
+                <div className="space-y-3" aria-busy="true">
                   {Array.from({ length: 4 }).map((_, i) => (
                     <div
                       key={i}
-                      className="h-28 animate-pulse rounded-xl bg-slate-100"
-                    />
+                      className="space-y-2 rounded-xl border border-[var(--xxii-line)] p-3.5"
+                    >
+                      <div className="flex justify-between gap-2">
+                        <Skeleton className="h-4 w-36 rounded" />
+                        <Skeleton className="h-5 w-16 rounded-full" />
+                      </div>
+                      <Skeleton className="h-3 w-24 rounded" />
+                      <Skeleton className="h-3 w-full rounded" />
+                    </div>
                   ))}
                 </div>
               )}
@@ -335,7 +343,7 @@ export function ResponsesPanel({
             <div
               className={clsx(
                 "hidden max-w-full overflow-x-auto md:block",
-                loading && "opacity-60"
+                loading && rows.length > 0 && "opacity-60"
               )}
             >
               <table className="w-full min-w-[720px] text-sm">
@@ -428,8 +436,25 @@ export function ResponsesPanel({
                   )}
                   {loading && !rows.length && (
                     <tr>
-                      <td colSpan={7} className="px-5 py-12">
-                        <div className="mx-auto h-8 w-48 animate-pulse rounded-lg bg-slate-100" />
+                      <td colSpan={7} className="p-0">
+                        <div className="space-y-0 divide-y divide-[var(--xxii-line)] p-0" aria-busy="true">
+                          {Array.from({ length: 6 }).map((_, i) => (
+                            <div
+                              key={i}
+                              className="grid grid-cols-7 gap-3 px-5 py-3.5"
+                            >
+                              {Array.from({ length: 7 }).map((_, c) => (
+                                <Skeleton
+                                  key={c}
+                                  className={clsx(
+                                    "h-4 rounded",
+                                    c === 0 ? "w-20" : c === 5 ? "w-28" : "w-16"
+                                  )}
+                                />
+                              ))}
+                            </div>
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -544,10 +569,8 @@ function DepartmentInsightsBlock() {
       {error ? (
         <div className="px-4 py-6 text-sm text-rose-600 sm:px-5">{error}</div>
       ) : loading && !data ? (
-        <div className="grid gap-3 p-4 sm:grid-cols-5 sm:px-5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded-xl bg-slate-100" />
-          ))}
+        <div className="p-4 sm:p-5">
+          <SkeletonKpiRow count={5} />
         </div>
       ) : data ? (
         <div className="space-y-4 p-4 sm:p-5">

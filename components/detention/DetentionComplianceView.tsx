@@ -315,9 +315,22 @@ export function DetentionComplianceView() {
 
 
       {loading ? (
-        <div className="grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <div className="h-80 animate-pulse rounded-xl bg-slate-100" />
-          <div className="h-80 animate-pulse rounded-xl bg-slate-100" />
+        <div
+          className="grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]"
+          aria-busy="true"
+          aria-label="Loading compliance"
+        >
+          <div className="xxii-card space-y-2 p-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="xxii-skeleton h-10 w-full rounded-lg" />
+            ))}
+          </div>
+          <div className="xxii-card space-y-3 p-4">
+            <div className="xxii-skeleton h-5 w-40 rounded" />
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="xxii-skeleton h-14 w-full rounded-lg" />
+            ))}
+          </div>
         </div>
       ) : null}
 

@@ -11,6 +11,7 @@ import {
   LIST_PAGE_SIZE,
   usePagedSlice,
 } from "./ListPagination";
+import { SkeletonReasons } from "@/components/ui/skeleton";
 
 type NegativeItem = {
   id: string;
@@ -113,6 +114,10 @@ export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
     if (safePage !== page) setPage(safePage);
   }, [safePage, page]);
 
+  if (loading && !data) {
+    return <SkeletonReasons />;
+  }
+
   return (
     <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -144,17 +149,17 @@ export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
       <div className="grid gap-3 sm:grid-cols-3">
         <Kpi
           label="Negative surveys"
-          value={loading ? "…" : String(data?.totals.negativeResponses ?? 0)}
+          value={String(data?.totals.negativeResponses ?? 0)}
           hint="Overall or any dept ≤3★"
         />
         <Kpi
           label="With written comments"
-          value={loading ? "…" : String(data?.totals.withComments ?? 0)}
+          value={String(data?.totals.withComments ?? 0)}
           hint="Drivers who explained the score"
         />
         <Kpi
           label="Open at-risk"
-          value={loading ? "…" : String(data?.totals.openAtRisk ?? 0)}
+          value={String(data?.totals.openAtRisk ?? 0)}
           hint="Drivers still needing follow-up"
           warn
         />

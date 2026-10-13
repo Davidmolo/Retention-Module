@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { DriverSmsThread } from "@/components/admin/DriverSmsThread";
+import { SkeletonInbox } from "@/components/ui/skeleton";
 
 type DriverRow = {
   id: string;
@@ -103,6 +104,9 @@ export function DriverCommsInbox() {
         <p className="shrink-0 text-sm font-medium text-rose-600">{error}</p>
       ) : null}
 
+      {loading && !drivers.length ? (
+        <SkeletonInbox />
+      ) : (
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="xxii-card flex min-h-0 flex-col overflow-hidden">
           <div className="shrink-0 border-b border-[var(--xxii-line)] p-3">
@@ -120,12 +124,7 @@ export function DriverCommsInbox() {
             </div>
           </div>
           <ul className="min-h-0 flex-1 divide-y divide-[var(--xxii-line)] overflow-y-auto">
-            {loading && !drivers.length ? (
-              <li className="px-4 py-8 text-center text-sm text-[var(--xxii-muted)]">
-                Loading…
-              </li>
-            ) : null}
-            {!loading && !drivers.length ? (
+            {!drivers.length ? (
               <li className="px-4 py-8 text-center text-sm text-[var(--xxii-muted)]">
                 No active drivers found. Sync OpenRoad roster first.
               </li>
@@ -205,6 +204,7 @@ export function DriverCommsInbox() {
           )}
         </section>
       </div>
+      )}
     </div>
   );
 }

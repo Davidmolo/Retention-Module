@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
+import { SkeletonThread } from "@/components/ui/skeleton";
 
 export type ThreadMessage = {
   id: string;
@@ -123,16 +124,17 @@ export function DriverSmsThread({
       ? "max-h-[min(420px,50vh)] min-h-[240px] overflow-y-auto"
       : "max-h-[min(360px,45vh)] min-h-[200px] overflow-y-auto";
 
+  if (loading && !messages.length) {
+    return <SkeletonThread fill={fill} />;
+  }
+
   return (
     <div className={`flex min-h-0 flex-col ${fill ? "h-full flex-1" : ""}`}>
       <div
         ref={listRef}
         className={`space-y-3 rounded-xl border border-[var(--xxii-line)] bg-slate-50/80 p-3 ${listClass}`}
       >
-        {loading ? (
-          <p className="text-sm text-[var(--xxii-muted)]">Loading thread…</p>
-        ) : null}
-        {!loading && !messages.length ? (
+        {!messages.length ? (
           <p className="text-sm text-[var(--xxii-muted)]">
             No messages yet. Survey requests, greetings, and manual texts will
             show here.
