@@ -124,18 +124,16 @@ export function DriverSmsThread({
       : "max-h-[min(360px,45vh)] min-h-[200px] overflow-y-auto";
 
   return (
-    <div
-      className={`flex min-h-0 flex-col ${fill ? "h-full flex-1" : ""}`}
-    >
+    <div className={`flex min-h-0 flex-col ${fill ? "h-full flex-1" : ""}`}>
       <div
         ref={listRef}
-        className={`space-y-3 rounded-lg border border-border bg-muted/20 p-3 ${listClass}`}
+        className={`space-y-3 rounded-xl border border-[var(--xxii-line)] bg-slate-50/80 p-3 ${listClass}`}
       >
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading thread…</p>
+          <p className="text-sm text-[var(--xxii-muted)]">Loading thread…</p>
         ) : null}
         {!loading && !messages.length ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--xxii-muted)]">
             No messages yet. Survey requests, greetings, and manual texts will
             show here.
           </p>
@@ -148,16 +146,16 @@ export function DriverSmsThread({
               className={`flex ${outbound ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
                   outbound
-                    ? "bg-foreground text-background"
-                    : "bg-card border border-border text-foreground"
+                    ? "bg-[var(--xxii-blue)] text-white"
+                    : "border border-[var(--xxii-line)] bg-white text-[var(--xxii-text)]"
                 }`}
               >
                 <p className="whitespace-pre-wrap break-words">{m.body}</p>
                 <p
                   className={`mt-1 text-[10px] ${
-                    outbound ? "text-background/70" : "text-muted-foreground"
+                    outbound ? "text-white/75" : "text-[var(--xxii-muted)]"
                   }`}
                 >
                   {sourceLabel(m.source)}
@@ -170,7 +168,9 @@ export function DriverSmsThread({
       </div>
 
       {error ? (
-        <p className="mt-2 shrink-0 text-xs text-destructive">{error}</p>
+        <p className="mt-2 shrink-0 text-xs font-medium text-rose-600">
+          {error}
+        </p>
       ) : null}
 
       <div className="mt-3 flex shrink-0 gap-2">
@@ -179,7 +179,7 @@ export function DriverSmsThread({
           onChange={(e) => setText(e.target.value)}
           rows={2}
           placeholder="Write a text to this driver…"
-          className="min-h-[64px] max-h-28 flex-1 resize-y rounded-md border border-border bg-background px-3 py-2 text-sm"
+          className="min-h-[64px] max-h-28 flex-1 resize-y rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm text-[var(--xxii-text)] outline-none focus:border-[var(--xxii-blue)]"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -191,7 +191,7 @@ export function DriverSmsThread({
           type="button"
           onClick={() => void send()}
           disabled={sending || !text.trim()}
-          className="inline-flex h-10 shrink-0 items-center gap-1.5 self-end rounded-md bg-foreground px-3 text-sm font-medium text-background disabled:opacity-50"
+          className="inline-flex h-10 shrink-0 items-center gap-1.5 self-end rounded-xl bg-[var(--xxii-blue)] px-3.5 text-sm font-bold text-white disabled:opacity-50"
         >
           <Send className="h-4 w-4" />
           {sending ? "…" : "Send"}
