@@ -1,7 +1,11 @@
-import type { ResultSetHeader } from 'mysql2';
+import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { getPool } from '../db';
 import { fetchDriversPage, type TmsDriver } from './client';
 import { toSqlDate as toDate, toSqlDateTime as toDateTime } from '../dates';
+
+function isOpenRoadActive(status: string | null | undefined): boolean {
+  return String(status || '').trim().toLowerCase() === 'active';
+}
 
 const COLS = [
   'id', 'first_name', 'last_name', 'middle_name', 'driver_nr', 'status',
@@ -31,6 +35,44 @@ function rowOf(d: TmsDriver): unknown[] {
 }
 
 /**
+ * Stamp reactivated_at when OpenRoad flips suspended/inactive → active
+ * (vacation return, etc.) so Retention can apply a post-return SMS grace.
+ */
+async function markDriverReactivations(drivers: TmsDriver[]): Promise<void> {
+  if (!drivers.length) return;
+  const pool = getPool();
+  const ids = drivers.map((d) => d.id).filter((id) => id != null);
+  if (!ids.length) return;
+
+  const [prevRows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, status FROM drivers WHERE id IN (?)`,
+    [ids]
+  );
+  const prevStatus = new Map<number, string | null>();
+  for (const r of prevRows) {
+    prevStatus.set(Number(r.id), r.status != null ? String(r.status) : null);
+  }
+
+  const reactivated: number[] = [];
+  for (const d of drivers) {
+    const id = Number(d.id);
+    if (!Number.isFinite(id) || !isOpenRoadActive(d.status)) continue;
+    if (!prevStatus.has(id)) continue; // brand-new roster row — hire tenure handles it
+    const was = prevStatus.get(id);
+    if (!isOpenRoadActive(was)) reactivated.push(id);
+  }
+
+  if (!reactivated.length) return;
+  await pool.query(
+    `UPDATE drivers SET reactivated_at = CURRENT_TIMESTAMP(3) WHERE id IN (?)`,
+    [reactivated]
+  );
+  console.log(
+    `[openroad] marked ${reactivated.length} driver(s) reactivated (suspended→active)`
+  );
+}
+
+/**
  * Upsert a batch of TMS drivers by id. If the batch fails (one bad row fails the
  * whole multi-row INSERT), retry row-by-row and skip the offenders so the sync
  * still completes.
@@ -40,6 +82,7 @@ export async function upsertDrivers(
 ): Promise<{ stored: number; skipped: number }> {
   if (!drivers.length) return { stored: 0, skipped: 0 };
   const pool = getPool();
+  await markDriverReactivations(drivers);
   const rows = drivers.map(rowOf);
   try {
     const [res] = await pool.query<ResultSetHeader>(UPSERT_SQL, [rows]);

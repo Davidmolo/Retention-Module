@@ -7,10 +7,13 @@
  * new link — reminders / manual Send reuse the same URL until submit or expiry.
  * Sends are staggered so eligible drivers are not messaged all at once.
  */
+import type { RowDataPacket } from "mysql2";
 import { getGpAdapter } from "@/lib/adapters/gp";
+import { getPool } from "@/lib/db";
 import {
   DEFAULT_SEND_STAGGER_MS,
   MAX_SURVEY_REMINDERS,
+  POST_RETURN_SURVEY_GRACE_DAYS,
   SURVEY_REMINDER_AFTER_DAYS,
 } from "./constants";
 import { isSurveyEligible, surveyFrequencyLabel } from "./rules";
@@ -19,6 +22,25 @@ import { retentionStore } from "./store";
 import { resendSurveyOccurrence, sendSurvey } from "./service";
 
 const MS_DAY = 86_400_000;
+
+/** True when OpenRoad recently flipped this driver back to active (vacation return). */
+async function inPostReturnGrace(driverId: string): Promise<boolean> {
+  try {
+    const pool = getPool();
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT reactivated_at FROM drivers WHERE id = ? LIMIT 1`,
+      [driverId]
+    );
+    const at = rows[0]?.reactivated_at;
+    if (!at) return false;
+    const ms = new Date(at).getTime();
+    if (!Number.isFinite(ms)) return false;
+    return Date.now() - ms < POST_RETURN_SURVEY_GRACE_DAYS * MS_DAY;
+  } catch {
+    // Column may not exist until migrate — don't block cadence.
+    return false;
+  }
+}
 
 function cadenceDays(label: ReturnType<typeof surveyFrequencyLabel>): number {
   return label === "every_2_weeks" ? 14 : 30;
@@ -62,6 +84,17 @@ export async function runScheduledSurveys(): Promise<{
         name: driver.name,
         action: "skipped",
         reason: "not_eligible",
+      });
+      skipped += 1;
+      continue;
+    }
+
+    if (await inPostReturnGrace(driver.id)) {
+      results.push({
+        driverId: driver.id,
+        name: driver.name,
+        action: "skipped",
+        reason: `post_return_grace_${POST_RETURN_SURVEY_GRACE_DAYS}d`,
       });
       skipped += 1;
       continue;
