@@ -260,19 +260,50 @@ export async function listActiveDriversForComms(opts?: {
   }[]
 > {
   const pool = getPool();
-  const limit = Math.min(Math.max(opts?.limit || 200, 1), 500);
   const q = String(opts?.q || "").trim();
+  // Searching: wider slice so matches aren't buried past the default inbox cap.
+  const defaultLimit = q ? 500 : 300;
+  const limit = Math.min(Math.max(opts?.limit || defaultLimit, 1), 500);
 
   const nameSql = `TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name))`;
+  const phoneDigitsSql = `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(d.phone,''), '+', ''), '-', ''), ' ', ''), '(', ''), ')', ''), '.', '')`;
   const params: (string | number)[] = [];
-  // Hide test/staff accounts (Accounting example, Milos, etc.) — same IDs as Retention.
+
   let where =
     `WHERE (LOWER(COALESCE(d.status,'')) IN ('active','employed') OR d.status IS NULL OR d.status = '')` +
     retentionExcludedDriversSql("d");
+
   if (q) {
-    where += ` AND (${nameSql} LIKE ? OR d.phone LIKE ? OR CAST(d.id AS CHAR) LIKE ?)`;
-    const like = `%${q}%`;
-    params.push(like, like, like);
+    const tokens = q
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    const digits = q.replace(/\D/g, "");
+
+    // Name: every token must appear (so "john sm" finds John Smith).
+    const nameParts = tokens.map(() => `LOWER(${nameSql}) LIKE ?`);
+    const nameParams = tokens.map((t) => `%${t.toLowerCase()}%`);
+
+    // Also match OpenRoad id, driver_nr, raw phone, or digits-only phone.
+    const altParts = [
+      `CAST(d.id AS CHAR) LIKE ?`,
+      `CAST(COALESCE(d.driver_nr, '') AS CHAR) LIKE ?`,
+      `d.phone LIKE ?`,
+    ];
+    const altParams: string[] = [`%${q}%`, `%${q}%`, `%${q}%`];
+    if (digits.length >= 3) {
+      altParts.push(`${phoneDigitsSql} LIKE ?`);
+      altParams.push(`%${digits}%`);
+    }
+
+    if (nameParts.length) {
+      where += ` AND ((${nameParts.join(" AND ")}) OR (${altParts.join(" OR ")}))`;
+      params.push(...nameParams, ...altParams);
+    } else {
+      where += ` AND (${altParts.join(" OR ")})`;
+      params.push(...altParams);
+    }
   }
 
   const [rows] = await pool.query<RowDataPacket[]>(

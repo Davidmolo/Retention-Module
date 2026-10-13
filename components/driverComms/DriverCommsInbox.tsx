@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { DriverSmsThread } from "@/components/admin/DriverSmsThread";
@@ -41,41 +41,68 @@ export function DriverCommsInbox() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (query: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (query.trim()) params.set("q", query.trim());
-      const res = await fetch(`/api/driver-comms/drivers?${params}`, {
-        cache: "no-store",
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Failed to load");
-      const list = (json.data?.drivers || []) as DriverRow[];
-      setDrivers(list);
-      setSelectedId((prev) => {
-        if (prev && list.some((d) => d.id === prev)) return prev;
-        return list[0]?.id || null;
-      });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const reqSeq = useRef(0);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
 
   useEffect(() => {
-    void load("");
-  }, [load]);
-
-  useEffect(() => {
-    const t = setTimeout(() => void load(q), 250);
+    const seq = ++reqSeq.current;
+    const delay = q.trim() ? 250 : 0;
+    const t = setTimeout(() => {
+      void (async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const params = new URLSearchParams();
+          const query = q.trim();
+          if (query) params.set("q", query);
+          const res = await fetch(`/api/driver-comms/drivers?${params}`, {
+            cache: "no-store",
+          });
+          const json = await res.json();
+          if (seq !== reqSeq.current) return;
+          if (!res.ok || !json.ok) {
+            throw new Error(json.error || "Failed to load");
+          }
+          const list = (json.data?.drivers || []) as DriverRow[];
+          setDrivers(list);
+          const prev = selectedIdRef.current;
+          if (prev && list.some((d) => d.id === prev)) {
+            setSelectedId(prev);
+          } else {
+            setSelectedId(list[0]?.id || null);
+          }
+        } catch (e) {
+          if (seq !== reqSeq.current) return;
+          setError((e as Error).message);
+        } finally {
+          if (seq === reqSeq.current) setLoading(false);
+        }
+      })();
+    }, delay);
     return () => clearTimeout(t);
-  }, [q, load]);
+  }, [q]);
 
   const selected = drivers.find((d) => d.id === selectedId) || null;
+  const searching = Boolean(q.trim());
+
+  if (loading && !drivers.length && !searching) {
+    return (
+      <div className="flex h-[calc(100dvh-7.5rem)] min-h-[420px] flex-col gap-4 md:h-[calc(100dvh-3.5rem)]">
+        <div className="flex shrink-0 flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--xxii-muted)]">
+              Driver communication
+            </div>
+            <h1 className="mt-1 text-xl font-extrabold tracking-tight text-[var(--xxii-text)] sm:text-2xl">
+              Inbox
+            </h1>
+          </div>
+        </div>
+        <SkeletonInbox />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[calc(100dvh-7.5rem)] min-h-[420px] flex-col gap-4 md:h-[calc(100dvh-3.5rem)]">
@@ -104,9 +131,6 @@ export function DriverCommsInbox() {
         <p className="shrink-0 text-sm font-medium text-rose-600">{error}</p>
       ) : null}
 
-      {loading && !drivers.length ? (
-        <SkeletonInbox />
-      ) : (
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="xxii-card flex min-h-0 flex-col overflow-hidden">
           <div className="shrink-0 border-b border-[var(--xxii-line)] p-3">
@@ -118,15 +142,26 @@ export function DriverCommsInbox() {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search drivers…"
+                placeholder="Search name, phone, or ID…"
                 className="w-full rounded-xl border border-[var(--xxii-line)] bg-white py-2 pl-8 pr-3 text-sm outline-none focus:border-[var(--xxii-blue)]"
               />
+              {loading ? (
+                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-[var(--xxii-muted)]">
+                  …
+                </span>
+              ) : null}
             </div>
           </div>
-          <ul className="min-h-0 flex-1 divide-y divide-[var(--xxii-line)] overflow-y-auto">
+          <ul
+            className={`min-h-0 flex-1 divide-y divide-[var(--xxii-line)] overflow-y-auto ${
+              loading ? "opacity-60" : ""
+            }`}
+          >
             {!drivers.length ? (
               <li className="px-4 py-8 text-center text-sm text-[var(--xxii-muted)]">
-                No active drivers found. Sync OpenRoad roster first.
+                {searching
+                  ? "No drivers match that search."
+                  : "No active drivers found. Sync OpenRoad roster first."}
               </li>
             ) : null}
             {drivers.map((d) => {
@@ -199,12 +234,13 @@ export function DriverCommsInbox() {
             </>
           ) : (
             <p className="py-12 text-center text-sm text-[var(--xxii-muted)]">
-              Select a driver to view their SMS thread.
+              {searching
+                ? "No match — try another name, phone, or ID."
+                : "Select a driver to view their SMS thread."}
             </p>
           )}
         </section>
       </div>
-      )}
     </div>
   );
 }
