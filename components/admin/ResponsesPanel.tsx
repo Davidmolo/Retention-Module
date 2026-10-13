@@ -264,7 +264,7 @@ export function ResponsesPanel({
               {rows.map((row) => (
                 <Link
                   key={row.id}
-                  href={`/retention/drivers/${row.driverId}`}
+                  href={`/retention/drivers/${row.driverId}?tab=Messages`}
                   onMouseEnter={() => prefetch(row.driverId)}
                   onFocus={() => prefetch(row.driverId)}
                   className="block rounded-xl border border-[var(--xxii-line)] bg-white p-3.5 hover:border-sky-200 hover:bg-sky-50/40"
@@ -361,7 +361,7 @@ export function ResponsesPanel({
                       </td>
                       <td className="px-5 py-3.5">
                         <Link
-                          href={`/retention/drivers/${row.driverId}`}
+                          href={`/retention/drivers/${row.driverId}?tab=Messages`}
                           onMouseEnter={() => prefetch(row.driverId)}
                           className="font-semibold text-[var(--xxii-text)] hover:text-[var(--xxii-blue)]"
                         >
@@ -406,7 +406,7 @@ export function ResponsesPanel({
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <Link
-                          href={`/retention/drivers/${row.driverId}`}
+                          href={`/retention/drivers/${row.driverId}?tab=Messages`}
                           onMouseEnter={() => prefetch(row.driverId)}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--xxii-blue-soft)] px-2.5 py-1.5 text-xs font-bold text-[var(--xxii-blue)] hover:bg-sky-100"
                         >

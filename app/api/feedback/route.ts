@@ -8,13 +8,19 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const FEEDBACK_MODULES = ["gross-profit", "retention", "detention"] as const;
+const FEEDBACK_MODULES = [
+  "gross-profit",
+  "retention",
+  "detention",
+  "driver-comms",
+] as const;
 type FeedbackModule = (typeof FEEDBACK_MODULES)[number] | "overall";
 
 const MODULE_LABELS: Record<FeedbackModule, string> = {
   "gross-profit": "Gross Profit",
   retention: "Retention",
   detention: "Detention",
+  "driver-comms": "Driver Comms",
   overall: "Website overall",
 };
 

@@ -21,6 +21,7 @@ const FLOW_MODULES: { id: AppModule; label: string }[] = [
   { id: 'gross-profit', label: 'Gross Profit' },
   { id: 'retention', label: 'Retention' },
   { id: 'detention', label: 'Detention' },
+  { id: 'driver-comms', label: 'Driver Comms' },
 ];
 
 function roleLabel(role: UserRole | string): string {
@@ -98,10 +99,15 @@ export function ManagePermissionsPanel({
         role,
         modules:
           role === 'admin' || role === 'super_admin'
-            ? (['gross-profit', 'retention', 'detention'] as AppModule[])
+            ? ([
+                'gross-profit',
+                'retention',
+                'detention',
+                'driver-comms',
+              ] as AppModule[])
             : prev[id]?.modules?.length
               ? prev[id].modules
-              : (['retention'] as AppModule[]),
+              : (['retention', 'driver-comms'] as AppModule[]),
       },
     }));
   };

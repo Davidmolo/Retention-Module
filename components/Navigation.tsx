@@ -26,7 +26,8 @@ type PageKey =
   | 'configurations'
   | 'retention'
   | 'settings'
-  | 'detention';
+  | 'detention'
+  | 'driver-comms';
 
 interface NavigationProps {
   currentPage: PageKey;
@@ -68,6 +69,16 @@ const DETENTION_CHILDREN: { href: string; label: string; match: string }[] = [
   },
 ];
 
+const DRIVER_COMMS_CHILDREN: { href: string; label: string; match: string }[] =
+  [
+    { href: '/driver-comms', label: 'Inbox', match: '/driver-comms' },
+    {
+      href: '/driver-comms/broadcast',
+      label: 'Broadcast',
+      match: '/driver-comms/broadcast',
+    },
+  ];
+
 function linkClass(active: boolean, withIcon = false) {
   return `${withIcon ? 'flex items-center gap-2' : 'block'} px-3 py-2 rounded-md text-sm font-medium transition ${
     active
@@ -104,6 +115,10 @@ function NavigationInner({ currentPage }: NavigationProps) {
   const [detentionOpen, setDetentionOpen] = useState(
     () => currentPage === 'detention' || pathname.startsWith('/detention')
   );
+  const [driverCommsOpen, setDriverCommsOpen] = useState(
+    () =>
+      currentPage === 'driver-comms' || pathname.startsWith('/driver-comms')
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -129,7 +144,9 @@ function NavigationInner({ currentPage }: NavigationProps) {
   const showGp = canAccessModule(modules, 'gross-profit');
   const showRetention = canAccessModule(modules, 'retention');
   const showDetention = canAccessModule(modules, 'detention');
+  const showDriverComms = canAccessModule(modules, 'driver-comms');
   const onDetention = pathname.startsWith('/detention');
+  const onDriverComms = pathname.startsWith('/driver-comms');
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -294,6 +311,48 @@ function NavigationInner({ currentPage }: NavigationProps) {
                     const active =
                       item.match === '/detention'
                         ? pathname === '/detention'
+                        : pathname.startsWith(item.match);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setOpen(false)}
+                        className={linkClass(active)}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {showDriverComms && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setDriverCommsOpen((v) => !v)}
+                aria-expanded={driverCommsOpen}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition ${
+                  onDriverComms
+                    ? 'bg-muted/60 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                Driver Comms
+                <ChevronDown
+                  className={`w-4 h-4 shrink-0 transition-transform ${
+                    driverCommsOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {driverCommsOpen && (
+                <div className="mt-1 ml-2 pl-2 border-l border-border space-y-1">
+                  {DRIVER_COMMS_CHILDREN.map((item) => {
+                    const active =
+                      item.match === '/driver-comms'
+                        ? pathname === '/driver-comms'
                         : pathname.startsWith(item.match);
                     return (
                       <Link

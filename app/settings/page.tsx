@@ -35,6 +35,7 @@ const MODULE_OPTIONS: { id: AppModule; label: string }[] = [
   { id: 'gross-profit', label: 'Gross Profit' },
   { id: 'retention', label: 'Retention' },
   { id: 'detention', label: 'Detention' },
+  { id: 'driver-comms', label: 'Driver Comms' },
 ];
 
 function roleLabel(role: UserRole | string): string {

@@ -5,7 +5,12 @@ import { ChevronDown, MessageSquareText } from "lucide-react";
 import { Button } from "./ui/button";
 import type { AppModule } from "@/lib/roles";
 
-type FeedbackAbout = "overall" | "gross-profit" | "retention" | "detention";
+type FeedbackAbout =
+  | "overall"
+  | "gross-profit"
+  | "retention"
+  | "detention"
+  | "driver-comms";
 
 const MODULE_OPTIONS: { value: FeedbackAbout; label: string; module?: AppModule }[] =
   [
@@ -13,6 +18,7 @@ const MODULE_OPTIONS: { value: FeedbackAbout; label: string; module?: AppModule 
     { value: "gross-profit", label: "Gross Profit", module: "gross-profit" },
     { value: "retention", label: "Retention", module: "retention" },
     { value: "detention", label: "Detention", module: "detention" },
+    { value: "driver-comms", label: "Driver Comms", module: "driver-comms" },
   ];
 
 export function FeedbackPanel({ modules }: { modules: AppModule[] }) {

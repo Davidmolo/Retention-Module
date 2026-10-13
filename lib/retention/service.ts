@@ -492,6 +492,9 @@ export async function sendResolutionSurvey(
 
   const sms = await sendSms(driver.phone, smsBody, {
     contactName: driver.name,
+    driverId: driver.id,
+    source: "resolution",
+    sentBy: triggeredBy === "admin" ? "Admin" : "System",
   });
   if (!sms.ok) {
     const err = new Error(sms.error || "SMS send failed");
@@ -578,6 +581,9 @@ export async function resendSurveyOccurrence(
 
   const sms = await sendSms(driver.phone, smsBody, {
     contactName: driver.name,
+    driverId: driver.id,
+    source: useReminder ? "reminder" : "survey",
+    sentBy: "System",
   });
   if (!sms.ok) {
     const err = new Error(sms.error || "SMS send failed");
@@ -662,6 +668,9 @@ export async function sendSurvey(
 
   const sms = await sendSms(driver.phone, smsBody, {
     contactName: driver.name,
+    driverId: driver.id,
+    source: "survey",
+    sentBy: triggeredBy === "admin" ? "Admin" : "System",
   });
   if (!sms.ok) {
     const err = new Error(sms.error || "SMS send failed");

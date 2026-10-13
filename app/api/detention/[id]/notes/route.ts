@@ -1,3 +1,4 @@
+import { getAuthUser } from "@/lib/auth";
 import { fail, ok } from "@/lib/http";
 import { addDetentionNote, getDetention } from "@/lib/detention/store";
 
@@ -14,13 +15,17 @@ export async function POST(request: Request, ctx: Ctx) {
       (err as Error & { status?: number }).status = 404;
       throw err;
     }
+    const user = await getAuthUser();
     const body = (await request.json().catch(() => ({}))) as {
       body?: string;
       author?: string | null;
     };
+    const author =
+      (user?.displayName || user?.username || body.author || null)?.trim() ||
+      null;
     const note = await addDetentionNote({
       detentionId: id,
-      author: body.author || null,
+      author,
       body: String(body.body || ""),
     });
     return ok({ note });

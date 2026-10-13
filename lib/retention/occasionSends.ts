@@ -140,6 +140,9 @@ async function sendBirthdayWish(opts: {
   const { sendSms } = await import("./sms");
   const sms = await sendSms(opts.phone, smsBody, {
     contactName: opts.driverName,
+    driverId: opts.driverId,
+    source: "occasion",
+    sentBy: "System",
   });
   if (!sms.ok) {
     return {
@@ -321,7 +324,12 @@ async function sendSurveyOccasion(opts: {
         skipped: "opted_out",
       };
     }
-    const sms = await sendSms(phone, smsBody, { contactName: opts.driverName });
+    const sms = await sendSms(phone, smsBody, {
+      contactName: opts.driverName,
+      driverId: opts.driverId,
+      source: "occasion",
+      sentBy: "System",
+    });
     if (!sms.ok) {
       throw new Error(sms.error || "SMS send failed");
     }

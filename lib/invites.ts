@@ -48,6 +48,7 @@ export const MODULE_LABELS: Record<AppModule, string> = {
   'gross-profit': 'Gross Profit',
   retention: 'Retention',
   detention: 'Detention',
+  'driver-comms': 'Driver Comms',
 };
 
 export function appBaseUrl(): string {

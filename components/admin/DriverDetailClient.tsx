@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -23,6 +24,7 @@ import {
   refreshOverview,
   patchOverviewCaseStatus,
 } from "@/lib/retention/driverCache";
+import { DriverSmsThread } from "./DriverSmsThread";
 
 type SurveyResponse = {
   id: string;
@@ -88,6 +90,7 @@ type Detail = {
 const tabs = [
   "Overview",
   "Survey History",
+  "Messages",
   "Notes",
   "Follow-ups",
   "Resolution",
@@ -95,11 +98,20 @@ const tabs = [
 const CAROUSEL_PREVIEW = 6;
 const DRIVER_LIST_PAGE_SIZE = 5;
 
+function tabFromQuery(raw: string | null): (typeof tabs)[number] | null {
+  if (!raw) return null;
+  const hit = tabs.find((t) => t.toLowerCase() === raw.toLowerCase());
+  return hit || null;
+}
+
 export function DriverDetailClient({ driverId }: { driverId: string }) {
+  const searchParams = useSearchParams();
   const cached = getCachedDriverDetail<Detail>(driverId);
   const [data, setData] = useState<Detail | null>(cached);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<(typeof tabs)[number]>("Overview");
+  const [tab, setTab] = useState<(typeof tabs)[number]>(
+    () => tabFromQuery(searchParams.get("tab")) || "Overview"
+  );
   const [status, setStatus] = useState(cached?.retentionCase?.status || "Open");
   const [notes, setNotes] = useState<Detail["notes"]>(cached?.notes ?? []);
   const [caseId, setCaseId] = useState<string | null>(cached?.retentionCase?.id || null);
@@ -107,6 +119,29 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
   const [savingNote, setSavingNote] = useState(false);
   const [surveySent, setSurveySent] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [noteAuthor, setNoteAuthor] = useState("Admin");
+
+  useEffect(() => {
+    const next = tabFromQuery(searchParams.get("tab"));
+    if (next) setTab(next);
+  }, [searchParams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled || !json?.user) return;
+        const name =
+          String(json.user.displayName || json.user.username || "").trim() ||
+          "Admin";
+        setNoteAuthor(name);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     // Warm overview so "Back to Retention" is instant
@@ -312,7 +347,7 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
       const tempId = `temp-${Date.now()}`;
       const optimistic = {
         id: tempId,
-        author: "Admin",
+        author: noteAuthor,
         text,
         createdAt: new Date().toISOString(),
       };
@@ -325,7 +360,6 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
           body: JSON.stringify({
             text,
             caseId,
-            author: "Admin",
           }),
         });
         const json = await res.json();
@@ -344,7 +378,7 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
         setSavingNote(false);
       }
     },
-    [caseId, data, savingNote]
+    [caseId, data, noteAuthor, savingNote]
   );
 
   if (loadError) {
@@ -587,6 +621,19 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
                     />
                   )}
                 </div>
+              </div>
+            )}
+
+            {tab === "Messages" && (
+              <div className="mt-5 max-w-3xl">
+                <div className="mb-3">
+                  <h3 className="text-sm font-bold">SMS thread</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Survey requests, holiday/birthday greetings, and manual texts
+                    for this driver.
+                  </p>
+                </div>
+                <DriverSmsThread driverId={data.driver.id} tall />
               </div>
             )}
 

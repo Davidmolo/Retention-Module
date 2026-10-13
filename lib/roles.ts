@@ -4,13 +4,15 @@ export type AppModule =
   | "dashboard"
   | "gross-profit"
   | "retention"
-  | "detention";
+  | "detention"
+  | "driver-comms";
 
 export const ALL_MODULES: AppModule[] = [
   "dashboard",
   "gross-profit",
   "retention",
   "detention",
+  "driver-comms",
 ];
 
 export function normalizeUserRole(raw: unknown): UserRole {
@@ -41,9 +43,9 @@ export function isAdminRole(role: UserRole | string | null | undefined): boolean
 
 /** Default modules when modules_json is empty. */
 export function defaultModulesForRole(role: UserRole): AppModule[] {
-  if (role === "staff") return ["dashboard", "retention"];
+  if (role === "staff") return ["dashboard", "retention", "driver-comms"];
   // Admin + Super Admin always see every XXII flow.
-  return ["dashboard", "gross-profit", "retention", "detention"];
+  return ["dashboard", "gross-profit", "retention", "detention", "driver-comms"];
 }
 
 /** True when this role is expected to have full module access. */
@@ -55,6 +57,8 @@ export function parseModulesJson(
   raw: string | null | undefined,
   role: UserRole
 ): AppModule[] {
+  // Admin / Super Admin always get the full module set (including new modules).
+  if (roleHasFullModules(role)) return defaultModulesForRole(role);
   if (!raw?.trim()) return defaultModulesForRole(role);
   try {
     const parsed = JSON.parse(raw);
@@ -136,9 +140,14 @@ export function pathAllowedForModules(
   if (path.startsWith("/retention") || path.startsWith("/api/retention")) {
     return canAccessModule(modules, "retention");
   }
-  // Detention not built yet — block until module exists + granted.
   if (path.startsWith("/detention") || path.startsWith("/api/detention")) {
     return canAccessModule(modules, "detention");
+  }
+  if (
+    path.startsWith("/driver-comms") ||
+    path.startsWith("/api/driver-comms")
+  ) {
+    return canAccessModule(modules, "driver-comms");
   }
   return false;
 }

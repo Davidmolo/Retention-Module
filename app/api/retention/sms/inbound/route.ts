@@ -1,3 +1,7 @@
+import {
+  findDriverIdByPhone,
+  logDriverSms,
+} from "@/lib/driverComms/smsLog";
 import { retentionStore } from "@/lib/retention/store";
 import { normalizePhoneE164 } from "@/lib/retention/sms";
 import { ok } from "@/lib/http";
@@ -124,6 +128,22 @@ export async function POST(req: Request) {
       return ok({ handled: false, reason: "missing_phone" });
     }
 
+    const driverId = await findDriverIdByPhone(phone);
+    if (driverId && body.trim()) {
+      try {
+        await logDriverSms({
+          driverId,
+          direction: "inbound",
+          body: body.trim(),
+          phone,
+          provider: "inbound",
+          source: "inbound",
+        });
+      } catch (e) {
+        console.error("[sms:inbound:log]", (e as Error).message);
+      }
+    }
+
     if (OPT_OUT_WORDS.has(keyword)) {
       const row = await retentionStore.setOptOut(phone, true, "inbound_sms");
       return ok({
@@ -131,6 +151,7 @@ export async function POST(req: Request) {
         action: "opt_out",
         phone: row.phone,
         keyword,
+        driverId,
       });
     }
 
@@ -141,10 +162,16 @@ export async function POST(req: Request) {
         action: "opt_in",
         phone: row.phone,
         keyword,
+        driverId,
       });
     }
 
-    return ok({ handled: false, reason: "ignored", keyword: keyword || null });
+    return ok({
+      handled: Boolean(driverId && body.trim()),
+      reason: driverId ? "logged" : "ignored",
+      keyword: keyword || null,
+      driverId,
+    });
   } catch (error) {
     const status = (error as Error & { status?: number }).status || 500;
     return Response.json(

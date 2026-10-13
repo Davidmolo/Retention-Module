@@ -18,6 +18,7 @@ import {
   isGhlSmsConfigured,
   sendGhlSms,
 } from "./ghlSms";
+import { logDriverSms } from "@/lib/driverComms/smsLog";
 
 export type SmsSendResult = {
   ok: boolean;
@@ -30,6 +31,10 @@ export type SmsSendResult = {
 export type SmsSendOptions = {
   /** Used when creating a new GHL contact for this phone. */
   contactName?: string;
+  /** When set, successful sends are logged to the driver SMS thread. */
+  driverId?: string | number;
+  source?: string;
+  sentBy?: string | null;
 };
 
 function envFirst(...keys: string[]): string {
@@ -173,6 +178,29 @@ export function isRetentionSmsEnabled(): boolean {
   return raw !== "0" && raw !== "false" && raw !== "off" && raw !== "no";
 }
 
+async function maybeLogOutbound(
+  result: SmsSendResult,
+  dest: string,
+  body: string,
+  opts?: SmsSendOptions
+) {
+  if (!result.ok || !opts?.driverId) return;
+  try {
+    await logDriverSms({
+      driverId: opts.driverId,
+      direction: "outbound",
+      body,
+      phone: dest,
+      provider: result.provider,
+      providerMessageId: result.providerMessageId,
+      source: opts.source || "manual",
+      sentBy: opts.sentBy ?? null,
+    });
+  } catch (e) {
+    console.error("[sms:log]", (e as Error).message);
+  }
+}
+
 export async function sendSms(
   to: string,
   body: string,
@@ -180,29 +208,38 @@ export async function sendSms(
 ): Promise<SmsSendResult> {
   const dest = normalizePhoneE164(to);
   const provider = resolveProvider();
+  const text = String(body || "").trim();
 
   if (!isRetentionSmsEnabled()) {
     console.log("[sms:disabled]", {
       to: dest,
-      body,
+      body: text,
       hint: "RETENTION_SMS_ENABLED=false",
     });
-    return {
+    const result: SmsSendResult = {
       ok: true,
       mocked: true,
       provider: "mock",
       providerMessageId: `disabled-${Date.now()}`,
     };
+    await maybeLogOutbound(result, dest, text, opts);
+    return result;
   }
 
   if (provider === "mock") {
-    console.log("[sms:mock]", { to: dest, body, providerHint: "ghl|twilio not configured" });
-    return {
+    console.log("[sms:mock]", {
+      to: dest,
+      body: text,
+      providerHint: "ghl|twilio not configured",
+    });
+    const result: SmsSendResult = {
       ok: true,
       mocked: true,
       provider: "mock",
       providerMessageId: `mock-${Date.now()}`,
     };
+    await maybeLogOutbound(result, dest, text, opts);
+    return result;
   }
 
   if (!dest) {
@@ -215,8 +252,10 @@ export async function sendSms(
     };
   }
 
-  if (provider === "ghl") {
-    return sendViaGhl(dest, body, opts);
-  }
-  return sendViaTwilio(dest, body);
+  const result =
+    provider === "ghl"
+      ? await sendViaGhl(dest, text, opts)
+      : await sendViaTwilio(dest, text);
+  await maybeLogOutbound(result, dest, text, opts);
+  return result;
 }
