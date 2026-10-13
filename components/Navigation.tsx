@@ -56,7 +56,11 @@ const RETENTION_CHILDREN: RetentionNavItem[] = [
   { href: '/retention?view=follow-ups', label: 'Follow-ups', view: 'follow-ups' },
   { href: '/retention?view=exit', label: 'Exit / Turnover', view: 'exit' },
   { href: '/retention?view=reasons', label: 'Reasons', view: 'reasons' },
-  { href: '/retention?view=configure', label: 'Configure', view: 'configure' },
+  {
+    href: '/retention?view=configure',
+    label: 'Configuration',
+    view: 'configure',
+  },
 ];
 
 const DETENTION_CHILDREN: { href: string; label: string; match: string }[] = [

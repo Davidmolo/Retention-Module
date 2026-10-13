@@ -144,7 +144,7 @@ export function ConfigureMessagesPanel({
           ← Back to overview
         </button>
         <h2 className="text-lg font-extrabold tracking-tight text-[var(--xxii-text)] sm:text-xl">
-          Configure — message texts
+          Configuration — message texts
         </h2>
         <p className="mt-1 max-w-3xl text-sm text-[var(--xxii-muted)]">
           Edit the SMS Retention sends to drivers. Changes apply to future sends

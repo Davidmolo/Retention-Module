@@ -38,7 +38,7 @@ const retentionLinks: { view: RetentionView; label: string }[] = [
   { view: "follow-ups", label: "Follow-ups" },
   { view: "exit", label: "Exit / Turnover" },
   { view: "reasons", label: "Reasons" },
-  { view: "configure", label: "Configure" },
+  { view: "configure", label: "Configuration" },
 ];
 
 /** Keeps page content from re-rendering when sidebar/header chrome state changes. */

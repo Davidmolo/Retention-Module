@@ -18,6 +18,7 @@ import { prefetchDriverDetail } from "@/lib/retention/driverCache";
 import { OverviewPanels } from "./OverviewPanels";
 import { ResponsesPanel } from "./ResponsesPanel";
 import { ConfigureMessagesPanel } from "./ConfigureMessagesPanel";
+import { ReasonsSummaryPanel } from "./ReasonsSummaryPanel";
 import {
   MESSAGE_TEMPLATES,
   type MessageTemplateId,
@@ -190,7 +191,11 @@ export function RetentionDashboard({
     );
   }
 
-  if (view === "follow-ups" || view === "exit" || view === "reasons") {
+  if (view === "reasons") {
+    return <ReasonsSummaryPanel onBack={goOverview} />;
+  }
+
+  if (view === "follow-ups" || view === "exit") {
     return (
       <SecondaryView
         view={view}
@@ -494,7 +499,7 @@ function SecondaryView({
   onBack,
   onOpenAtRisk,
 }: {
-  view: "follow-ups" | "exit" | "reasons";
+  view: "follow-ups" | "exit";
   data: Overview;
   onBack: () => void;
   onOpenAtRisk: () => void;
@@ -518,26 +523,7 @@ function SecondaryView({
     [data.drivers]
   );
 
-  const reasonRows = useMemo(() => {
-    const max = Math.max(...data.charts.issueBreakdown.map((d) => d.count), 1);
-    return data.charts.issueBreakdown.map((row) => ({
-      ...row,
-      pct: Math.round((row.count / max) * 100),
-    }));
-  }, [data.charts.issueBreakdown]);
-
-  const lowComments = useMemo(
-    () =>
-      data.recentResponses.filter((r) => r.overallRating <= 3 && r.comment),
-    [data.recentResponses]
-  );
-
-  const title =
-    view === "follow-ups"
-      ? "Follow-ups"
-      : view === "exit"
-        ? "Exit / Turnover"
-        : "Reasons";
+  const title = view === "follow-ups" ? "Follow-ups" : "Exit / Turnover";
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
@@ -635,62 +621,6 @@ function SecondaryView({
             )}
           </ul>
         </section>
-      )}
-
-      {view === "reasons" && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <section className="xxii-card p-4 sm:p-5">
-            <h3 className="mb-4 text-sm font-bold">Low ratings by department</h3>
-            <p className="mb-4 text-xs text-[var(--xxii-muted)]">
-              From submitted driver surveys (department ratings ≤3).
-            </p>
-            <div className="space-y-3">
-              {reasonRows.map((row) => (
-                <div key={row.department}>
-                  <div className="mb-1 flex justify-between text-sm">
-                    <span className="font-medium text-slate-600">{row.department}</span>
-                    <span className="font-bold">{row.count}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-sky-400 to-blue-600"
-                      style={{ width: `${row.pct}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="xxii-card overflow-hidden">
-            <div className="border-b border-[var(--xxii-line)] px-4 py-3">
-              <h3 className="text-sm font-bold">Recent low-rating comments</h3>
-            </div>
-            <ul className="divide-y divide-[var(--xxii-line)]">
-              {lowComments.map((r) => (
-                <li key={r.id} className="px-4 py-3">
-                  <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <Link
-                      href={`/retention/drivers/${r.driverId}`}
-                      className="text-sm font-semibold text-[var(--xxii-blue)]"
-                    >
-                      {r.driverName}
-                    </Link>
-                    <Stars value={r.overallRating} size="sm" />
-                    {r.department && (
-                      <span className="text-xs text-[var(--xxii-muted)]">{r.department}</span>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-600">{r.comment}</p>
-                </li>
-              ))}
-              {!lowComments.length && (
-                <li className="px-4 py-10 text-center text-sm text-slate-400">
-                  No low-rating comments in recent responses
-                </li>
-              )}
-            </ul>
-          </section>
-        </div>
       )}
     </div>
   );
