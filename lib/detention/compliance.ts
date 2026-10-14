@@ -1,14 +1,14 @@
 /**
- * Dispatcher 48h compliance + “No follow up” rules (Mantas).
+ * Dispatcher 48h compliance + “No follow up” rules (Mantas / David).
  *
- * - pending: still inside 48h of the detention email, no dispatcher reply yet
- * - ok: dispatcher replied within 48h of the email; OR claim is Paid/Denied
+ * - pending: still inside 48h of the detention email, no reply yet
+ * - ok: dispatcher or Art replied within 48h of the email; OR claim is Paid/Denied
  *   (follow-up no longer required once closed)
- * - missed: no dispatcher reply at all after 48h (“No reply ≤48h”)
- * - no_follow_up: dispatcher replied at least once, but no further dispatcher
- *   answer for 48h+ while the claim is still open — or replied only after the
+ * - missed: no reply at all after 48h (“No reply ≤48h”)
+ * - no_follow_up: someone replied at least once (dispatcher or Art), but no further
+ *   answer for 48h+ while the claim is still open — or first reply only after the
  *   initial 48h window and claim is still pending. Never used for Paid/Denied.
- * - n/a: cannot evaluate (no dispatcher email)
+ * - n/a: cannot evaluate (no dispatcher/Art mailbox to score)
  */
 export const COMPLIANCE_WINDOW_MS = 48 * 60 * 60 * 1000;
 

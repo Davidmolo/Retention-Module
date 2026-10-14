@@ -1,5 +1,5 @@
 /**
- * Daily Detention follow-up reminder emails.
+ * Daily Detention T-2 compliance digests (per dispatcher + Art rollup).
  *   pnpm detention:reminders
  */
 import nextEnv from "@next/env";

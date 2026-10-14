@@ -1,0 +1,18 @@
+---
+description: Implement exactly what was asked — no inventing extras or reinterpretations
+alwaysApply: true
+---
+
+# Do exactly as asked
+
+- Implement **exactly** what the user / Mantas / David asked. Do not invent extra behavior, “improvements,” or alternate product interpretations before coding.
+- If something is ambiguous, ask a short clarifying question. Do **not** guess (e.g. who “cc me” is, what day to report, who counts as answered).
+- Do not add caveats, optional side features, or speculative architecture in place of the requested work.
+- Do not substitute your own judgment for stated requirements (recipients, CC lists, timing, counts, labels).
+- After coding, verify against their words point-by-point. If a gap blocks exact compliance, fix it — don’t document it as a leftover.
+
+## Examples
+
+- Asked “CC me” → ask who “me” is if unclear; do not assume David or anyone else.
+- Asked for answered/unanswered from real replies → refresh/scan before digests; do not ship lagging data and explain it away.
+- Asked for T-2 dispatcher digests → build that; do not keep the old “blast everyone” reminder unless they said to keep it.

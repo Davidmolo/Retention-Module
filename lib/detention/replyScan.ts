@@ -1,5 +1,7 @@
 /**
- * Scan Gmail threads for dispatcher replies within 48 hours of detention email.
+ * Scan Gmail threads for dispatcher (or Art) replies within 48 hours of
+ * detention email. Art’s reply counts as answered; the 48h follow-up clock
+ * still runs from the latest counted reply while the claim stays open.
  */
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
@@ -25,12 +27,27 @@ function extractEmail(fromHeader: string): string | null {
   return m ? m[0].toLowerCase() : null;
 }
 
+function parseEmailList(raw: string): string[] {
+  return raw
+    .split(/[,;\s]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e.includes("@"));
+}
+
+/** Mailboxes whose replies count as “answered” even if the dispatcher is silent. */
+export function artReplyEmails(): string[] {
+  return parseEmailList(
+    process.env.DETENTION_ART_REPLY_EMAILS?.trim() ||
+      "art@goxxii.com,ar@goxxii.com"
+  );
+}
+
 /**
  * Resolve dispatcher mailbox for compliance checks.
  * Tries TMS roster (all known name aliases), then email already saved on
  * other detentions for the same dispatcher (sibling backfill).
  */
-async function lookupDispatcherEmail(
+export async function lookupDispatcherEmail(
   dispatcherName: string | null
 ): Promise<string | null> {
   if (!dispatcherName?.trim()) return null;
@@ -123,19 +140,25 @@ async function fetchThreadMessages(threadId: string): Promise<ThreadMsg[]> {
   return json.messages || [];
 }
 
-function findDispatcherReply(opts: {
+function findComplianceReply(opts: {
   messages: ThreadMsg[];
   emailStartMs: number;
-  dispatcherEmail: string;
+  /** Dispatcher + Art mailboxes that count as an answer. */
+  replyEmails: string[];
   originalMessageId?: string | null;
 }): {
   firstRepliedAt: Date | null;
   lastRepliedAt: Date | null;
+  lastReplyFrom: string | null;
   within48h: boolean;
 } {
+  const allowed = new Set(
+    opts.replyEmails.map((e) => e.trim().toLowerCase()).filter(Boolean)
+  );
   const deadline = opts.emailStartMs + COMPLIANCE_WINDOW_MS;
   let firstRepliedAt: Date | null = null;
   let lastRepliedAt: Date | null = null;
+  let lastReplyFrom: string | null = null;
 
   for (const msg of opts.messages) {
     if (opts.originalMessageId && msg.id === opts.originalMessageId) continue;
@@ -147,19 +170,28 @@ function findDispatcherReply(opts: {
         (h) => h.name.toLowerCase() === "from"
       )?.value || "";
     const email = extractEmail(from);
-    if (!email || email !== opts.dispatcherEmail) continue;
+    if (!email || !allowed.has(email)) continue;
 
     const at = new Date(ms);
     if (!firstRepliedAt || at < firstRepliedAt) firstRepliedAt = at;
-    if (!lastRepliedAt || at > lastRepliedAt) lastRepliedAt = at;
+    if (!lastRepliedAt || at > lastRepliedAt) {
+      lastRepliedAt = at;
+      lastReplyFrom = email;
+    }
   }
 
   if (!firstRepliedAt || !lastRepliedAt) {
-    return { firstRepliedAt: null, lastRepliedAt: null, within48h: false };
+    return {
+      firstRepliedAt: null,
+      lastRepliedAt: null,
+      lastReplyFrom: null,
+      within48h: false,
+    };
   }
   return {
     firstRepliedAt,
     lastRepliedAt,
+    lastReplyFrom,
     within48h: firstRepliedAt.getTime() <= deadline,
   };
 }
@@ -176,9 +208,18 @@ export type ComplianceScanResult = {
 
 export async function runDetentionComplianceScan(opts?: {
   maxPerRun?: number;
+  /**
+   * When set (YYYY-MM-DD), scan every detention email from that calendar day
+   * (used by the T-2 digest so answered counts are fresh before send).
+   */
+  emailDay?: string;
 }): Promise<ComplianceScanResult> {
   const pool = getPool();
-  const maxPerRun = opts?.maxPerRun ?? 80;
+  const emailDay =
+    opts?.emailDay && /^\d{4}-\d{2}-\d{2}$/.test(opts.emailDay)
+      ? opts.emailDay
+      : null;
+  const maxPerRun = opts?.maxPerRun ?? (emailDay ? 500 : 80);
   const result: ComplianceScanResult = {
     checked: 0,
     ok: 0,
@@ -189,22 +230,31 @@ export async function runDetentionComplianceScan(opts?: {
     errors: 0,
   };
 
-  // Prefer rows needing a check: never checked, still pending, open claims, or missing email.
-  const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT id, dispatcher, dispatcher_email, thread_id, message_id, email_date, created_at,
-            status, dispatcher_compliance
-       FROM detentions
-      WHERE thread_id IS NOT NULL AND TRIM(thread_id) <> ''
-        AND (
+  const params: (string | number)[] = [];
+  let where = `thread_id IS NOT NULL AND TRIM(thread_id) <> ''`;
+  if (emailDay) {
+    where += ` AND DATE(COALESCE(email_date, created_at)) = ?`;
+    params.push(emailDay);
+  } else {
+    // Prefer rows needing a check: never checked, still pending, open claims, or missing email.
+    where += ` AND (
           dispatcher_compliance IS NULL
           OR dispatcher_compliance IN ('pending','missed','ok','no_follow_up')
           OR dispatcher_compliance_checked_at IS NULL
           OR (dispatcher_compliance = 'n/a' AND dispatcher_email IS NULL)
           OR status NOT IN ('Paid','Denied')
-        )
+        )`;
+  }
+  params.push(maxPerRun);
+
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, dispatcher, dispatcher_email, thread_id, message_id, email_date, created_at,
+            status, dispatcher_compliance
+       FROM detentions
+      WHERE ${where}
       ORDER BY COALESCE(email_date, created_at) DESC
       LIMIT ?`,
-    [maxPerRun]
+    params
   );
 
   for (const row of rows) {
@@ -226,7 +276,14 @@ export async function runDetentionComplianceScan(opts?: {
         );
       }
 
-      if (!dispatcherEmail) {
+      const artEmails = artReplyEmails();
+      const replyEmails = [
+        ...(dispatcherEmail ? [dispatcherEmail] : []),
+        ...artEmails.filter((e) => e !== dispatcherEmail),
+      ];
+
+      // No dispatcher mailbox and no Art mailboxes configured → cannot score.
+      if (!replyEmails.length) {
         await pool.query<ResultSetHeader>(
           `UPDATE detentions
               SET dispatcher_compliance = 'n/a',
@@ -241,10 +298,10 @@ export async function runDetentionComplianceScan(opts?: {
 
       await sleep(450);
       const messages = await fetchThreadMessages(String(row.thread_id));
-      const reply = findDispatcherReply({
+      const reply = findComplianceReply({
         messages,
         emailStartMs,
-        dispatcherEmail,
+        replyEmails,
         originalMessageId: row.message_id ? String(row.message_id) : null,
       });
 
@@ -252,12 +309,13 @@ export async function runDetentionComplianceScan(opts?: {
         status: String(row.status || "New"),
         emailDate: emailStart,
         repliedAt: reply.lastRepliedAt,
+        hasDispatcherEmail: Boolean(dispatcherEmail) || Boolean(reply.lastRepliedAt),
         nowMs: Date.now(),
       });
 
       await pool.query<ResultSetHeader>(
         `UPDATE detentions
-            SET dispatcher_email = ?,
+            SET dispatcher_email = COALESCE(?, dispatcher_email),
                 dispatcher_replied_at = ?,
                 last_reply_from = COALESCE(?, last_reply_from),
                 last_reply_at = COALESCE(?, last_reply_at),
@@ -267,7 +325,7 @@ export async function runDetentionComplianceScan(opts?: {
         [
           dispatcherEmail,
           reply.lastRepliedAt || reply.firstRepliedAt,
-          reply.lastRepliedAt ? dispatcherEmail : null,
+          reply.lastReplyFrom,
           reply.lastRepliedAt,
           compliance,
           row.id,

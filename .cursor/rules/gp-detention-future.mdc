@@ -1,0 +1,27 @@
+---
+description: Future work — fold detention dollars into Gross Profit (David Oct 10)
+alwaysApply: true
+---
+
+# Future: Detention → Gross Profit
+
+**Do not implement yet** until prerequisites below are met. David raised this on the Oct 10 Daily Meeting.
+
+## Goal
+
+Detention dollars dispatchers collect should apply to the Gross Profit table / dispatcher profitability. Today GP excludes detentions even though they are part of measuring dispatcher profit.
+
+## Prerequisites (blockers)
+
+1. **Manager / David alignment** — Confirm rules: paid only vs submitted, which week the dollars land in, separate line vs folded into profit.
+2. **Latest GP code** — Fezon still had the newest GP repo. After David pays Fezon and stops further Fezon work, get repo transfer or a full copy of Fezon’s latest GP. Do **not** build detention→GP on the older clone alone.
+
+## When ready
+
+Diff Fezon’s latest vs this repo’s GP, bring GP up to date, then add detention (likely paid amounts by dispatcher/week) into the GP sheet.
+
+## Context
+
+- Meeting: Daily Meeting – Updates Discussion – October 10
+- Speakers: David Molo → Shahmeer Ahmed (action: consult managers, then implement)
+- Related: Detention Summary/Board already live; Retention is separate
