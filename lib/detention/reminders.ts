@@ -345,10 +345,12 @@ function artDigestBodies(opts: {
 }
 
 /**
- * Send T-2 compliance digests (Thursday run → Tuesday activity).
+ * Mantas: T-2 compliance digests (Thursday run → Tuesday activity).
  * Optional override: DETENTION_REMINDER_TARGET_DATE=YYYY-MM-DD
+ *
+ * Art’s follow-up digests are separate — see followUpDigests.ts.
  */
-export async function runDetentionDailyReminders(): Promise<ReminderRunResult> {
+export async function runDetentionComplianceDigests(): Promise<ReminderRunResult> {
   const appUrl = env("NEXT_PUBLIC_APP_URL", "https://v2.goxxii.com").replace(
     /\/$/,
     ""
@@ -458,4 +460,9 @@ export async function runDetentionDailyReminders(): Promise<ReminderRunResult> {
     scanErrors: scan.errors,
     error: errors.length ? errors.join("; ") : undefined,
   };
+}
+
+/** @deprecated Prefer runDetentionComplianceDigests — kept for existing cron imports. */
+export async function runDetentionDailyReminders(): Promise<ReminderRunResult> {
+  return runDetentionComplianceDigests();
 }

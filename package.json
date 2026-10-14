@@ -38,6 +38,8 @@
     "detention:import-csv": "node --import tsx scripts/import-detentions-csv.mjs",
     "detention:intake": "node --import tsx scripts/detention-intake.mjs",
     "detention:reminders": "node --import tsx scripts/detention-reminders.mjs",
+    "detention:followups": "node --import tsx scripts/detention-followups.mjs",
+    "detention:followup-preview": "node --import tsx scripts/detention-followup-preview.mjs",
     "detention:compliance-scan": "node --import tsx scripts/detention-compliance-scan.mjs",
     "detention:dedupe-sheet-gmail": "node --import tsx scripts/detention-dedupe-sheet-gmail.mjs",
     "cron:daily-tms": "bash scripts/cron/daily-tms.sh",
