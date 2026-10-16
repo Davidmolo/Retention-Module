@@ -9,11 +9,6 @@
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import { sendAppEmail } from "@/lib/mail";
-import {
-  buildGmailThreadUrl,
-  gmailSearchUrl,
-  normalizeGmailThreadUrl,
-} from "@/lib/detention/gmailLinks";
 import { canonicalDispatcherName } from "@/lib/detention/dispatcherNames";
 import {
   lookupDispatcherEmail,
@@ -128,15 +123,17 @@ function mapDetentionRow(r: RowDataPacket): DayDetention {
   };
 }
 
+/** Search the reader's own Gmail. ar@ thread ids do not open in another mailbox. */
 function threadLink(d: DayDetention): string | null {
-  return (
-    normalizeGmailThreadUrl(d.threadUrl) ||
-    (d.threadId ? buildGmailThreadUrl(d.threadId) : null) ||
-    gmailSearchUrl({
-      loadNumber: d.loadNumber || null,
-      shipmentNumber: d.shipmentNumber || null,
-    })
-  );
+  const load = String(d.loadNumber || "").replace(/^#/, "").trim();
+  const ship = String(d.shipmentNumber || "").replace(/^#/, "").trim();
+  const terms = [...new Set([load, ship].filter(Boolean))];
+  if (!terms.length) return null;
+  const q =
+    terms.length === 1
+      ? `Detention ${terms[0]}`
+      : `Detention (${terms.join(" OR ")})`;
+  return `https://mail.google.com/mail/#search/${encodeURIComponent(q)}`;
 }
 
 function isAnswered(d: DayDetention): boolean {
