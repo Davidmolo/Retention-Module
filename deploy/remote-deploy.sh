@@ -45,7 +45,7 @@ fi
 
 # One-time merge of detention rows that share a load # and shipment #.
 # Marker lives outside the rsync tree so later deploys do not run it again.
-DEDUPE_MARKER=/var/www/retention-dedupe-same-load.done
+DEDUPE_MARKER="$HOME/retention-dedupe-same-load.done"
 if [[ ! -f "$DEDUPE_MARKER" ]]; then
   echo "==> Merging duplicate detention rows (same load + shipment)"
   pnpm detention:dedupe-same-load
