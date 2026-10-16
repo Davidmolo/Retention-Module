@@ -51,3 +51,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Retention occasions / surveys / reminders — 8:00 AM Eastern (roster already synced)
 0 8 * * * bash /app/scripts/cron/daily-retention.sh
+
+# Detention follow-ups + compliance digests — 7:00 AM Eastern (6:00 AM Chicago, shift start).
+# Remove any separate 3:00 AM detention-reminders line on the server or these will send twice.
+0 7 * * * bash /app/scripts/cron/detention-reminders.sh

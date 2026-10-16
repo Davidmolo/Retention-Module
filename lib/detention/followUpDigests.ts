@@ -10,13 +10,11 @@
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import { sendAppEmail } from "@/lib/mail";
-import {
-  buildGmailThreadUrl,
-  gmailSearchUrl,
-  normalizeGmailThreadUrl,
-} from "@/lib/detention/gmailLinks";
 import { canonicalDispatcherName } from "@/lib/detention/dispatcherNames";
-import { lookupDispatcherEmail } from "@/lib/detention/replyScan";
+import {
+  lookupDispatcherEmail,
+  runDetentionComplianceScan,
+} from "@/lib/detention/replyScan";
 
 function env(name: string, fallback = ""): string {
   return process.env[name]?.trim() || fallback;
@@ -69,21 +67,75 @@ type FollowUpRow = {
   amount: number;
   status: string;
   awaitingUs: boolean;
+  /** Dispatcher or Art has replied on the thread. */
+  replied: boolean;
   followUpDate: string;
   threadId: string | null;
   threadUrl: string | null;
   ageDays: number;
 };
 
+/**
+ * Search the reader's own Gmail. ar@ thread IDs do not open in a
+ * dispatcher's mailbox, and authuser=ar@ does nothing if they are not signed in.
+ */
 function threadLink(r: FollowUpRow): string | null {
-  return (
-    normalizeGmailThreadUrl(r.threadUrl) ||
-    (r.threadId ? buildGmailThreadUrl(r.threadId) : null) ||
-    gmailSearchUrl({
-      loadNumber: r.loadNumber || null,
-      shipmentNumber: r.shipmentNumber || null,
-    })
-  );
+  const load = r.loadNumber.replace(/^#/, "").trim();
+  const ship = r.shipmentNumber.replace(/^#/, "").trim();
+  const terms = [...new Set([load, ship].filter(Boolean))];
+  if (!terms.length) return null;
+  const q =
+    terms.length === 1
+      ? `Detention ${terms[0]}`
+      : `Detention (${terms.join(" OR ")})`;
+  return `https://mail.google.com/mail/#search/${encodeURIComponent(q)}`;
+}
+
+function ymdFromParts(y: number, month: number, day: number): string {
+  return `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** MySQL DATE may arrive as a Date; String(date).slice(0,10) is not YYYY-MM-DD. */
+function toYmd(value: unknown): string {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const utcMidnight =
+      value.getUTCHours() === 0 &&
+      value.getUTCMinutes() === 0 &&
+      value.getUTCSeconds() === 0 &&
+      value.getUTCMilliseconds() === 0;
+    if (utcMidnight) {
+      return ymdFromParts(
+        value.getUTCFullYear(),
+        value.getUTCMonth() + 1,
+        value.getUTCDate()
+      );
+    }
+    // mysql2 DATE is local midnight, not UTC.
+    return ymdFromParts(
+      value.getFullYear(),
+      value.getMonth() + 1,
+      value.getDate()
+    );
+  }
+  const raw = String(value ?? "").trim();
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** ALL CAPS roster names → Title Case. Mixed case is left as stored. */
+function displayDriverName(raw: string): string {
+  const name = String(raw || "").trim();
+  if (!name) return "Driver";
+  if (name !== name.toUpperCase()) return name;
+  return name
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (ch) => ch.toUpperCase());
 }
 
 function parseYmd(value: string | Date): Date | null {
@@ -117,11 +169,21 @@ function ageDaysSince(ymd: string, todayYmd: string): number {
 function formatSince(ymd: string): string {
   const d = parseYmd(ymd);
   if (!d) return ymd;
-  return d.toLocaleDateString("en-US", {
+  const weekday = d.toLocaleDateString("en-US", {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+  const monthDay = d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     timeZone: "UTC",
   });
+  return `${weekday} ${monthDay}`;
+}
+
+/** Calendar age. Sep 17 → Oct 15 is 28 days. */
+export function detentionAgeDays(followUp: unknown, todayYmd: string): number {
+  return ageDaysSince(toYmd(followUp), todayYmd);
 }
 
 /** “30 days, since Sep 14” */
@@ -158,24 +220,31 @@ function formatAsOfStamp(): { dateLine: string; asOfLine: string } {
   };
 }
 
+function brandAssetUrl(file: string): string {
+  const base = env("NEXT_PUBLIC_APP_URL", "https://v2.goxxii.com").replace(
+    /\/$/,
+    ""
+  );
+  return `${base}/brand/${file}`;
+}
+
 function brandHeaderHtml(title: string): string {
   const stamp = formatAsOfStamp();
-  const logoUrl = env("EMAIL_BRAND_LOGO_URL");
-  const logo = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="XXII Century" width="110" height="36" style="display:block;border:0;max-width:110px;height:auto" />`
-    : `<div style="font-size:13px;font-weight:900;letter-spacing:0.12em;color:#0b3a6e;text-transform:uppercase">XXII Century</div>`;
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;border-collapse:collapse">
+  const hero = env("EMAIL_BRAND_LOGO_URL") || brandAssetUrl("xxii-logo-white.png");
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 0;border-collapse:collapse;background:#01052C">
     <tr>
-      <td valign="middle" style="padding:0">${logo}</td>
-      <td valign="middle" style="padding:0 0 0 14px">
-        <div style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-0.02em">${escapeHtml(title)}</div>
+      <td style="padding:28px 48px 4px;text-align:center;background:#01052C">
+        <img src="${escapeHtml(hero)}" alt="XXII Century" width="420" style="display:block;width:100%;max-width:420px;height:auto;border:0;margin:0 auto" />
       </td>
-      <td valign="middle" align="right" style="padding:0">
-        <div style="display:inline-block;background:#f1f5f9;border-radius:8px;padding:8px 10px;text-align:right">
-          <div style="font-size:12px;font-weight:700;color:#334155">${escapeHtml(stamp.dateLine)}</div>
-          <div style="font-size:11px;color:#64748b;margin-top:2px">${escapeHtml(stamp.asOfLine)}</div>
-        </div>
+    </tr>
+    <tr>
+      <td style="padding:8px 24px 22px;text-align:center">
+        <div style="font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.02em">${escapeHtml(title)}</div>
+        <div style="margin-top:8px;font-size:12px;color:#9fb0c8">${escapeHtml(stamp.dateLine)} · ${escapeHtml(stamp.asOfLine)}</div>
       </td>
+    </tr>
+    <tr>
+      <td style="height:4px;background:#7CC24A;background-image:linear-gradient(90deg,#7CC24A,#2E9CA8,#1D5E8C);font-size:0;line-height:0">&nbsp;</td>
     </tr>
   </table>`;
 }
@@ -187,7 +256,7 @@ function notesBoxHtml(title: string, bullets: string[]): string {
         `<li style="margin:0 0 6px;color:#334155;font-size:13px;line-height:1.4">${escapeHtml(b)}</li>`
     )
     .join("");
-  return `<div style="margin:22px 0 0;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px 16px">
+  return `<div style="margin:22px 24px 20px;background:#eff6ff;border:1px solid #dbeafe;border-radius:10px;padding:14px 16px">
     <div style="font-size:13px;font-weight:800;color:#1e3a8a;margin:0 0 8px">${escapeHtml(title)}</div>
     <ul style="margin:0;padding-left:18px">${lis}</ul>
   </div>`;
@@ -214,12 +283,27 @@ function totals(rows: FollowUpRow[]): {
   return { count: rows.length, value, oldestDays };
 }
 
+async function loadDueFollowUpIds(): Promise<string[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id
+       FROM detentions
+      WHERE status NOT IN ('Paid', 'Denied')
+        AND follow_up_date IS NOT NULL
+        AND follow_up_date <= CURDATE()
+      ORDER BY follow_up_date ASC
+      LIMIT 500`
+  );
+  return rows.map((r) => String(r.id));
+}
+
 async function loadDueFollowUps(): Promise<FollowUpRow[]> {
   const pool = getPool();
   const today = todayYmdUtcInTz();
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT id, customer, dispatcher, load_number, shipment_number, driver_name,
-            amount, status, awaiting_us, follow_up_date, thread_id, thread_url
+            amount, status, awaiting_us, dispatcher_replied_at,
+            follow_up_date, thread_id, thread_url
        FROM detentions
       WHERE status NOT IN ('Paid', 'Denied')
         AND follow_up_date IS NOT NULL
@@ -229,7 +313,7 @@ async function loadDueFollowUps(): Promise<FollowUpRow[]> {
   );
 
   return rows.map((r) => {
-    const followUpDate = String(r.follow_up_date || "").slice(0, 10);
+    const followUpDate = toYmd(r.follow_up_date);
     return {
       id: String(r.id),
       dispatcher: canonicalDispatcherName(
@@ -238,10 +322,11 @@ async function loadDueFollowUps(): Promise<FollowUpRow[]> {
       customer: String(r.customer || "Customer"),
       loadNumber: String(r.load_number || "").replace(/^#/, ""),
       shipmentNumber: String(r.shipment_number || "").replace(/^#/, ""),
-      driverName: String(r.driver_name || "Driver"),
+      driverName: displayDriverName(String(r.driver_name || "Driver")),
       amount: Number(r.amount || 0),
       status: String(r.status || ""),
       awaitingUs: Boolean(r.awaiting_us),
+      replied: Boolean(r.dispatcher_replied_at),
       followUpDate,
       threadId: r.thread_id ? String(r.thread_id) : null,
       threadUrl: r.thread_url ? String(r.thread_url) : null,
@@ -298,13 +383,13 @@ function summaryBoxesHtml(opts: {
         <div style="font-size:22px;font-weight:800;color:#0f172a;margin-top:6px;letter-spacing:-0.02em">${escapeHtml(value)}</div>
       </div>
     </td>`;
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0 8px;border-collapse:collapse">
+  return `<div style="padding:16px 20px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
     <tr>
       ${cell(opts.leftLabel, opts.leftValue)}
       ${cell(opts.midLabel, opts.midValue)}
       ${cell(opts.rightLabel, opts.rightValue)}
     </tr>
-  </table>`;
+  </table></div>`;
 }
 
 function groupListHtml(
@@ -313,7 +398,7 @@ function groupListHtml(
   opts?: { showDispatcher?: boolean }
 ): string {
   if (!rows.length) return "";
-  return `<div style="margin:20px 0 4px">
+  return `<div style="margin:20px 24px 4px">
     <div style="font-size:15px;font-weight:800;color:#0f172a;margin:0 0 4px">${escapeHtml(title)} (${rows.length})</div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
       <tbody>${rows.map((r) => rowHtml(r, opts)).join("")}</tbody>
@@ -323,10 +408,14 @@ function groupListHtml(
 
 function emailShellHtml(inner: string): string {
   return `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#f8fafc">
-  <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45;max-width:640px;margin:0 auto;padding:24px 16px;background:#ffffff">
+<html><body style="margin:0;padding:0;background:#01052C">
+  <div style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45;max-width:640px;margin:0 auto;background:#ffffff">
     ${inner}
-    <p style="margin:22px 0 0;font-size:13px;color:#64748b">Thanks,<br/><strong style="color:#0f172a">XXII Century Operations</strong></p>
+    <div style="background:#01052C;padding:22px 24px;text-align:center">
+      <div style="height:3px;background:#7CC24A;background-image:linear-gradient(90deg,#7CC24A,#2E9CA8,#1D5E8C);margin:0 auto 14px;max-width:220px"></div>
+      <div style="color:#ffffff;font-size:12px;letter-spacing:0.08em;text-transform:uppercase">Where your best, helps others, be better</div>
+      <div style="margin-top:8px"><a href="https://goxxii.com" style="color:#7CC24A;font-size:13px;font-weight:700;text-decoration:none">goxxii.com</a></div>
+    </div>
   </div>
 </body></html>`;
 }
@@ -354,6 +443,16 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
       env("ACCOUNTING_EMAIL", "accounting@goxxii.com")
     )
   );
+
+  const dueIds = await loadDueFollowUpIds();
+  if (dueIds.length) {
+    // awaiting_us stays on from intake. Refresh Gmail replies so the
+    // waiting-on-us / waiting-on-broker split uses dispatcher_replied_at.
+    await runDetentionComplianceScan({
+      onlyIds: dueIds,
+      maxPerRun: dueIds.length,
+    });
+  }
 
   const all = await loadDueFollowUps();
   if (!all.length) {
@@ -394,13 +493,14 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
     }
 
     const t = totals(rows);
-    const waitingUs = sortFollowUps(rows.filter((r) => r.awaitingUs));
-    const waitingBroker = sortFollowUps(rows.filter((r) => !r.awaitingUs));
+    // Split on a real reply, not awaiting_us (intake leaves that flag on).
+    const waitingUs = sortFollowUps(rows.filter((r) => !r.replied));
+    const waitingBroker = sortFollowUps(rows.filter((r) => r.replied));
     const first = name.split(/\s+/)[0] || name;
 
     const subject = `Detentions: ${t.count} open on your loads, ${money(t.value)} at risk`;
     const opener = `${first}, these ${t.count} detention${t.count === 1 ? "" : "s"} ${t.count === 1 ? "is" : "are"} still open on loads you dispatched.${
-      waitingUs.length
+      waitingUs.length > 0
         ? ` ${waitingUs.length} of them ${waitingUs.length === 1 ? "is" : "are"} waiting on something from us.`
         : ""
     }`;
@@ -418,7 +518,7 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
       waitingBroker.length ? `Waiting on the broker (${waitingBroker.length})` : "",
       ...waitingBroker.map((r) => rowText(r)),
       "",
-      "Each link opens the original detention email thread in Gmail so you can reply in place.",
+      "Open thread searches your own Gmail for this detention so you can reply in place.",
       "Items already submitted for payment are not on this list — those go to Accounts Receivable.",
     ]
       .filter((line, i, arr) => !(line === "" && arr[i - 1] === ""))
@@ -426,7 +526,7 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
 
     const html = emailShellHtml(`
       ${brandHeaderHtml("Detention Follow-Ups")}
-      <p style="margin:0 0 4px;font-size:15px;color:#0f172a">${escapeHtml(opener)}</p>
+      <p style="margin:20px 24px 4px;font-size:15px;color:#0f172a">${escapeHtml(opener)}</p>
       ${summaryBoxesHtml({
         leftLabel: "Open",
         leftValue: String(t.count),
@@ -439,7 +539,7 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
       ${groupListHtml("Waiting on the broker", waitingBroker)}
       ${notesBoxHtml("Quick notes:", [
         "This list shows only loads assigned to you.",
-        "Each link opens the original detention email thread in Gmail so you can reply in place.",
+        "Open thread searches your own Gmail for this detention so you can reply in place.",
         "Items already submitted for payment are not on this list — those go to Accounts Receivable.",
       ])}
     `);
@@ -475,12 +575,12 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
       "",
       ...rows.map((r) => rowText(r, { showDispatcher: true })),
       "",
-      "Each link opens the original detention email thread in Gmail.",
+      "Each link searches Gmail for that detention so you can reply in place.",
     ].join("\n");
 
     const html = emailShellHtml(`
       ${brandHeaderHtml("Detention Follow-Ups")}
-      <p style="margin:0 0 4px;font-size:15px;color:#0f172a">${escapeHtml(opener)}</p>
+      <p style="margin:20px 24px 4px;font-size:15px;color:#0f172a">${escapeHtml(opener)}</p>
       ${summaryBoxesHtml({
         leftLabel: "Submitted",
         leftValue: String(t.count),
@@ -495,7 +595,7 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
       ${notesBoxHtml("Quick notes:", [
         "Dispatcher name is shown so AR knows who to ask if a document is missing.",
         "Anything still missing paperwork stays with the dispatcher and is not on this list.",
-        "Each link opens the original detention email thread in Gmail.",
+        "Each link searches Gmail for that detention so you can reply in place.",
       ])}
     `);
 
@@ -548,14 +648,15 @@ function sampleRow(
     customer: partial.customer,
     loadNumber: partial.loadNumber,
     shipmentNumber: partial.shipmentNumber || "",
-    driverName: partial.driverName,
+    driverName: displayDriverName(partial.driverName),
     amount: partial.amount,
     status: partial.status || "Docs Pending",
     awaitingUs: partial.awaitingUs,
+    replied: partial.replied ?? !partial.awaitingUs,
     followUpDate: partial.followUpDate,
     threadId: partial.threadId || "previewthread",
     threadUrl: partial.threadUrl || null,
-    ageDays: partial.ageDays,
+    ageDays: detentionAgeDays(partial.followUpDate, todayYmdUtcInTz()),
   };
 }
 
@@ -572,7 +673,7 @@ export function buildFollowUpEmailPreviews(): {
     sampleRow({
       customer: "Redwood Multimodal",
       loadNumber: "2609-00424",
-      driverName: "Derrian Foster",
+      driverName: "MORTIMER RICHARDS",
       amount: 783.33,
       ageDays: 27,
       followUpDate: "2026-09-17",
@@ -623,7 +724,7 @@ export function buildFollowUpEmailPreviews(): {
 
   const dispatcherHtml = emailShellHtml(`
     ${brandHeaderHtml("Detention Follow-Ups")}
-    <p style="margin:0 0 4px;font-size:15px;color:#0f172a">${escapeHtml(opener)}</p>
+    <p style="margin:20px 24px 4px;font-size:15px;color:#0f172a">${escapeHtml(opener)}</p>
     ${summaryBoxesHtml({
       leftLabel: "Open",
       leftValue: String(t.count),
@@ -636,7 +737,7 @@ export function buildFollowUpEmailPreviews(): {
     ${groupListHtml("Waiting on the broker", waitingBroker)}
     ${notesBoxHtml("Quick notes:", [
       "This list shows only loads assigned to you.",
-      "Each link opens the original detention email thread in Gmail so you can reply in place.",
+      "Open thread searches your own Gmail for this detention so you can reply in place.",
       "Items already submitted for payment are not on this list — those go to Accounts Receivable.",
     ])}
   `);
@@ -691,7 +792,7 @@ export function buildFollowUpEmailPreviews(): {
   const arOpener = `Paperwork is in on these ${at.count}. They are now a payment question, not a dispatch question.`;
   const arHtml = emailShellHtml(`
     ${brandHeaderHtml("Detention Follow-Ups")}
-    <p style="margin:0 0 4px;font-size:15px;color:#0f172a">${escapeHtml(arOpener)}</p>
+    <p style="margin:20px 24px 4px;font-size:15px;color:#0f172a">${escapeHtml(arOpener)}</p>
     ${summaryBoxesHtml({
       leftLabel: "Submitted",
       leftValue: String(at.count),
@@ -706,7 +807,7 @@ export function buildFollowUpEmailPreviews(): {
     ${notesBoxHtml("Quick notes:", [
       "Dispatcher name is shown so AR knows who to ask if a document is missing.",
       "Anything still missing paperwork stays with the dispatcher and is not on this list.",
-      "Each link opens the original detention email thread in Gmail.",
+      "Each link searches Gmail for that detention so you can reply in place.",
     ])}
   `);
 

@@ -9,12 +9,34 @@ import { exec } from "child_process";
 
 nextEnv.loadEnvConfig(process.cwd());
 
-const { buildFollowUpEmailPreviews } = await import(
+const { buildFollowUpEmailPreviews, detentionAgeDays } = await import(
   "../lib/detention/followUpDigests.ts"
 );
 
+const sep17Local = new Date(2026, 8, 17);
+const sep17Utc = new Date(Date.UTC(2026, 8, 17));
+const ages = {
+  local: detentionAgeDays(sep17Local, "2026-10-15"),
+  utc: detentionAgeDays(sep17Utc, "2026-10-15"),
+  iso: detentionAgeDays("2026-09-17", "2026-10-15"),
+};
+if (ages.local !== 28 || ages.utc !== 28 || ages.iso !== 28) {
+  console.error("age check failed", ages, String(sep17Local).slice(0, 10));
+  process.exit(1);
+}
+console.log(
+  "age check ok: Sep 17 to Oct 15 = 28 days (old slice was",
+  String(sep17Local).slice(0, 10) + ")"
+);
+
 const outDir = path.join(process.cwd(), "tmp", "detention-followup-preview");
-fs.mkdirSync(outDir, { recursive: true });
+const brandDir = path.join(outDir, "brand");
+fs.mkdirSync(brandDir, { recursive: true });
+fs.copyFileSync(
+  path.join(process.cwd(), "public", "brand", "xxii-logo-white.png"),
+  path.join(brandDir, "xxii-logo-white.png")
+);
+process.env.EMAIL_BRAND_LOGO_URL = "brand/xxii-logo-white.png";
 
 const preview = buildFollowUpEmailPreviews();
 const dispatcherPath = path.join(outDir, "01-dispatcher-felix.html");

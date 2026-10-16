@@ -213,13 +213,31 @@ export async function runDetentionComplianceScan(opts?: {
    * (used by the T-2 digest so answered counts are fresh before send).
    */
   emailDay?: string;
+  /**
+   * When set with emailDay, also (or instead for aging pass) scan open
+   * unanswered / no-follow-up rows with email day strictly before this date.
+   */
+  agingBeforeDay?: string;
+  /** Scan these detention ids only (follow-up digest refreshes reply state before send). */
+  onlyIds?: string[];
 }): Promise<ComplianceScanResult> {
   const pool = getPool();
   const emailDay =
     opts?.emailDay && /^\d{4}-\d{2}-\d{2}$/.test(opts.emailDay)
       ? opts.emailDay
       : null;
-  const maxPerRun = opts?.maxPerRun ?? (emailDay ? 500 : 80);
+  const agingBeforeDay =
+    opts?.agingBeforeDay && /^\d{4}-\d{2}-\d{2}$/.test(opts.agingBeforeDay)
+      ? opts.agingBeforeDay
+      : null;
+  const onlyIds = (opts?.onlyIds || []).map((id) => String(id)).filter(Boolean);
+  const maxPerRun =
+    opts?.maxPerRun ??
+    (onlyIds.length
+      ? onlyIds.length
+      : emailDay || agingBeforeDay
+        ? 500
+        : 80);
   const result: ComplianceScanResult = {
     checked: 0,
     ok: 0,
@@ -232,7 +250,19 @@ export async function runDetentionComplianceScan(opts?: {
 
   const params: (string | number)[] = [];
   let where = `thread_id IS NOT NULL AND TRIM(thread_id) <> ''`;
-  if (emailDay) {
+  if (onlyIds.length) {
+    where += ` AND id IN (${onlyIds.map(() => "?").join(",")})`;
+    params.push(...onlyIds);
+  } else if (agingBeforeDay && !emailDay) {
+    // Aging refresh: open claims still unanswered / not followed up before day.
+    where += ` AND DATE(COALESCE(email_date, created_at)) < ?
+      AND status NOT IN ('Paid','Denied')
+      AND (
+        dispatcher_replied_at IS NULL
+        OR LOWER(COALESCE(dispatcher_compliance,'')) IN ('missed','no_follow_up','pending')
+      )`;
+    params.push(agingBeforeDay);
+  } else if (emailDay) {
     where += ` AND DATE(COALESCE(email_date, created_at)) = ?`;
     params.push(emailDay);
   } else {
