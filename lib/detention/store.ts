@@ -6,6 +6,7 @@ import {
   uniqueCanonicalDispatchers,
 } from "./dispatcherNames";
 import { resolveDispatcherCompliance } from "./compliance";
+import { openRoadLoadHref } from "./parseOpenRoadEmail";
 import {
   DETENTION_STATUSES,
   type Detention,
@@ -46,6 +47,7 @@ interface DetentionRow extends RowDataPacket {
   awaiting_us: number;
   follow_up_date: Date | string | null;
   load_link: string | null;
+  openroad_load_id?: number | null;
   thread_url: string | null;
   message_id: string | null;
   thread_id: string | null;
@@ -138,7 +140,10 @@ function mapDetention(row: DetentionRow): Detention {
     status,
     awaitingUs: Boolean(row.awaiting_us),
     followUpDate: toDateOnly(row.follow_up_date),
-    loadLink: row.load_link,
+    loadLink: openRoadLoadHref(
+      row.load_link,
+      row.openroad_load_id == null ? null : Number(row.openroad_load_id)
+    ),
     threadUrl: row.thread_url,
     messageId: row.message_id,
     threadId: row.thread_id,
@@ -155,6 +160,14 @@ function mapDetention(row: DetentionRow): Detention {
     updatedAt: toIso(row.updated_at) || new Date().toISOString(),
   };
 }
+
+const OPENROAD_LOAD_ID_SQL = `
+  (SELECT l.id FROM loads l
+    WHERE l.gp_load IS NOT NULL
+      AND REPLACE(REPLACE(TRIM(l.gp_load), '#', ''), ' ', '') =
+          REPLACE(REPLACE(TRIM(d.load_number), '#', ''), ' ', '')
+    ORDER BY l.id DESC
+    LIMIT 1) AS openroad_load_id`;
 
 const SELECT_COLS = `
   id, customer, customer_email, dispatcher, dispatcher_email, load_number, shipment_number,
@@ -286,6 +299,7 @@ export async function listDetentions(
 
   const [rows] = await pool.query<DetentionRow[]>(
     `SELECT d.*,
+            ${OPENROAD_LOAD_ID_SQL},
             (SELECT COUNT(*) FROM detention_notes n WHERE n.detention_id = d.id) AS note_count
        FROM detentions d
       WHERE ${whereSql}
@@ -326,7 +340,10 @@ export async function listDetentionDispatchers(): Promise<string[]> {
 export async function getDetention(id: string): Promise<Detention | null> {
   const pool = getPool();
   const [rows] = await pool.query<DetentionRow[]>(
-    `SELECT ${SELECT_COLS} FROM detentions WHERE id = ? LIMIT 1`,
+    `SELECT ${SELECT_COLS},
+            ${OPENROAD_LOAD_ID_SQL}
+       FROM detentions d
+      WHERE d.id = ? LIMIT 1`,
     [id]
   );
   return rows[0] ? mapDetention(rows[0]) : null;

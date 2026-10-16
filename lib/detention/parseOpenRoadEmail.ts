@@ -253,6 +253,65 @@ function pickCustomerEmail(to: string, cc: string): string | null {
   return null;
 }
 
+/** Email headers embed the Century logo at openroadtms.com/media/...png. That is not a load. */
+export function isOpenRoadAssetUrl(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  let path = trimmed;
+  try {
+    path = decodeURIComponent(new URL(trimmed).pathname);
+  } catch {
+    /* keep raw */
+  }
+  const lower = path.toLowerCase();
+  return (
+    lower.includes("/media/") ||
+    lower.includes("logo") ||
+    /\.(png|jpe?g|gif|webp|svg|pdf)(\?|$)/i.test(lower)
+  );
+}
+
+/** A direct OpenRoad page, not the logo file and not the bare site root. */
+export function isUsableOpenRoadLoadUrl(raw: string | null | undefined): boolean {
+  if (!raw?.trim() || isOpenRoadAssetUrl(raw)) return false;
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  if (host !== "openroadtms.com" && !host.endsWith(".openroadtms.com")) return false;
+  const path = url.pathname.replace(/\/+$/, "");
+  return path.length > 0;
+}
+
+export function openRoadLoadHref(
+  stored: string | null | undefined,
+  openRoadLoadId: number | null | undefined
+): string | null {
+  if (stored && isUsableOpenRoadLoadUrl(stored)) return stored.trim();
+  if (openRoadLoadId != null && Number.isFinite(openRoadLoadId) && openRoadLoadId > 0) {
+    return `https://app.openroadtms.com/loads/${openRoadLoadId}`;
+  }
+  return null;
+}
+
+function toOpenRoadUrl(raw: string): string | null {
+  const cleaned = raw.replace(/[),.;]+$/, "").replace(/&amp;/g, "&");
+  if (!cleaned) return null;
+  if (/openroadtms\.com/i.test(cleaned) && !/mimecast/i.test(cleaned)) return cleaned;
+  if (!/mimecastprotect\.com/i.test(cleaned)) return null;
+  try {
+    const domain = new URL(cleaned).searchParams.get("domain");
+    if (!domain || !/openroadtms\.com/i.test(domain)) return null;
+    const hostPath = domain.replace(/^https?:\/\//i, "");
+    return `https://${hostPath}`;
+  } catch {
+    return null;
+  }
+}
+
 function unwrapLoadLink(raw: string | null, html: string): string | null {
   const candidates = [
     raw || "",
@@ -261,26 +320,18 @@ function unwrapLoadLink(raw: string | null, html: string): string | null {
       (m) => m[0]
     ),
   ];
-  for (const c of candidates) {
-    if (!c) continue;
-    if (/openroadtms\.com/i.test(c) && !/mimecast/i.test(c)) {
-      return c.replace(/[),.;]+$/, "");
+  const usable: string[] = [];
+  for (const candidate of candidates) {
+    const dest = toOpenRoadUrl(candidate);
+    if (dest && isUsableOpenRoadLoadUrl(dest) && !usable.includes(dest)) {
+      usable.push(dest);
     }
   }
-  const mimecast = candidates.find((c) => /mimecastprotect\.com/i.test(c));
-  if (mimecast) {
-    try {
-      const u = new URL(mimecast);
-      const domain = u.searchParams.get("domain");
-      if (domain && /openroadtms\.com/i.test(domain)) {
-        return `https://${domain}`;
-      }
-    } catch {
-      /* ignore */
-    }
-    return mimecast.replace(/[),.;]+$/, "");
-  }
-  return raw?.replace(/[),.;]+$/, "") || null;
+  return (
+    usable.find((url) => /\/loads?\/\d+/i.test(url)) ||
+    usable[0] ||
+    null
+  );
 }
 
 function shiftDisplay(
