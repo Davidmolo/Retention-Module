@@ -81,6 +81,8 @@ type DayDetention = {
   driverName: string;
   amount: number;
   status: string;
+  emailDay: string;
+  compliance: string | null;
   threadId: string | null;
   threadUrl: string | null;
   repliedAt: Date | null;
@@ -95,7 +97,36 @@ type DispatcherDayStats = {
   unanswered: number;
   compliancePct: number;
   items: DayDetention[];
+  /** Still-open unanswered / no-follow-up from days before the target day. */
+  aging: DayDetention[];
 };
+
+function mapDetentionRow(r: RowDataPacket): DayDetention {
+  const emailDay = String(r.email_day || r.email_date || r.created_at || "")
+    .slice(0, 10);
+  return {
+    id: String(r.id),
+    dispatcher: canonicalDispatcherName(
+      r.dispatcher ? String(r.dispatcher) : null
+    ),
+    customer: String(r.customer || "Customer"),
+    loadNumber: String(r.load_number || "").replace(/^#/, ""),
+    shipmentNumber: String(r.shipment_number || "").replace(/^#/, ""),
+    driverName: String(r.driver_name || "Driver"),
+    amount: Number(r.amount || 0),
+    status: String(r.status || ""),
+    emailDay,
+    compliance: r.dispatcher_compliance
+      ? String(r.dispatcher_compliance).toLowerCase()
+      : null,
+    threadId: r.thread_id ? String(r.thread_id) : null,
+    threadUrl: r.thread_url ? String(r.thread_url) : null,
+    repliedAt: r.dispatcher_replied_at
+      ? new Date(r.dispatcher_replied_at)
+      : null,
+    lastReplyFrom: r.last_reply_from ? String(r.last_reply_from) : null,
+  };
+}
 
 function threadLink(d: DayDetention): string | null {
   return (
@@ -110,6 +141,17 @@ function threadLink(d: DayDetention): string | null {
 
 function isAnswered(d: DayDetention): boolean {
   return Boolean(d.repliedAt);
+}
+
+/** Still needs attention: never answered, or no follow-up while open. */
+function isAgingOpen(d: DayDetention): boolean {
+  if (d.status === "Paid" || d.status === "Denied") return false;
+  if (!d.repliedAt) return true;
+  return (
+    d.compliance === "missed" ||
+    d.compliance === "no_follow_up" ||
+    d.compliance === "pending"
+  );
 }
 
 function pct(answered: number, total: number): number {
@@ -136,35 +178,44 @@ async function loadDetentionsForDay(ymd: string): Promise<DayDetention[]> {
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT id, customer, dispatcher, load_number, shipment_number, driver_name,
             amount, status, thread_id, thread_url,
-            dispatcher_replied_at, last_reply_from
+            dispatcher_replied_at, last_reply_from, dispatcher_compliance,
+            DATE(COALESCE(email_date, created_at)) AS email_day
        FROM detentions
       WHERE DATE(COALESCE(email_date, created_at)) = ?
       ORDER BY dispatcher ASC, COALESCE(email_date, created_at) ASC`,
     [ymd]
   );
+  return rows.map(mapDetentionRow);
+}
 
-  return rows.map((r) => ({
-    id: String(r.id),
-    dispatcher: canonicalDispatcherName(
-      r.dispatcher ? String(r.dispatcher) : null
-    ),
-    customer: String(r.customer || "Customer"),
-    loadNumber: String(r.load_number || "").replace(/^#/, ""),
-    shipmentNumber: String(r.shipment_number || "").replace(/^#/, ""),
-    driverName: String(r.driver_name || "Driver"),
-    amount: Number(r.amount || 0),
-    status: String(r.status || ""),
-    threadId: r.thread_id ? String(r.thread_id) : null,
-    threadUrl: r.thread_url ? String(r.thread_url) : null,
-    repliedAt: r.dispatcher_replied_at
-      ? new Date(r.dispatcher_replied_at)
-      : null,
-    lastReplyFrom: r.last_reply_from ? String(r.last_reply_from) : null,
-  }));
+/**
+ * Open detentions from before target day that are still unanswered or
+ * not followed up (Mantas: keep listing until status changes).
+ */
+async function loadAgingUnanswered(beforeYmd: string): Promise<DayDetention[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, customer, dispatcher, load_number, shipment_number, driver_name,
+            amount, status, thread_id, thread_url,
+            dispatcher_replied_at, last_reply_from, dispatcher_compliance,
+            DATE(COALESCE(email_date, created_at)) AS email_day
+       FROM detentions
+      WHERE DATE(COALESCE(email_date, created_at)) < ?
+        AND status NOT IN ('Paid', 'Denied')
+        AND (
+          dispatcher_replied_at IS NULL
+          OR LOWER(COALESCE(dispatcher_compliance, '')) IN ('missed', 'no_follow_up', 'pending')
+        )
+      ORDER BY COALESCE(email_date, created_at) ASC
+      LIMIT 500`,
+    [beforeYmd]
+  );
+  return rows.map(mapDetentionRow).filter(isAgingOpen);
 }
 
 async function groupByDispatcher(
-  items: DayDetention[]
+  items: DayDetention[],
+  aging: DayDetention[]
 ): Promise<DispatcherDayStats[]> {
   const map = new Map<string, DayDetention[]>();
   for (const item of items) {
@@ -173,10 +224,21 @@ async function groupByDispatcher(
     list.push(item);
     map.set(key, list);
   }
+  const agingMap = new Map<string, DayDetention[]>();
+  for (const item of aging) {
+    const key = item.dispatcher.toLowerCase();
+    const list = agingMap.get(key) || [];
+    list.push(item);
+    agingMap.set(key, list);
+  }
 
+  const keys = new Set([...map.keys(), ...agingMap.keys()]);
   const groups: DispatcherDayStats[] = [];
-  for (const [, list] of map) {
-    const name = list[0].dispatcher;
+  for (const key of keys) {
+    const list = map.get(key) || [];
+    const agingList = agingMap.get(key) || [];
+    const name =
+      list[0]?.dispatcher || agingList[0]?.dispatcher || "Dispatcher";
     const answered = list.filter(isAnswered).length;
     const total = list.length;
     const unanswered = total - answered;
@@ -187,8 +249,9 @@ async function groupByDispatcher(
       total,
       answered,
       unanswered,
-      compliancePct: pct(answered, total),
+      compliancePct: total ? pct(answered, total) : 0,
       items: list,
+      aging: agingList,
     });
   }
 
@@ -196,32 +259,50 @@ async function groupByDispatcher(
   return groups;
 }
 
-function itemLinesHtml(items: DayDetention[], appUrl: string): string {
+function itemLinesHtml(
+  items: DayDetention[],
+  appUrl: string,
+  opts?: { showEmailDay?: boolean }
+): string {
   return items
     .map((d) => {
       const link = threadLink(d);
       const loadLabel = d.loadNumber || d.shipmentNumber || "—";
       const answered = isAnswered(d);
-      const statusBit = answered
-        ? `Answered${d.lastReplyFrom ? ` (${escapeHtml(d.lastReplyFrom)})` : ""}`
-        : "Unanswered";
+      const statusBit = !answered
+        ? "Unanswered"
+        : d.compliance === "no_follow_up"
+          ? "No follow-up"
+          : `Answered${d.lastReplyFrom ? ` (${escapeHtml(d.lastReplyFrom)})` : ""}`;
+      const dayBit = opts?.showEmailDay
+        ? ` · ${escapeHtml(formatPrettyDate(d.emailDay))}`
+        : "";
       const openLink = link
         ? `<a href="${escapeHtml(link)}" style="color:#0369a1;font-weight:600">Open email</a>`
         : `<a href="${escapeHtml(appUrl)}/detention" style="color:#0369a1">Open board</a>`;
       return `<li style="margin:0 0 10px">
-        <div><strong>${escapeHtml(d.customer)}</strong> · Load ${escapeHtml(loadLabel)} · ${escapeHtml(d.driverName)} · $${d.amount.toFixed(2)} · ${escapeHtml(d.status)}</div>
+        <div><strong>${escapeHtml(d.customer)}</strong> · Load ${escapeHtml(loadLabel)} · ${escapeHtml(d.driverName)} · $${d.amount.toFixed(2)} · ${escapeHtml(d.status)}${dayBit}</div>
         <div style="color:#64748b;font-size:13px">${statusBit} · ${openLink}</div>
       </li>`;
     })
     .join("");
 }
 
-function itemLinesText(items: DayDetention[], appUrl: string): string[] {
+function itemLinesText(
+  items: DayDetention[],
+  appUrl: string,
+  opts?: { showEmailDay?: boolean }
+): string[] {
   return items.map((d) => {
     const link = threadLink(d) || `${appUrl}/detention`;
     const loadLabel = d.loadNumber || d.shipmentNumber || "—";
-    const answered = isAnswered(d) ? "answered" : "unanswered";
-    return `• ${d.customer} · Load ${loadLabel} · ${d.driverName} · $${d.amount.toFixed(2)} · ${d.status} · ${answered} · ${link}`;
+    const answered = !isAnswered(d)
+      ? "unanswered"
+      : d.compliance === "no_follow_up"
+        ? "no follow-up"
+        : "answered";
+    const dayBit = opts?.showEmailDay ? ` · ${d.emailDay}` : "";
+    return `• ${d.customer} · Load ${loadLabel} · ${d.driverName} · $${d.amount.toFixed(2)} · ${d.status}${dayBit} · ${answered} · ${link}`;
   });
 }
 
@@ -232,7 +313,21 @@ function dispatcherDigestBodies(opts: {
 }): { subject: string; text: string; html: string } {
   const { stats, targetDate, appUrl } = opts;
   const pretty = formatPrettyDate(targetDate);
-  const subject = `[XXII Detention] ${stats.name} compliance — ${pretty} (${stats.compliancePct}%)`;
+  const agingCount = stats.aging.length;
+  const subject =
+    agingCount > 0
+      ? `[XXII Detention] ${stats.name} compliance — ${pretty} (${stats.compliancePct}%) + ${agingCount} aging`
+      : `[XXII Detention] ${stats.name} compliance — ${pretty} (${stats.compliancePct}%)`;
+
+  const agingText =
+    agingCount > 0
+      ? [
+          "",
+          `Still unanswered / not followed up from earlier days (${agingCount}):`,
+          ...itemLinesText(stats.aging, appUrl, { showEmailDay: true }),
+        ]
+      : [];
+
   const text = [
     `Hi ${stats.name},`,
     "",
@@ -243,12 +338,21 @@ function dispatcherDigestBodies(opts: {
     `Unanswered: ${stats.unanswered}`,
     `Compliance: ${stats.compliancePct}%`,
     "",
-    ...itemLinesText(stats.items, appUrl),
+    ...(stats.items.length
+      ? itemLinesText(stats.items, appUrl)
+      : ["(No automated detention emails on this day.)"]),
+    ...agingText,
     "",
     `Board: ${appUrl}/detention/compliance`,
     "",
-    "Art’s reply on a thread counts as answered. If the load status has not changed, follow up again after 48 hours from the last answer.",
+    "Art’s reply on a thread counts as answered. Aging items stay listed until the load status changes in the system.",
   ].join("\n");
+
+  const agingHtml =
+    agingCount > 0
+      ? `<p style="margin:18px 0 6px;font-weight:700;color:#b91c1c">Still unanswered / not followed up from earlier days (${agingCount})</p>
+      <ul style="padding-left:18px;margin:0">${itemLinesHtml(stats.aging, appUrl, { showEmailDay: true })}</ul>`
+      : "";
 
   const html = `
     <div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45">
@@ -259,11 +363,21 @@ function dispatcherDigestBodies(opts: {
         <tr><td style="padding:4px 16px 4px 0;color:#64748b">Answered</td><td style="padding:4px 0;font-weight:700;color:#047857">${stats.answered}</td></tr>
         <tr><td style="padding:4px 16px 4px 0;color:#64748b">Unanswered</td><td style="padding:4px 0;font-weight:700;color:#b91c1c">${stats.unanswered}</td></tr>
         <tr><td style="padding:4px 16px 4px 0;color:#64748b">Compliance</td><td style="padding:4px 0;font-weight:800;font-size:16px">${stats.compliancePct}%</td></tr>
+        ${
+          agingCount
+            ? `<tr><td style="padding:4px 16px 4px 0;color:#64748b">Aging (prior days)</td><td style="padding:4px 0;font-weight:700;color:#b91c1c">${agingCount}</td></tr>`
+            : ""
+        }
       </table>
-      <p style="margin:0 0 6px;font-weight:700">Your loads</p>
-      <ul style="padding-left:18px;margin:0">${itemLinesHtml(stats.items, appUrl)}</ul>
+      <p style="margin:0 0 6px;font-weight:700">${escapeHtml(pretty)} loads</p>
+      <ul style="padding-left:18px;margin:0">${
+        stats.items.length
+          ? itemLinesHtml(stats.items, appUrl)
+          : "<li style=\"color:#64748b\">No automated detention emails on this day.</li>"
+      }</ul>
+      ${agingHtml}
       <p style="margin-top:18px"><a href="${escapeHtml(appUrl)}/detention/compliance">Open compliance board</a></p>
-      <p style="color:#64748b;font-size:12px">Art’s reply counts as answered. If load status has not changed, keep the 48h follow-up from the last answer.</p>
+      <p style="color:#64748b;font-size:12px">Art’s reply counts as answered. Aging unanswered / no-follow-up items stay listed until the load status changes in the system.</p>
     </div>
   `;
   return { subject, text, html };
@@ -275,23 +389,35 @@ function artDigestBodies(opts: {
   appUrl: string;
   fleetTotal: number;
   fleetAnswered: number;
+  fleetAging: number;
 }): { subject: string; text: string; html: string } {
-  const { groups, targetDate, appUrl, fleetTotal, fleetAnswered } = opts;
+  const {
+    groups,
+    targetDate,
+    appUrl,
+    fleetTotal,
+    fleetAnswered,
+    fleetAging,
+  } = opts;
   const pretty = formatPrettyDate(targetDate);
-  const fleetPct = pct(fleetAnswered, fleetTotal);
-  const subject = `[XXII Detention] Dispatcher compliance rollup — ${pretty} (${fleetPct}%)`;
+  const fleetPct = fleetTotal ? pct(fleetAnswered, fleetTotal) : 0;
+  const subject =
+    fleetAging > 0
+      ? `[XXII Detention] Dispatcher compliance rollup — ${pretty} (${fleetPct}%) + ${fleetAging} aging`
+      : `[XXII Detention] Dispatcher compliance rollup — ${pretty} (${fleetPct}%)`;
 
-  const textRows = groups.map(
-    (g) =>
-      `• ${g.name}: ${g.total} emails, ${g.answered} answered, ${g.unanswered} not answered — ${g.compliancePct}% compliance`
-  );
+  const textRows = groups.map((g) => {
+    const agingBit = g.aging.length ? ` · ${g.aging.length} aging` : "";
+    return `• ${g.name}: ${g.total} emails, ${g.answered} answered, ${g.unanswered} not answered — ${g.compliancePct}% compliance${agingBit}`;
+  });
 
   const text = [
     "Hi Art,",
     "",
     `Dispatcher detention-email compliance for ${pretty} (48 hours ago):`,
     "",
-    `Fleet: ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} unanswered · ${fleetPct}%`,
+    `Fleet: ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} unanswered · ${fleetPct}%` +
+      (fleetAging ? ` · ${fleetAging} aging from prior days` : ""),
     "",
     ...textRows,
     "",
@@ -305,32 +431,47 @@ function artDigestBodies(opts: {
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${g.total}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;color:#047857">${g.answered}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;color:#b91c1c">${g.unanswered}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;color:#b91c1c">${g.aging.length}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:800">${g.compliancePct}%</td>
       </tr>`
     )
     .join("");
 
   const detailBlocks = groups
-    .map(
-      (g) => `<div style="margin:18px 0 8px">
-        <p style="margin:0 0 6px;font-weight:800">${escapeHtml(g.name)} — ${g.compliancePct}%</p>
-        <ul style="padding-left:18px;margin:0">${itemLinesHtml(g.items, appUrl)}</ul>
-      </div>`
-    )
+    .map((g) => {
+      const agingBlock = g.aging.length
+        ? `<p style="margin:10px 0 4px;font-weight:700;color:#b91c1c;font-size:13px">Aging unanswered / no follow-up (${g.aging.length})</p>
+        <ul style="padding-left:18px;margin:0">${itemLinesHtml(g.aging, appUrl, { showEmailDay: true })}</ul>`
+        : "";
+      return `<div style="margin:18px 0 8px">
+        <p style="margin:0 0 6px;font-weight:800">${escapeHtml(g.name)} — ${g.compliancePct}% (${escapeHtml(pretty)})</p>
+        <ul style="padding-left:18px;margin:0">${
+          g.items.length
+            ? itemLinesHtml(g.items, appUrl)
+            : "<li style=\"color:#64748b\">No emails this day.</li>"
+        }</ul>
+        ${agingBlock}
+      </div>`;
+    })
     .join("");
 
   const html = `
     <div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45">
       <p>Hi Art,</p>
       <p>Dispatcher detention-email compliance for <strong>${escapeHtml(pretty)}</strong> (48 hours ago).</p>
-      <p style="margin:12px 0"><strong>Fleet:</strong> ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} unanswered · <strong>${fleetPct}%</strong></p>
-      <table style="border-collapse:collapse;width:100%;max-width:640px;margin:12px 0 8px">
+      <p style="margin:12px 0"><strong>Fleet:</strong> ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} unanswered · <strong>${fleetPct}%</strong>${
+        fleetAging
+          ? ` · <strong style="color:#b91c1c">${fleetAging} aging</strong> from prior days`
+          : ""
+      }</p>
+      <table style="border-collapse:collapse;width:100%;max-width:720px;margin:12px 0 8px">
         <thead>
           <tr style="background:#f8fafc;text-align:left">
             <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0">Dispatcher</th>
             <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Emails</th>
             <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Answered</th>
             <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Not answered</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Aging</th>
             <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Compliance</th>
           </tr>
         </thead>
@@ -338,7 +479,7 @@ function artDigestBodies(opts: {
       </table>
       ${detailBlocks}
       <p style="margin-top:18px"><a href="${escapeHtml(appUrl)}/detention/compliance">Open compliance board</a></p>
-      <p style="color:#64748b;font-size:12px">Your reply on a thread counts as answered for that dispatcher. If load status has not changed, follow up again after 48 hours from the last answer.</p>
+      <p style="color:#64748b;font-size:12px">Aging unanswered / no-follow-up items stay listed until the load status changes in the system.</p>
     </div>
   `;
   return { subject, text, html };
@@ -364,11 +505,17 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
   const targetDate =
     env("DETENTION_REMINDER_TARGET_DATE") || addDaysYmd(today, -2);
 
-  // Refresh Art/dispatcher replies from Gmail for that day before building digests.
-  const scan = await runDetentionComplianceScan({ emailDay: targetDate });
+  // Refresh replies for the target day + aging open unanswered before that day.
+  const scanDay = await runDetentionComplianceScan({ emailDay: targetDate });
+  const scanAging = await runDetentionComplianceScan({
+    agingBeforeDay: targetDate,
+  });
+  const scanChecked = scanDay.checked + scanAging.checked;
+  const scanErrors = scanDay.errors + scanAging.errors;
 
   const items = await loadDetentionsForDay(targetDate);
-  if (!items.length) {
+  const aging = await loadAgingUnanswered(targetDate);
+  if (!items.length && !aging.length) {
     return {
       ok: true,
       targetDate,
@@ -377,13 +524,14 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
       artEmailed: false,
       emailed: 0,
       mocked: false,
-      scanChecked: scan.checked,
-      scanErrors: scan.errors,
+      scanChecked,
+      scanErrors,
     };
   }
 
-  const groups = await groupByDispatcher(items);
+  const groups = await groupByDispatcher(items, aging);
   const fleetAnswered = items.filter(isAnswered).length;
+  const fleetAging = aging.length;
   let emailed = 0;
   let dispatcherEmails = 0;
   let artEmailed = false;
@@ -392,6 +540,7 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
 
   for (const stats of groups) {
     if (!stats.email) continue;
+    if (!stats.items.length && !stats.aging.length) continue;
     const body = dispatcherDigestBodies({ stats, targetDate, appUrl });
     const send = await sendAppEmail({
       to: stats.email,
@@ -416,6 +565,7 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
       appUrl,
       fleetTotal: items.length,
       fleetAnswered,
+      fleetAging,
     });
     const send = await sendAppEmail({
       to: artTo,
@@ -437,13 +587,13 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
     return {
       ok: false,
       targetDate,
-      dueCount: items.length,
+      dueCount: items.length + aging.length,
       dispatcherEmails: 0,
       artEmailed: false,
       emailed: 0,
       mocked: false,
-      scanChecked: scan.checked,
-      scanErrors: scan.errors,
+      scanChecked,
+      scanErrors,
       error: errors.join("; "),
     };
   }
@@ -451,13 +601,13 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
   return {
     ok: true,
     targetDate,
-    dueCount: items.length,
+    dueCount: items.length + aging.length,
     dispatcherEmails,
     artEmailed,
     emailed,
     mocked: anyMocked,
-    scanChecked: scan.checked,
-    scanErrors: scan.errors,
+    scanChecked,
+    scanErrors,
     error: errors.length ? errors.join("; ") : undefined,
   };
 }

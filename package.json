@@ -42,6 +42,7 @@
     "detention:followup-preview": "node --import tsx scripts/detention-followup-preview.mjs",
     "detention:compliance-scan": "node --import tsx scripts/detention-compliance-scan.mjs",
     "detention:dedupe-sheet-gmail": "node --import tsx scripts/detention-dedupe-sheet-gmail.mjs",
+    "detention:dedupe-same-load": "node --import tsx scripts/detention-dedupe-same-load.mjs",
     "cron:daily-tms": "bash scripts/cron/daily-tms.sh",
     "cron:weekly-gp": "bash scripts/cron/weekly-gp.sh",
     "cron:daily-retention": "bash scripts/cron/daily-retention.sh",

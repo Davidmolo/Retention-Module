@@ -673,7 +673,22 @@ export function DetentionBoard() {
                         {row.dispatcher || "—"}
                       </td>
                       <td className="px-3 py-3">
-                        <div className="truncate font-medium">{row.loadNumber || "—"}</div>
+                        {row.loadLink && row.loadNumber ? (
+                          <a
+                            href={row.loadLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Open load in OpenRoad"
+                            onClick={(e) => e.stopPropagation()}
+                            className="truncate font-medium text-[var(--xxii-blue,#0369a1)] hover:underline"
+                          >
+                            {row.loadNumber}
+                          </a>
+                        ) : (
+                          <div className="truncate font-medium">
+                            {row.loadNumber || "—"}
+                          </div>
+                        )}
                         <div className="truncate text-xs text-slate-500">
                           {row.shipmentNumber || ""}
                         </div>
@@ -906,7 +921,19 @@ function DetentionDetailDrawer({
               {d?.customer || "—"}
             </h2>
             <div className="text-sm text-slate-500">
-              Load {d?.loadNumber || "—"}
+              {d?.loadLink && d?.loadNumber ? (
+                <a
+                  href={d.loadLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open load in OpenRoad"
+                  className="font-medium text-[var(--xxii-blue,#0369a1)] hover:underline"
+                >
+                  Load {d.loadNumber}
+                </a>
+              ) : (
+                <>Load {d?.loadNumber || "—"}</>
+              )}
               {d?.shipmentNumber ? ` · Ship ${d.shipmentNumber}` : ""}
             </div>
           </div>

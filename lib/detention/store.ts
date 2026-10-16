@@ -684,8 +684,8 @@ export async function findDetentionByLoadNearEmail(opts: {
       );
       params.push(ship.replace(/\s+/g, ""), ship.replace(/\s+/g, ""));
     }
-    // Amount is required for load dedupe — same load can legitimately have
-    // two claims (e.g. shipper vs consignee) with different dollar amounts.
+    // Amount match is the first pass. Same load + shipment still merges later
+    // when the amounts differ slightly.
     if (opts.amount != null && Number.isFinite(opts.amount)) {
       conds.push(`ABS(COALESCE(amount, 0) - ?) < 0.02`);
       params.push(opts.amount);
@@ -731,7 +731,30 @@ export async function findDetentionByLoadNearEmail(opts: {
      ${orderSql}`,
     any.params
   );
-  return anyRows[0] ? mapLoadMatch(anyRows[0]) : null;
+  if (anyRows[0]) return mapLoadMatch(anyRows[0]);
+
+  // Same load + same shipment is one claim even when the dollar amount differs
+  // (Mantas: 2609-01167 showed twice at $221.25 and $217.08).
+  const ship = opts.shipmentNumber?.trim();
+  if (!ship) return null;
+  const shipConds = [`TRIM(load_number) = ?`];
+  const shipParams: unknown[] = [load];
+  if (opts.excludeId?.trim()) {
+    shipConds.push(`id <> ?`);
+    shipParams.push(opts.excludeId.trim());
+  }
+  shipConds.push(
+    `(REPLACE(TRIM(shipment_number),' ','') = ? OR TRIM(LEADING '0' FROM TRIM(shipment_number)) = TRIM(LEADING '0' FROM ?))`
+  );
+  shipParams.push(ship.replace(/\s+/g, ""), ship.replace(/\s+/g, ""));
+  const [shipRows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, source, message_id, thread_id, status
+     FROM detentions
+     WHERE ${shipConds.join(" AND ")}
+     ${orderSql}`,
+    shipParams
+  );
+  return shipRows[0] ? mapLoadMatch(shipRows[0]) : null;
 }
 
 /** Attach Gmail identity onto an existing sheet row (no second claim). */
