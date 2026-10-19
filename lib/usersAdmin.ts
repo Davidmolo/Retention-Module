@@ -1,4 +1,5 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
+import bcrypt from 'bcryptjs';
 import { getPool } from '@/lib/db';
 import {
   ALL_MODULES,
@@ -259,5 +260,44 @@ export async function deleteManagedUser(opts: {
     /* ignore if invites table missing */
   }
 
+  return { ok: true };
+}
+
+/** Super Admin sets a new password for another user. Does not change their own. */
+export async function setManagedUserPassword(opts: {
+  actorId: number;
+  actorRole: UserRole;
+  targetId: number;
+  password: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isSuperAdminRole(opts.actorRole)) {
+    return {
+      ok: false,
+      error: 'Only a Super Admin can set another user’s password',
+    };
+  }
+  if (opts.actorId === opts.targetId) {
+    return {
+      ok: false,
+      error: 'Use Change password on your own account',
+    };
+  }
+  const password = String(opts.password || '');
+  if (password.length < 8) {
+    return { ok: false, error: 'Password must be at least 8 characters' };
+  }
+
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, username FROM users WHERE id = ? LIMIT 1`,
+    [opts.targetId]
+  );
+  if (!rows[0]) return { ok: false, error: 'User not found' };
+
+  const hash = await bcrypt.hash(password, 10);
+  await pool.query<ResultSetHeader>(
+    `UPDATE users SET password_hash = ? WHERE id = ?`,
+    [hash, opts.targetId]
+  );
   return { ok: true };
 }

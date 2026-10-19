@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   ALL_MODULES,
@@ -35,6 +42,64 @@ type Draft = {
   modules: AppModule[];
 };
 
+function Collapse({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const reduce = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+    if (reduce) {
+      el.style.height = open ? 'auto' : '0px';
+      return;
+    }
+
+    if (open) {
+      const from = el.getBoundingClientRect().height;
+      el.style.height = `${from}px`;
+      const target = el.scrollHeight;
+      const frame = requestAnimationFrame(() => {
+        el.style.height = `${target}px`;
+      });
+      const onEnd = (event: TransitionEvent) => {
+        if (event.propertyName !== 'height') return;
+        el.style.height = 'auto';
+        el.removeEventListener('transitionend', onEnd);
+      };
+      el.addEventListener('transitionend', onEnd);
+      return () => {
+        cancelAnimationFrame(frame);
+        el.removeEventListener('transitionend', onEnd);
+      };
+    }
+
+    el.style.height = `${el.scrollHeight}px`;
+    el.getBoundingClientRect();
+    const frame = requestAnimationFrame(() => {
+      el.style.height = '0px';
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
+  return (
+    <div
+      ref={ref}
+      className="h-0 overflow-hidden transition-[height] duration-300 ease-out"
+      inert={open ? undefined : true}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function ManagePermissionsPanel({
   currentUserId,
   actorRole,
@@ -49,6 +114,12 @@ export function ManagePermissionsPanel({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
+  const [passwordDrafts, setPasswordDrafts] = useState<Record<number, string>>(
+    {}
+  );
+  const [passwordOpen, setPasswordOpen] = useState<Record<number, boolean>>(
+    {}
+  );
 
   const canEditUser = (u: ManagedUser) => {
     if (isSuper) return true;
@@ -167,6 +238,44 @@ export function ManagePermissionsPanel({
     }
   };
 
+  const onSetPassword = async (u: ManagedUser) => {
+    const password = passwordDrafts[u.id] || '';
+    if (password.length < 8) {
+      setErr('Password must be at least 8 characters');
+      setMsg('');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Set a new password for ${u.username}? Their old password will stop working.`
+      )
+    ) {
+      return;
+    }
+    setBusyId(u.id);
+    setMsg('');
+    setErr('');
+    try {
+      const res = await fetch(`/api/settings/users/${u.id}/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        setErr(json?.error || 'Could not set password');
+        return;
+      }
+      setPasswordDrafts((prev) => ({ ...prev, [u.id]: '' }));
+      setPasswordOpen((prev) => ({ ...prev, [u.id]: false }));
+      setMsg(`Password updated for ${u.username}`);
+    } catch {
+      setErr('Could not set password');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const onRemove = async (u: ManagedUser) => {
     if (!canRemoveUser(u)) {
       setErr(
@@ -214,7 +323,7 @@ export function ManagePermissionsPanel({
         </h2>
         <p className="text-sm text-muted-foreground">
           {isSuper
-            ? 'Super Admin: update or remove Admins and Staff. Use Invite to add users.'
+            ? 'Super Admin: update or remove Admins and Staff, and set a new password when someone forgets theirs. Use Invite to add users.'
             : 'Admin: invite Admins or Staff; update or remove Staff only. You cannot remove Admins.'}
         </p>
       </div>
@@ -309,6 +418,96 @@ export function ManagePermissionsPanel({
                         )}
                       </div>
                     </div>
+
+                    {isSuper && !isSelf ? (
+                      <div className="w-full overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+                        <button
+                          type="button"
+                          aria-expanded={!!passwordOpen[u.id]}
+                          className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => {
+                            const next = !passwordOpen[u.id];
+                            setPasswordOpen((prev) => ({
+                              ...prev,
+                              [u.id]: next,
+                            }));
+                            if (!next) {
+                              setPasswordDrafts((prev) => ({
+                                ...prev,
+                                [u.id]: '',
+                              }));
+                            }
+                          }}
+                        >
+                          <span className="text-sm font-medium tracking-tight text-foreground">
+                            Set new password for{' '}
+                            {u.displayName?.trim() || u.username}
+                          </span>
+                          <span
+                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-out ${
+                              passwordOpen[u.id]
+                                ? 'bg-foreground text-background'
+                                : 'bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            <ChevronDown
+                              className={`h-4 w-4 transition-transform duration-300 ease-out ${
+                                passwordOpen[u.id] ? 'rotate-180' : ''
+                              }`}
+                            />
+                          </span>
+                        </button>
+                        <Collapse open={!!passwordOpen[u.id]}>
+                          <div className="flex flex-wrap items-end gap-2 border-t border-border bg-muted/30 px-4 py-4">
+                            <div className="min-w-[220px] flex-1">
+                              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                                New password
+                              </label>
+                              <input
+                                type="password"
+                                autoComplete="new-password"
+                                value={passwordDrafts[u.id] || ''}
+                                onChange={(e) =>
+                                  setPasswordDrafts((prev) => ({
+                                    ...prev,
+                                    [u.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="At least 8 characters"
+                                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              disabled={busyId === u.id}
+                              onClick={() => onSetPassword(u)}
+                            >
+                              Save password
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              disabled={busyId === u.id}
+                              onClick={() => {
+                                setPasswordOpen((prev) => ({
+                                  ...prev,
+                                  [u.id]: false,
+                                }));
+                                setPasswordDrafts((prev) => ({
+                                  ...prev,
+                                  [u.id]: '',
+                                }));
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </Collapse>
+                      </div>
+                    ) : null}
 
                     <div className="flex flex-wrap gap-2">
                       <Button
