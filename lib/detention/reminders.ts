@@ -2,8 +2,9 @@
  * Daily Detention compliance digests (48h / T-2 calendar day).
  *
  * - Each dispatcher: only their loads from the target day (emails + answered /
- *   unanswered / compliance %). CC Mantas.
- * - Art: rollup of every dispatcher’s compliance (dispatchers are not on To).
+ *   unanswered / compliance %). Mantas is not copied on these.
+ * - Art: rollup overview of every dispatcher’s compliance (dispatchers are not
+ *   on To). Mantas stays on this overview.
  * - Art’s reply on a thread counts as answered (see replyScan).
  */
 import type { RowDataPacket } from "mysql2";
@@ -47,7 +48,39 @@ function addDaysYmd(ymd: string, days: number): string {
   return utc.toISOString().slice(0, 10);
 }
 
+function ymdFromParts(y: number, month: number, day: number): string {
+  return `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** MySQL DATE may arrive as a Date; String(date).slice(0,10) is not YYYY-MM-DD. */
+function toYmd(value: unknown): string {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const utcMidnight =
+      value.getUTCHours() === 0 &&
+      value.getUTCMinutes() === 0 &&
+      value.getUTCSeconds() === 0 &&
+      value.getUTCMilliseconds() === 0;
+    if (utcMidnight) {
+      return ymdFromParts(
+        value.getUTCFullYear(),
+        value.getUTCMonth() + 1,
+        value.getUTCDate()
+      );
+    }
+    return ymdFromParts(
+      value.getFullYear(),
+      value.getMonth() + 1,
+      value.getDate()
+    );
+  }
+  const raw = String(value ?? "").trim();
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  return "";
+}
+
 function formatPrettyDate(ymd: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return "";
   const [y, m, d] = ymd.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d, 12));
   return dt.toLocaleDateString("en-US", {
@@ -97,8 +130,7 @@ type DispatcherDayStats = {
 };
 
 function mapDetentionRow(r: RowDataPacket): DayDetention {
-  const emailDay = String(r.email_day || r.email_date || r.created_at || "")
-    .slice(0, 10);
+  const emailDay = toYmd(r.email_day || r.email_date || r.created_at);
   return {
     id: String(r.id),
     dispatcher: canonicalDispatcherName(
@@ -176,7 +208,7 @@ async function loadDetentionsForDay(ymd: string): Promise<DayDetention[]> {
     `SELECT id, customer, dispatcher, load_number, shipment_number, driver_name,
             amount, status, thread_id, thread_url,
             dispatcher_replied_at, last_reply_from, dispatcher_compliance,
-            DATE(COALESCE(email_date, created_at)) AS email_day
+            DATE_FORMAT(DATE(COALESCE(email_date, created_at)), '%Y-%m-%d') AS email_day
        FROM detentions
       WHERE DATE(COALESCE(email_date, created_at)) = ?
       ORDER BY dispatcher ASC, COALESCE(email_date, created_at) ASC`,
@@ -195,7 +227,7 @@ async function loadAgingUnanswered(beforeYmd: string): Promise<DayDetention[]> {
     `SELECT id, customer, dispatcher, load_number, shipment_number, driver_name,
             amount, status, thread_id, thread_url,
             dispatcher_replied_at, last_reply_from, dispatcher_compliance,
-            DATE(COALESCE(email_date, created_at)) AS email_day
+            DATE_FORMAT(DATE(COALESCE(email_date, created_at)), '%Y-%m-%d') AS email_day
        FROM detentions
       WHERE DATE(COALESCE(email_date, created_at)) < ?
         AND status NOT IN ('Paid', 'Denied')
@@ -271,9 +303,8 @@ function itemLinesHtml(
         : d.compliance === "no_follow_up"
           ? "No follow-up"
           : `Answered${d.lastReplyFrom ? ` (${escapeHtml(d.lastReplyFrom)})` : ""}`;
-      const dayBit = opts?.showEmailDay
-        ? ` · ${escapeHtml(formatPrettyDate(d.emailDay))}`
-        : "";
+      const dayLabel = opts?.showEmailDay ? formatPrettyDate(d.emailDay) : "";
+      const dayBit = dayLabel ? ` · ${escapeHtml(dayLabel)}` : "";
       const openLink = link
         ? `<a href="${escapeHtml(link)}" style="color:#0369a1;font-weight:600">Open email</a>`
         : `<a href="${escapeHtml(appUrl)}/detention" style="color:#0369a1">Open board</a>`;
@@ -298,7 +329,8 @@ function itemLinesText(
       : d.compliance === "no_follow_up"
         ? "no follow-up"
         : "answered";
-    const dayBit = opts?.showEmailDay ? ` · ${d.emailDay}` : "";
+    const dayLabel = opts?.showEmailDay ? formatPrettyDate(d.emailDay) : "";
+    const dayBit = dayLabel ? ` · ${dayLabel}` : "";
     return `• ${d.customer} · Load ${loadLabel} · ${d.driverName} · $${d.amount.toFixed(2)} · ${d.status}${dayBit} · ${answered} · ${link}`;
   });
 }
@@ -493,7 +525,10 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
     /\/$/,
     ""
   );
-  const cc = parseEmails(env("DETENTION_REMINDER_CC", "mantas@goxxii.com"));
+  const overviewCc = parseEmails(
+    env("DETENTION_REMINDER_CC", "mantas@goxxii.com")
+  );
+  const dispatcherCc = overviewCc.filter((e) => e !== "mantas@goxxii.com");
   const artTo = parseEmails(
     env("DETENTION_REMINDER_ART_TO", env("DETENTION_REMINDER_TO", "Art@goxxii.com"))
   );
@@ -541,7 +576,7 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
     const body = dispatcherDigestBodies({ stats, targetDate, appUrl });
     const send = await sendAppEmail({
       to: stats.email,
-      cc,
+      cc: dispatcherCc,
       subject: body.subject,
       text: body.text,
       html: body.html,
@@ -566,7 +601,7 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
     });
     const send = await sendAppEmail({
       to: artTo,
-      cc,
+      cc: overviewCc,
       subject: body.subject,
       text: body.text,
       html: body.html,
