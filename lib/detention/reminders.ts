@@ -5,6 +5,7 @@
  *   unanswered / compliance %). Mantas is not copied on these.
  * - Art: rollup overview of every dispatcher’s compliance (dispatchers are not
  *   on To). Mantas stays on this overview.
+ * - David: one summary each Monday for the Monday–Sunday week that just ended.
  * - Art’s reply on a thread counts as answered (see replyScan).
  */
 import type { RowDataPacket } from "mysql2";
@@ -221,6 +222,31 @@ async function loadDetentionsForDay(ymd: string): Promise<DayDetention[]> {
  * Open detentions from before target day that are still unanswered or
  * not followed up (Mantas: keep listing until status changes).
  */
+async function loadDetentionsForRange(
+  startYmd: string,
+  endYmd: string
+): Promise<DayDetention[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, customer, dispatcher, load_number, shipment_number, driver_name,
+            amount, status, thread_id, thread_url,
+            dispatcher_replied_at, last_reply_from, dispatcher_compliance,
+            DATE_FORMAT(DATE(COALESCE(email_date, created_at)), '%Y-%m-%d') AS email_day
+       FROM detentions
+      WHERE DATE(COALESCE(email_date, created_at)) BETWEEN ? AND ?
+      ORDER BY dispatcher ASC, COALESCE(email_date, created_at) ASC`,
+    [startYmd, endYmd]
+  );
+  return rows.map(mapDetentionRow);
+}
+
+function weekdayInTz(date: Date, timeZone = appTimezone()): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+  }).format(date);
+}
+
 async function loadAgingUnanswered(beforeYmd: string): Promise<DayDetention[]> {
   const pool = getPool();
   const [rows] = await pool.query<RowDataPacket[]>(
@@ -641,6 +667,128 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
     scanChecked,
     scanErrors,
     error: errors.length ? errors.join("; ") : undefined,
+  };
+}
+
+/**
+ * David’s weekly summary: Monday–Sunday that just ended.
+ * Sent on Monday only, with the 6:00 AM Chicago detention run.
+ */
+export async function runDetentionWeeklySummary(): Promise<{
+  ok: boolean;
+  skipped: boolean;
+  weekStart: string;
+  weekEnd: string;
+  emailed: number;
+  mocked: boolean;
+  error?: string;
+}> {
+  const today = ymdInTz(new Date());
+  const weekEnd = addDaysYmd(today, -1);
+  const weekStart = addDaysYmd(today, -7);
+  const force = env("DETENTION_WEEKLY_SUMMARY_FORCE") === "1";
+  const empty = {
+    ok: true,
+    skipped: true,
+    weekStart,
+    weekEnd,
+    emailed: 0,
+    mocked: false,
+  };
+  if (!force && weekdayInTz(new Date()) !== "Monday") return empty;
+
+  const to = parseEmails(
+    env("DETENTION_WEEKLY_SUMMARY_TO", "david@goxxii.com")
+  );
+  if (!to.length) {
+    return { ...empty, skipped: false, ok: false, error: "No weekly summary recipient" };
+  }
+
+  const items = await loadDetentionsForRange(weekStart, weekEnd);
+  const groups = (await groupByDispatcher(items, [])).filter((g) => g.total > 0);
+  const fleetTotal = items.length;
+  const fleetAnswered = items.filter(isAnswered).length;
+  const fleetPct = fleetTotal ? pct(fleetAnswered, fleetTotal) : 0;
+  const startLabel = formatPrettyDate(weekStart);
+  const endLabel = formatPrettyDate(weekEnd);
+  const appUrl = env("NEXT_PUBLIC_APP_URL", "https://v2.goxxii.com").replace(
+    /\/$/,
+    ""
+  );
+
+  const subject = `[XXII Detention] Weekly summary — ${startLabel} to ${endLabel} (${fleetPct}%)`;
+  const lines = groups.map(
+    (g) =>
+      `• ${g.name}: ${g.total} emails, ${g.answered} answered, ${g.unanswered} not answered — ${g.compliancePct}%`
+  );
+  const text = [
+    "Hi David,",
+    "",
+    `Detention summary for ${startLabel} through ${endLabel}.`,
+    "",
+    `Fleet: ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} not answered · ${fleetPct}%`,
+    "",
+    ...(lines.length ? lines : ["No detention emails this week."]),
+    "",
+    `Board: ${appUrl}/detention/compliance`,
+  ].join("\n");
+
+  const tableRows = groups
+    .map(
+      (g) => `<tr>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">${escapeHtml(g.name)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${g.total}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;color:#047857">${g.answered}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;color:#b91c1c">${g.unanswered}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:800">${g.compliancePct}%</td>
+      </tr>`
+    )
+    .join("");
+
+  const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45">
+      <p>Hi David,</p>
+      <p>Detention summary for <strong>${escapeHtml(startLabel)}</strong> through <strong>${escapeHtml(endLabel)}</strong>.</p>
+      <p style="margin:12px 0"><strong>Fleet:</strong> ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} not answered · <strong>${fleetPct}%</strong></p>
+      ${
+        groups.length
+          ? `<table style="border-collapse:collapse;width:100%;max-width:720px;margin:12px 0 8px">
+        <thead>
+          <tr style="background:#f8fafc;text-align:left">
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0">Dispatcher</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Emails</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Answered</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Not answered</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Compliance</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>`
+          : `<p>No detention emails this week.</p>`
+      }
+      <p style="margin-top:18px"><a href="${escapeHtml(appUrl)}/detention/compliance">Open compliance board</a></p>
+    </div>
+  `;
+
+  const send = await sendAppEmail({ to, subject, text, html });
+  if (!send.ok) {
+    return {
+      ok: false,
+      skipped: false,
+      weekStart,
+      weekEnd,
+      emailed: 0,
+      mocked: false,
+      error: send.error || "send failed",
+    };
+  }
+  return {
+    ok: true,
+    skipped: false,
+    weekStart,
+    weekEnd,
+    emailed: 1,
+    mocked: Boolean(send.mocked),
   };
 }
 
