@@ -5,7 +5,10 @@ import {
   dispatcherMatchKeys,
   uniqueCanonicalDispatchers,
 } from "./dispatcherNames";
-import { resolveDispatcherCompliance } from "./compliance";
+import {
+  resolveArCompliance,
+  resolveDispatcherCompliance,
+} from "./compliance";
 import { openRoadLoadHref } from "./parseOpenRoadEmail";
 import {
   DETENTION_STATUSES,
@@ -474,6 +477,14 @@ export async function updateDetention(
         params.push(nextCompliance);
         sets.push("dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)");
       }
+      const nextAr = resolveArCompliance({
+        status: patch.status,
+        teamRepliedAt: current.dispatcherRepliedAt,
+        arRepliedAt: null,
+      });
+      sets.push("ar_compliance = ?");
+      params.push(nextAr);
+      sets.push("ar_compliance_checked_at = CURRENT_TIMESTAMP(3)");
     }
   }
 

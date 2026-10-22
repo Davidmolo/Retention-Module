@@ -115,6 +115,16 @@ export type DetentionComplianceItem = {
   dispatcherCompliance: DispatcherCompliance | string | null;
 };
 
+export type DetentionComplianceWeek = {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  received: number;
+  answered: number;
+  unanswered: number;
+};
+
 export type DetentionComplianceGroup = {
   dispatcher: string;
   dispatcherEmail: string | null;
@@ -148,6 +158,8 @@ export type DetentionKpis = {
   openAmount: number;
   /** Sum collected on Paid claims (settled amount when set, else claim amount). */
   paidAmount: number;
+  /** Paid count ÷ all detentions, one decimal. */
+  paidRate: number;
   /** Art Ops Tasks parity (windowed — usually last 90 days). */
   billedAmount: number;
   billedCount: number;

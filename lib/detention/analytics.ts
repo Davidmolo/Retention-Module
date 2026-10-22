@@ -71,6 +71,10 @@ export async function getDetentionKpisForWindow(
     paid: Number(r.paid_count || 0),
     openAmount: money(r.open_amount),
     paidAmount: money(r.paid_amount),
+    paidRate:
+      total > 0
+        ? Math.round((Number(r.paid_count || 0) / total) * 1000) / 10
+        : 0,
     billedAmount: money(r.billed_amount),
     billedCount: total,
     outstandingAmount: money(r.outstanding_amount),

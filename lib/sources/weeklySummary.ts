@@ -24,10 +24,9 @@ import {
 
 // Computes a weekly Gross Profit summary entirely from the database:
 //   - trips/miles/gross — solo vs share (never full load on multi-driver):
-//       solo (< 2 distinct drivers on driver_routes): full load, week = delivery_at
-//       orphan/canceled (load.driver_id NULL, sole route driver): same by delivery_at
-//       multi helper (route.driver ≠ load.driver): route share, week = route date
-//       multi owner (route.driver = load.driver): route share, week = delivery_at
+//       driver_count < 2, assigned: FULL load, delivery week. Skip canceled.
+//       driver_count = 1 orphan: routes / cancel fees. Skip canceled haul miles.
+//       driver_count >= 2: route share. Helper uses route week; owner uses delivery week.
 //   - gross = load linehaul_rate (fallback revenue/total); matches client GP sheet
 //   - Driver's pay = compensation (mi×rate / % / flat)
 //       + OpenRoad driver_accessorials for this settlement (payroll) week
@@ -348,15 +347,14 @@ export async function getWeeklySummary(
        LEFT JOIN relay_fuel_week_totals rf
          ON rf.driver_id = d.id AND rf.year = ? AND rf.week = ?
        LEFT JOIN (
-         -- Solo = full load (delivery week).
-         -- Orphan/canceled (no load.driver): sole route driver, delivery week.
-         -- Multi = route share only: helpers by route week, owners by delivery week.
+         -- count < 2 = full load; count >= 2 = route share.
          SELECT driver_id,
                 SUM(trips) trips,
                 SUM(miles) miles,
                 SUM(loadedMiles) loadedMiles,
                 SUM(revenue) revenue
            FROM (
+             -- Solo / single-driver (count 0 or 1): FULL load by delivery week.
              SELECT l.driver_id,
                     COUNT(*) trips,
                     SUM(COALESCE(l.miles, 0) + COALESCE(l.empty_miles, 0)) miles,
@@ -366,16 +364,11 @@ export async function getWeeklySummary(
                FROM loads l
               WHERE l.driver_id IS NOT NULL
                 AND DATE(l.delivery_at) BETWEEN ? AND ?
-                AND (
-                      SELECT COUNT(DISTINCT dr.driver_id)
-                        FROM driver_routes dr
-                       WHERE dr.load_id = l.id
-                         AND dr.driver_id IS NOT NULL
-                    ) < 2
+                AND COALESCE(l.driver_count, 0) < 2
+                AND LOWER(TRIM(COALESCE(l.status, ''))) <> 'canceled'
               GROUP BY l.driver_id
              UNION ALL
-             -- Canceled / unassigned load: only route driver gets linehaul (+ miles).
-             -- Matches Diallo W37 sheet including 2609-00080 ($150).
+             -- Orphan solo (count=1, no load.driver): routes / cancel fees only.
              SELECT dr.driver_id,
                     COUNT(DISTINCT dr.load_id) trips,
                     SUM(
@@ -399,12 +392,11 @@ export async function getWeeklySummary(
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id IS NULL
                 AND DATE(l.delivery_at) BETWEEN ? AND ?
-                AND (
-                      SELECT COUNT(DISTINCT o.driver_id)
-                        FROM driver_routes o
-                       WHERE o.load_id = dr.load_id
-                         AND o.driver_id IS NOT NULL
-                    ) = 1
+                AND COALESCE(l.driver_count, 0) = 1
+                AND NOT (
+                  LOWER(TRIM(COALESCE(l.status, ''))) = 'canceled'
+                  AND COALESCE(dr.loaded_miles, 0) + COALESCE(dr.empty_miles, 0) > 0
+                )
               GROUP BY dr.driver_id
              UNION ALL
              SELECT dr.driver_id,
@@ -423,12 +415,7 @@ export async function getWeeklySummary(
                 AND l.driver_id <> dr.driver_id
                 AND DATE(COALESCE(dr.source_created_at, dr.source_updated_at))
                     BETWEEN ? AND ?
-                AND (
-                      SELECT COUNT(DISTINCT o.driver_id)
-                        FROM driver_routes o
-                       WHERE o.load_id = dr.load_id
-                         AND o.driver_id IS NOT NULL
-                    ) >= 2
+                AND COALESCE(l.driver_count, 0) >= 2
               GROUP BY dr.driver_id
              UNION ALL
              SELECT dr.driver_id,
@@ -441,12 +428,7 @@ export async function getWeeklySummary(
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id = dr.driver_id
                 AND DATE(l.delivery_at) BETWEEN ? AND ?
-                AND (
-                      SELECT COUNT(DISTINCT o.driver_id)
-                        FROM driver_routes o
-                       WHERE o.load_id = dr.load_id
-                         AND o.driver_id IS NOT NULL
-                    ) >= 2
+                AND COALESCE(l.driver_count, 0) >= 2
               GROUP BY dr.driver_id
            ) trip_parts
           GROUP BY driver_id

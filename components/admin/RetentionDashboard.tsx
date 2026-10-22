@@ -528,7 +528,7 @@ function SecondaryView({
     [data.drivers]
   );
 
-  const title = view === "follow-ups" ? "Follow-ups" : "Exit / Turnover";
+  const title = view === "follow-ups" ? "Follow-ups" : "Resolved";
   const rows = view === "follow-ups" ? followUps : resolved;
   const [page, setPage] = useState(1);
 

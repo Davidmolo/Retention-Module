@@ -8,7 +8,7 @@ import nextEnv from "@next/env";
 
 nextEnv.loadEnvConfig(process.cwd());
 
-const { runDetentionComplianceDigests, runDetentionWeeklySummary } = await import(
+const { runDetentionComplianceDigests, runDetentionWeeklySummary, runDetentionCustomerBilledWeekly } = await import(
   "../lib/detention/reminders.ts"
 );
 const { runDetentionFollowUpDigests } = await import(
@@ -24,5 +24,8 @@ console.log("[followUps]", JSON.stringify(followUps, null, 2));
 const weekly = await runDetentionWeeklySummary();
 console.log("[weekly]", JSON.stringify(weekly, null, 2));
 
-const ok = compliance.ok && followUps.ok && weekly.ok;
+const customers = await runDetentionCustomerBilledWeekly();
+console.log("[customers]", JSON.stringify(customers, null, 2));
+
+const ok = compliance.ok && followUps.ok && weekly.ok && customers.ok;
 process.exit(ok ? 0 : 1);

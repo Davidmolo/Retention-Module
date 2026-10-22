@@ -239,6 +239,47 @@ export async function allocateRouteRevenueForLoads(
   return updated;
 }
 
+/**
+ * Refresh loads.driver_count + helper_driver_id from driver_routes.
+ * helper = other route driver (not loads.driver_id); NULL when solo.
+ */
+export async function refreshLoadDriverCounts(
+  loadIds: number[]
+): Promise<number> {
+  const ids = [...new Set(loadIds.filter((id) => Number.isFinite(id)))];
+  if (!ids.length) return 0;
+  const pool = getPool();
+  const [res] = await pool.query<ResultSetHeader>(
+    `UPDATE loads l
+        SET driver_count = (
+              SELECT COUNT(DISTINCT dr.driver_id)
+                FROM driver_routes dr
+               WHERE dr.load_id = l.id
+                 AND dr.driver_id IS NOT NULL
+            ),
+            helper_driver_id = CASE
+              WHEN (
+                SELECT COUNT(DISTINCT dr.driver_id)
+                  FROM driver_routes dr
+                 WHERE dr.load_id = l.id
+                   AND dr.driver_id IS NOT NULL
+              ) < 2 THEN NULL
+              ELSE (
+                SELECT dr.driver_id
+                  FROM driver_routes dr
+                 WHERE dr.load_id = l.id
+                   AND dr.driver_id IS NOT NULL
+                   AND (l.driver_id IS NULL OR dr.driver_id <> l.driver_id)
+                 ORDER BY COALESCE(dr.loaded_miles, 0) DESC, dr.id
+                 LIMIT 1
+              )
+            END
+      WHERE l.id IN (?)`,
+    [ids]
+  );
+  return res.affectedRows;
+}
+
 export async function upsertDriverRoutes(
   routes: DriverRouteRecord[]
 ): Promise<{ stored: number; skipped: number }> {
@@ -259,9 +300,9 @@ export async function upsertDriverRoutes(
   const pool = getPool();
   try {
     const [res] = await pool.query<ResultSetHeader>(UPSERT_SQL, [rows]);
-    await allocateRouteRevenueForLoads(
-      withLoad.map((r) => Number(r.load_id))
-    );
+    const loadIds = withLoad.map((r) => Number(r.load_id));
+    await allocateRouteRevenueForLoads(loadIds);
+    await refreshLoadDriverCounts(loadIds);
     return { stored: res.affectedRows, skipped: skippedMissing };
   } catch {
     let stored = 0;
@@ -275,9 +316,9 @@ export async function upsertDriverRoutes(
         console.warn(`  skip driver_route id=${row[0]}: ${(e as Error).message}`);
       }
     }
-    await allocateRouteRevenueForLoads(
-      withLoad.map((r) => Number(r.load_id))
-    );
+    const loadIds = withLoad.map((r) => Number(r.load_id));
+    await allocateRouteRevenueForLoads(loadIds);
+    await refreshLoadDriverCounts(loadIds);
     return { stored, skipped };
   }
 }

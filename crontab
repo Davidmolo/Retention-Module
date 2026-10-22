@@ -53,6 +53,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 0 8 * * * bash /app/scripts/cron/daily-retention.sh
 
 # Detention follow-ups + compliance digests — 7:00 AM Eastern (6:00 AM Chicago, shift start).
-# Monday’s run also sends David the previous Monday–Sunday summary.
+# Monday’s run also sends David the previous Monday–Sunday summary
+# and Art the customers-by-detention-billed report for that week.
+# Each morning also emails ar@ their 48h follow-up compliance.
 # Remove any separate 3:00 AM detention-reminders line on the server or these will send twice.
 0 7 * * * bash /app/scripts/cron/detention-reminders.sh

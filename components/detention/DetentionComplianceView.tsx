@@ -14,7 +14,10 @@ import {
   Search,
   X,
 } from "lucide-react";
-import type { DetentionComplianceGroup } from "@/lib/detention/types";
+import type {
+  DetentionComplianceGroup,
+  DetentionComplianceWeek,
+} from "@/lib/detention/types";
 import {
   detentionGmailMailboxLabel,
   gmailSearchUrl,
@@ -41,14 +44,24 @@ function formatWhen(iso: string | null | undefined) {
 
 
 
-function ComplianceMark({ value }: { value: string | null | undefined }) {
+function ComplianceMark({
+  value,
+  audience = "dispatcher",
+}: {
+  value: string | null | undefined;
+  audience?: "dispatcher" | "ar";
+}) {
   if (value === "ok") {
     return (
       <span
         className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200"
-        title="Dispatcher replied within 48 hours"
+        title={
+          audience === "ar"
+            ? "ar@ emailed within 48 hours of the dispatcher or Art reply"
+            : "Dispatcher or Art replied — counted as compliance"
+        }
       >
-        <Check size={12} /> Replied ≤48h
+        <Check size={12} /> {audience === "ar" ? "AR replied ≤48h" : "Compliant"}
       </span>
     );
   }
@@ -56,7 +69,7 @@ function ComplianceMark({ value }: { value: string | null | undefined }) {
     return (
       <span
         className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 ring-1 ring-rose-200"
-        title="No dispatcher reply within 48 hours"
+        title="No dispatcher or Art reply within 48 hours"
       >
         <X size={12} /> No reply ≤48h
       </span>
@@ -76,7 +89,7 @@ function ComplianceMark({ value }: { value: string | null | undefined }) {
     return (
       <span
         className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-800 ring-1 ring-orange-200"
-        title="Dispatcher replied before, but no further reply in the last 48 hours while claim is still open"
+        title="Dispatcher or Art answered, but ar@ did not email within 48 hours"
       >
         No follow up ≤48h
       </span>
@@ -100,6 +113,9 @@ type StatusFilter = "all" | "ok" | "missed" | "pending" | "no_follow_up" | "n/a"
 
 export function DetentionComplianceView() {
   const [groups, setGroups] = useState<DetentionComplianceGroup[]>([]);
+  const [weeks, setWeeks] = useState<DetentionComplianceWeek[]>([]);
+  const [ar, setAr] = useState<DetentionComplianceGroup | null>(null);
+  const [arFilter, setArFilter] = useState<StatusFilter>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -125,6 +141,8 @@ export function DetentionComplianceView() {
         if (cancelled) return;
         const next = (json.data.groups || []) as DetentionComplianceGroup[];
         setGroups(next);
+        setWeeks((json.data.weeks || []) as DetentionComplianceWeek[]);
+        setAr((json.data.ar || null) as DetentionComplianceGroup | null);
         if (next.length) {
           setSelectedKey(next[0].dispatcher.toLowerCase());
         }
@@ -152,7 +170,6 @@ export function DetentionComplianceView() {
       if (statusFilter === "ok") return g.ok > 0;
       if (statusFilter === "missed") return g.missed > 0;
       if (statusFilter === "pending") return g.pending > 0;
-      if (statusFilter === "no_follow_up") return g.noFollowUp > 0;
       if (statusFilter === "n/a") return g.na > 0;
       return true;
     });
@@ -199,11 +216,10 @@ export function DetentionComplianceView() {
         acc.ok += g.ok;
         acc.missed += g.missed;
         acc.pending += g.pending;
-        acc.noFollowUp += g.noFollowUp || 0;
         acc.na += g.na;
         return acc;
       },
-      { total: 0, ok: 0, missed: 0, pending: 0, noFollowUp: 0, na: 0 }
+      { total: 0, ok: 0, missed: 0, pending: 0, na: 0 }
     );
   }, [groups]);
 
@@ -229,15 +245,71 @@ export function DetentionComplianceView() {
         </Link>
       </div>
 
-
+      {!loading && weeks.length ? (
+        <div className="xxii-card overflow-hidden">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold text-slate-900">
+              Weekly trajectory
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Detention emails each Monday–Sunday week. Answered means the
+              dispatcher or Art replied.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Week</th>
+                  <th className="px-4 py-2 font-medium">Received</th>
+                  <th className="px-4 py-2 font-medium">Answered</th>
+                  <th className="px-4 py-2 font-medium">Not answered</th>
+                  <th className="px-4 py-2 font-medium">Rate</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {weeks.map((w) => {
+                  const pct = w.received
+                    ? Math.round((w.answered / w.received) * 1000) / 10
+                    : 0;
+                  return (
+                    <tr key={w.key}>
+                      <td className="px-4 py-2 font-medium">{w.label}</td>
+                      <td className="px-4 py-2 tabular-nums">{w.received}</td>
+                      <td className="px-4 py-2 tabular-nums text-emerald-700">
+                        {w.answered}
+                      </td>
+                      <td className="px-4 py-2 tabular-nums text-rose-700">
+                        {w.unanswered}
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-emerald-500"
+                              style={{ width: `${Math.min(100, pct)}%` }}
+                            />
+                          </div>
+                          <span className="tabular-nums text-xs text-slate-600">
+                            {pct}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       {!loading && groups.length ? (
         <div className="grid gap-2 sm:grid-cols-5">
           {[
             { label: "Detentions", value: totals.total },
-            { label: "Replied ≤48h", value: totals.ok, tone: "good" },
+            { label: "Compliant", value: totals.ok, tone: "good" },
             { label: "Missed", value: totals.missed, tone: "risk" },
-            { label: "No follow up ≤48h", value: totals.noFollowUp, tone: "warn" },
             { label: "Pending", value: totals.pending, tone: "warn" },
             { label: "N/A", value: totals.na },
           ].map((c) => (
@@ -280,8 +352,7 @@ export function DetentionComplianceView() {
             [
               ["all", "All"],
               ["missed", "Missed"],
-              ["no_follow_up", "No follow up ≤48h"],
-              ["ok", "Replied"],
+              ["ok", "Compliant"],
               ["pending", "Pending"],
               ["n/a", "N/A"],
             ] as const
@@ -387,9 +458,6 @@ export function DetentionComplianceView() {
                         <span className="rounded bg-rose-50 px-1.5 py-0.5 text-rose-700">
                           ✗ {g.missed}
                         </span>
-                        <span className="rounded bg-orange-50 px-1.5 py-0.5 text-orange-800">
-                          NF {g.noFollowUp || 0}
-                        </span>
                         <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-800">
                           {g.pending}
                         </span>
@@ -425,8 +493,7 @@ export function DetentionComplianceView() {
                       {statusFilter !== "all"
                         ? ` (filtered: ${statusFilter})`
                         : ""}{" "}
-                      · totals ✓{selected.ok} ✗{selected.missed} no follow up
-                      ≤48h {selected.noFollowUp || 0} pending{" "}
+                      · totals ✓{selected.ok} ✗{selected.missed} pending{" "}
                       {selected.pending} N/A {selected.na}
                     </p>
                   </div>
@@ -550,7 +617,155 @@ export function DetentionComplianceView() {
           </section>
         </div>
       ) : null}
+
+      {!loading && ar ? (
+        <ArComplianceSection group={ar} filter={arFilter} onFilter={setArFilter} />
+      ) : null}
     </div>
+  );
+}
+
+function ArComplianceSection({
+  group,
+  filter,
+  onFilter,
+}: {
+  group: DetentionComplianceGroup;
+  filter: StatusFilter;
+  onFilter: (value: StatusFilter) => void;
+}) {
+  const items = group.items.filter((item) => {
+    if (filter === "all") return true;
+    return (item.dispatcherCompliance || "n/a").toLowerCase() === filter;
+  });
+  return (
+    <section className="xxii-card overflow-hidden">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-base font-semibold text-foreground">
+          Accounts Receivable compliance
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {group.dispatcherEmail}. After a dispatcher or Art replies, ar@ has 48
+          hours to email on the thread. A missing follow-up is AR, and the
+          dispatcher who answered stays compliant.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-4">
+          {[
+            { label: "On AR", value: group.total },
+            { label: "AR replied ≤48h", value: group.ok, tone: "good" },
+            { label: "No follow up ≤48h", value: group.noFollowUp, tone: "warn" },
+            { label: "Pending", value: group.pending, tone: "warn" },
+          ].map((c) => (
+            <div key={c.label} className="rounded-lg bg-slate-50 px-3 py-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                {c.label}
+              </div>
+              <div
+                className={clsx(
+                  "text-xl font-bold tabular-nums",
+                  c.tone === "good" && "text-emerald-700",
+                  c.tone === "warn" && "text-amber-700"
+                )}
+              >
+                {c.value}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {(
+            [
+              ["all", "All"],
+              ["no_follow_up", "No follow up ≤48h"],
+              ["ok", "AR replied"],
+              ["pending", "Pending"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onFilter(value)}
+              className={clsx(
+                "rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                filter === value
+                  ? "bg-[var(--xxii-brand,#1e4d9c)] text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3 font-medium">Email date</th>
+              <th className="px-4 py-3 font-medium">Customer / Load</th>
+              <th className="px-4 py-3 font-medium">Dispatcher</th>
+              <th className="px-4 py-3 font-medium">Amount</th>
+              <th className="px-4 py-3 font-medium">AR compliance</th>
+              <th className="px-4 py-3 font-medium">Team reply</th>
+              <th className="px-4 py-3 font-medium">Thread</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {items.map((item) => (
+              <tr key={item.id} className="hover:bg-slate-50/80">
+                <td className="px-4 py-3 tabular-nums text-slate-700">
+                  {formatWhen(item.emailDate)}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="font-medium text-slate-900">
+                    {item.customer || "—"}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Load {item.loadNumber || "—"}
+                    {item.shipmentNumber ? ` · Ship ${item.shipmentNumber}` : ""}
+                  </div>
+                </td>
+                <td className="px-4 py-3">{item.dispatcher || "—"}</td>
+                <td className="px-4 py-3 tabular-nums">{money(item.amount)}</td>
+                <td className="px-4 py-3">
+                  <ComplianceMark value={item.dispatcherCompliance} audience="ar" />
+                </td>
+                <td className="px-4 py-3 tabular-nums text-slate-600">
+                  {formatWhen(item.dispatcherRepliedAt)}
+                </td>
+                <td className="px-4 py-3">
+                  {gmailSearchUrl({
+                    loadNumber: item.loadNumber,
+                    shipmentNumber: item.shipmentNumber,
+                  }) ? (
+                    <a
+                      href={gmailSearchUrl({
+                        loadNumber: item.loadNumber,
+                        shipmentNumber: item.shipmentNumber,
+                      })!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
+                    >
+                      Search <ExternalLink size={12} />
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
+            ))}
+            {!items.length ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
+                  No AR items for this filter.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

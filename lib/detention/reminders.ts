@@ -5,8 +5,12 @@
  *   unanswered / compliance %). Mantas is not copied on these.
  * - Art: rollup overview of every dispatcher’s compliance (dispatchers are not
  *   on To). Mantas stays on this overview.
- * - David: one summary each Monday for the Monday–Sunday week that just ended.
- * - Art’s reply on a thread counts as answered (see replyScan).
+ * - David: one summary each Monday for the Monday–Sunday week that just ended
+ *   (emails, answered, paid, denied, pending, dispatcher compliance).
+ * - Art: that same Monday, customers by detention billed for the week.
+ * - Accounts Receivable: daily T-2 compliance. A dispatcher or Art reply with
+ *   no ar@ email inside 48h is AR no-follow-up, not the dispatcher’s.
+ * - Art’s reply on a thread counts as dispatcher compliance (see replyScan).
  */
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
@@ -173,15 +177,10 @@ function isAnswered(d: DayDetention): boolean {
   return Boolean(d.repliedAt);
 }
 
-/** Still needs attention: never answered, or no follow-up while open. */
+/** Still unanswered by the dispatcher and Art. Follow-up after an answer is AR. */
 function isAgingOpen(d: DayDetention): boolean {
   if (d.status === "Paid" || d.status === "Denied") return false;
-  if (!d.repliedAt) return true;
-  return (
-    d.compliance === "missed" ||
-    d.compliance === "no_follow_up" ||
-    d.compliance === "pending"
-  );
+  return !d.repliedAt;
 }
 
 function pct(answered: number, total: number): number {
@@ -219,8 +218,8 @@ async function loadDetentionsForDay(ymd: string): Promise<DayDetention[]> {
 }
 
 /**
- * Open detentions from before target day that are still unanswered or
- * not followed up (Mantas: keep listing until status changes).
+ * Open detentions from before target day that the dispatcher and Art
+ * still have not answered (Mantas: keep listing until status changes).
  */
 async function loadDetentionsForRange(
   startYmd: string,
@@ -257,10 +256,7 @@ async function loadAgingUnanswered(beforeYmd: string): Promise<DayDetention[]> {
        FROM detentions
       WHERE DATE(COALESCE(email_date, created_at)) < ?
         AND status NOT IN ('Paid', 'Denied')
-        AND (
-          dispatcher_replied_at IS NULL
-          OR LOWER(COALESCE(dispatcher_compliance, '')) IN ('missed', 'no_follow_up', 'pending')
-        )
+        AND dispatcher_replied_at IS NULL
       ORDER BY COALESCE(email_date, created_at) ASC
       LIMIT 500`,
     [beforeYmd]
@@ -324,11 +320,9 @@ function itemLinesHtml(
       const link = threadLink(d);
       const loadLabel = d.loadNumber || d.shipmentNumber || "—";
       const answered = isAnswered(d);
-      const statusBit = !answered
-        ? "Unanswered"
-        : d.compliance === "no_follow_up"
-          ? "No follow-up"
-          : `Answered${d.lastReplyFrom ? ` (${escapeHtml(d.lastReplyFrom)})` : ""}`;
+      const statusBit = answered
+        ? `Answered${d.lastReplyFrom ? ` (${escapeHtml(d.lastReplyFrom)})` : ""}`
+        : "Unanswered";
       const dayLabel = opts?.showEmailDay ? formatPrettyDate(d.emailDay) : "";
       const dayBit = dayLabel ? ` · ${escapeHtml(dayLabel)}` : "";
       const openLink = link
@@ -350,11 +344,7 @@ function itemLinesText(
   return items.map((d) => {
     const link = threadLink(d) || `${appUrl}/detention`;
     const loadLabel = d.loadNumber || d.shipmentNumber || "—";
-    const answered = !isAnswered(d)
-      ? "unanswered"
-      : d.compliance === "no_follow_up"
-        ? "no follow-up"
-        : "answered";
+    const answered = isAnswered(d) ? "answered" : "unanswered";
     const dayLabel = opts?.showEmailDay ? formatPrettyDate(d.emailDay) : "";
     const dayBit = dayLabel ? ` · ${dayLabel}` : "";
     return `• ${d.customer} · Load ${loadLabel} · ${d.driverName} · $${d.amount.toFixed(2)} · ${d.status}${dayBit} · ${answered} · ${link}`;
@@ -378,7 +368,7 @@ function dispatcherDigestBodies(opts: {
     agingCount > 0
       ? [
           "",
-          `Still unanswered / not followed up from earlier days (${agingCount}):`,
+          `Still unanswered from earlier days (${agingCount}):`,
           ...itemLinesText(stats.aging, appUrl, { showEmailDay: true }),
         ]
       : [];
@@ -400,12 +390,12 @@ function dispatcherDigestBodies(opts: {
     "",
     `Board: ${appUrl}/detention/compliance`,
     "",
-    "Art’s reply on a thread counts as answered. Aging items stay listed until the load status changes in the system.",
+    "Art’s reply on a thread counts as answered. If the dispatcher answered and nobody followed up within 48 hours, that miss belongs to Accounts Receivable. Aging unanswered items stay listed until the load status changes in the system.",
   ].join("\n");
 
   const agingHtml =
     agingCount > 0
-      ? `<p style="margin:18px 0 6px;font-weight:700;color:#b91c1c">Still unanswered / not followed up from earlier days (${agingCount})</p>
+      ? `<p style="margin:18px 0 6px;font-weight:700;color:#b91c1c">Still unanswered from earlier days (${agingCount})</p>
       <ul style="padding-left:18px;margin:0">${itemLinesHtml(stats.aging, appUrl, { showEmailDay: true })}</ul>`
       : "";
 
@@ -534,10 +524,167 @@ function artDigestBodies(opts: {
       </table>
       ${detailBlocks}
       <p style="margin-top:18px"><a href="${escapeHtml(appUrl)}/detention/compliance">Open compliance board</a></p>
-      <p style="color:#64748b;font-size:12px">Aging unanswered / no-follow-up items stay listed until the load status changes in the system.</p>
+      <p style="color:#64748b;font-size:12px">Aging unanswered items stay listed until the load status changes in the system. A missing follow-up after a dispatcher reply is Accounts Receivable compliance.</p>
     </div>
   `;
   return { subject, text, html };
+}
+
+type ArDigestRow = {
+  id: string;
+  customer: string;
+  dispatcher: string;
+  loadNumber: string;
+  shipmentNumber: string;
+  amount: number;
+  status: string;
+  emailDay: string;
+  arCompliance: string;
+  threadUrl: string | null;
+};
+
+function mapArRow(r: RowDataPacket): ArDigestRow {
+  return {
+    id: String(r.id),
+    customer: String(r.customer || "Customer"),
+    dispatcher: canonicalDispatcherName(
+      r.dispatcher ? String(r.dispatcher) : null
+    ),
+    loadNumber: String(r.load_number || "").replace(/^#/, ""),
+    shipmentNumber: String(r.shipment_number || "").replace(/^#/, ""),
+    amount: Number(r.amount || 0),
+    status: String(r.status || ""),
+    emailDay: toYmd(r.email_day),
+    arCompliance: String(r.ar_compliance || "").toLowerCase(),
+    threadUrl: r.thread_url ? String(r.thread_url) : null,
+  };
+}
+
+async function loadArComplianceRows(opts: {
+  day?: string;
+  beforeDay?: string;
+}): Promise<ArDigestRow[]> {
+  const pool = getPool();
+  const params: string[] = [];
+  let where = `dispatcher_replied_at IS NOT NULL`;
+  if (opts.day) {
+    where += ` AND DATE(COALESCE(email_date, created_at)) = ?`;
+    params.push(opts.day);
+  } else if (opts.beforeDay) {
+    where += ` AND DATE(COALESCE(email_date, created_at)) < ?
+      AND status NOT IN ('Paid','Denied')
+      AND LOWER(COALESCE(ar_compliance,'')) = 'no_follow_up'`;
+    params.push(opts.beforeDay);
+  }
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, customer, dispatcher, load_number, shipment_number, amount, status,
+            thread_url, ar_compliance,
+            DATE_FORMAT(DATE(COALESCE(email_date, created_at)), '%Y-%m-%d') AS email_day
+       FROM detentions
+      WHERE ${where}
+      ORDER BY COALESCE(email_date, created_at) ASC
+      LIMIT 500`,
+    params
+  );
+  return rows.map(mapArRow);
+}
+
+function arLine(row: ArDigestRow, appUrl: string): string {
+  const load = row.loadNumber || row.shipmentNumber || "—";
+  const link = threadLink({
+    id: row.id,
+    dispatcher: row.dispatcher,
+    customer: row.customer,
+    loadNumber: row.loadNumber,
+    shipmentNumber: row.shipmentNumber,
+    driverName: "",
+    amount: row.amount,
+    status: row.status,
+    emailDay: row.emailDay,
+    compliance: null,
+    threadId: null,
+    threadUrl: row.threadUrl,
+    repliedAt: null,
+    lastReplyFrom: null,
+  });
+  const label =
+    row.arCompliance === "ok"
+      ? "AR replied ≤48h"
+      : row.arCompliance === "pending"
+        ? "Waiting (48h)"
+        : "No follow up ≤48h";
+  return `• ${row.customer} · ${row.dispatcher} · Load ${load} · $${row.amount.toFixed(2)} · ${row.status} · ${label} · ${link || `${appUrl}/detention/compliance`}`;
+}
+
+/** Daily T-2 compliance for ar@ — same 48h window as dispatchers. */
+async function sendArComplianceDigest(opts: {
+  targetDate: string;
+  appUrl: string;
+}): Promise<{ ok: boolean; emailed: number; mocked: boolean; error?: string }> {
+  const to = parseEmails(env("DETENTION_AR_COMPLIANCE_TO", "ar@goxxii.com"));
+  if (!to.length) return { ok: true, emailed: 0, mocked: false };
+
+  const dayRows = await loadArComplianceRows({ day: opts.targetDate });
+  const aging = await loadArComplianceRows({ beforeDay: opts.targetDate });
+  if (!dayRows.length && !aging.length) {
+    return { ok: true, emailed: 0, mocked: false };
+  }
+
+  const okCount = dayRows.filter((r) => r.arCompliance === "ok").length;
+  const missCount = dayRows.filter((r) => r.arCompliance === "no_follow_up").length;
+  const pendingCount = dayRows.filter((r) => r.arCompliance === "pending").length;
+  const scored = okCount + missCount + pendingCount;
+  const compliancePct = scored ? pct(okCount, scored) : 0;
+  const pretty = formatPrettyDate(opts.targetDate);
+  const subject = `[XXII Detention] Accounts Receivable compliance — ${pretty} (${compliancePct}%)`;
+  const text = [
+    "Hi Accounts Receivable,",
+    "",
+    `Detention follow-up compliance for ${pretty} (48 hours).`,
+    "These are threads a dispatcher or Art already answered. If ar@ did not email within 48 hours of that answer, it is an AR no-follow-up. The dispatcher who answered stays compliant.",
+    "",
+    `Team answered: ${dayRows.length}`,
+    `AR replied ≤48h: ${okCount}`,
+    `No follow up ≤48h: ${missCount}`,
+    `Still inside 48h: ${pendingCount}`,
+    `Compliance: ${compliancePct}%`,
+    "",
+    ...(dayRows.length ? dayRows.map((r) => arLine(r, opts.appUrl)) : ["(No team answers on this day.)"]),
+    ...(aging.length
+      ? ["", `Still no AR follow-up from earlier days (${aging.length}):`, ...aging.map((r) => arLine(r, opts.appUrl))]
+      : []),
+    "",
+    `Board: ${opts.appUrl}/detention/compliance`,
+  ].join("\n");
+
+  const rowHtml = (rows: ArDigestRow[]) =>
+    rows
+      .map((r) => `<li style="margin:0 0 8px">${escapeHtml(arLine(r, opts.appUrl).replace(/^• /, ""))}</li>`)
+      .join("");
+
+  const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45">
+      <p>Hi Accounts Receivable,</p>
+      <p>Detention follow-up compliance for <strong>${escapeHtml(pretty)}</strong> (48 hours).</p>
+      <p>These are threads a dispatcher or Art already answered. If ar@ did not email within 48 hours of that answer, it is an AR no-follow-up. The dispatcher who answered stays compliant.</p>
+      <table style="border-collapse:collapse;margin:12px 0 16px">
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">Team answered</td><td style="padding:4px 0;font-weight:700">${dayRows.length}</td></tr>
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">AR replied ≤48h</td><td style="padding:4px 0;font-weight:700;color:#047857">${okCount}</td></tr>
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">No follow up ≤48h</td><td style="padding:4px 0;font-weight:700;color:#c2410c">${missCount}</td></tr>
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">Still inside 48h</td><td style="padding:4px 0;font-weight:700">${pendingCount}</td></tr>
+        <tr><td style="padding:4px 16px 4px 0;color:#64748b">Compliance</td><td style="padding:4px 0;font-weight:800">${compliancePct}%</td></tr>
+      </table>
+      ${dayRows.length ? `<ul style="padding-left:18px;margin:0">${rowHtml(dayRows)}</ul>` : `<p>No team answers on this day.</p>`}
+      ${aging.length ? `<p style="margin:18px 0 6px;font-weight:700;color:#c2410c">Still no AR follow-up from earlier days (${aging.length})</p><ul style="padding-left:18px;margin:0">${rowHtml(aging)}</ul>` : ""}
+      <p style="margin-top:18px"><a href="${escapeHtml(opts.appUrl)}/detention/compliance">Open compliance board</a></p>
+    </div>
+  `;
+
+  const send = await sendAppEmail({ to, subject, text, html });
+  if (!send.ok) {
+    return { ok: false, emailed: 0, mocked: false, error: send.error || "AR send failed" };
+  }
+  return { ok: true, emailed: 1, mocked: Boolean(send.mocked) };
 }
 
 /**
@@ -573,17 +720,19 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
 
   const items = await loadDetentionsForDay(targetDate);
   const aging = await loadAgingUnanswered(targetDate);
+  const arSend = await sendArComplianceDigest({ targetDate, appUrl });
   if (!items.length && !aging.length) {
     return {
-      ok: true,
+      ok: arSend.ok,
       targetDate,
       dueCount: 0,
       dispatcherEmails: 0,
       artEmailed: false,
-      emailed: 0,
-      mocked: false,
+      emailed: arSend.emailed,
+      mocked: arSend.mocked,
       scanChecked,
       scanErrors,
+      error: arSend.error,
     };
   }
 
@@ -640,6 +789,10 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
       errors.push(`Art: ${send.error || "send failed"}`);
     }
   }
+
+  emailed += arSend.emailed;
+  if (arSend.mocked) anyMocked = true;
+  if (!arSend.ok && arSend.error) errors.push(`AR: ${arSend.error}`);
 
   if (!emailed && errors.length) {
     return {
@@ -709,6 +862,11 @@ export async function runDetentionWeeklySummary(): Promise<{
   const fleetTotal = items.length;
   const fleetAnswered = items.filter(isAnswered).length;
   const fleetPct = fleetTotal ? pct(fleetAnswered, fleetTotal) : 0;
+  const paid = items.filter((d) => d.status === "Paid").length;
+  const denied = items.filter((d) => d.status === "Denied").length;
+  const pending = items.filter(
+    (d) => d.status !== "Paid" && d.status !== "Denied"
+  ).length;
   const startLabel = formatPrettyDate(weekStart);
   const endLabel = formatPrettyDate(weekEnd);
   const appUrl = env("NEXT_PUBLIC_APP_URL", "https://v2.goxxii.com").replace(
@@ -727,6 +885,7 @@ export async function runDetentionWeeklySummary(): Promise<{
     `Detention summary for ${startLabel} through ${endLabel}.`,
     "",
     `Fleet: ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} not answered · ${fleetPct}%`,
+    `Paid: ${paid} · Denied: ${denied} · Pending: ${pending}`,
     "",
     ...(lines.length ? lines : ["No detention emails this week."]),
     "",
@@ -750,6 +909,7 @@ export async function runDetentionWeeklySummary(): Promise<{
       <p>Hi David,</p>
       <p>Detention summary for <strong>${escapeHtml(startLabel)}</strong> through <strong>${escapeHtml(endLabel)}</strong>.</p>
       <p style="margin:12px 0"><strong>Fleet:</strong> ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} not answered · <strong>${fleetPct}%</strong></p>
+      <p style="margin:12px 0"><strong>Paid:</strong> ${paid} · <strong>Denied:</strong> ${denied} · <strong>Pending:</strong> ${pending}</p>
       ${
         groups.length
           ? `<table style="border-collapse:collapse;width:100%;max-width:720px;margin:12px 0 8px">
@@ -767,6 +927,154 @@ export async function runDetentionWeeklySummary(): Promise<{
           : `<p>No detention emails this week.</p>`
       }
       <p style="margin-top:18px"><a href="${escapeHtml(appUrl)}/detention/compliance">Open compliance board</a></p>
+    </div>
+  `;
+
+  const send = await sendAppEmail({ to, subject, text, html });
+  if (!send.ok) {
+    return {
+      ok: false,
+      skipped: false,
+      weekStart,
+      weekEnd,
+      emailed: 0,
+      mocked: false,
+      error: send.error || "send failed",
+    };
+  }
+  return {
+    ok: true,
+    skipped: false,
+    weekStart,
+    weekEnd,
+    emailed: 1,
+    mocked: Boolean(send.mocked),
+  };
+}
+
+type CustomerBilledRow = {
+  name: string;
+  detentions: number;
+  hours: number;
+  billed: number;
+  received: number;
+  rate: number;
+};
+
+/**
+ * Monday email to Art: customers by detention billed for the Monday–Sunday
+ * week that just ended. Same table as Insights → Customers by detention billed.
+ */
+export async function runDetentionCustomerBilledWeekly(): Promise<{
+  ok: boolean;
+  skipped: boolean;
+  weekStart: string;
+  weekEnd: string;
+  emailed: number;
+  mocked: boolean;
+  error?: string;
+}> {
+  const today = ymdInTz(new Date());
+  const weekEnd = addDaysYmd(today, -1);
+  const weekStart = addDaysYmd(today, -7);
+  const force = env("DETENTION_WEEKLY_SUMMARY_FORCE") === "1";
+  const empty = {
+    ok: true,
+    skipped: true,
+    weekStart,
+    weekEnd,
+    emailed: 0,
+    mocked: false,
+  };
+  if (!force && weekdayInTz(new Date()) !== "Monday") return empty;
+
+  const to = parseEmails(
+    env("DETENTION_CUSTOMER_BILLED_TO", env("DETENTION_REMINDER_ART_TO", "Art@goxxii.com"))
+  );
+  if (!to.length) {
+    return { ...empty, skipped: false, ok: false, error: "No Art recipient" };
+  }
+
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COALESCE(NULLIF(TRIM(customer), ''), 'Unknown') AS name,
+            COUNT(*) AS cnt,
+            SUM(COALESCE(detention_mins, 0)) AS mins,
+            SUM(COALESCE(amount, 0)) AS billed,
+            SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END) AS received
+       FROM detentions
+      WHERE DATE(COALESCE(email_date, created_at)) BETWEEN ? AND ?
+      GROUP BY COALESCE(NULLIF(TRIM(customer), ''), 'Unknown')
+      ORDER BY billed DESC`,
+    [weekStart, weekEnd]
+  );
+  const customers: CustomerBilledRow[] = rows.map((r) => {
+    const billed = Math.round(Number(r.billed || 0) * 100) / 100;
+    const received = Math.round(Number(r.received || 0) * 100) / 100;
+    return {
+      name: String(r.name || "Unknown"),
+      detentions: Number(r.cnt || 0),
+      hours: Math.round((Number(r.mins || 0) / 60) * 10) / 10,
+      billed,
+      received,
+      rate: billed > 0 ? Math.round((received / billed) * 1000) / 10 : 0,
+    };
+  });
+
+  const startLabel = formatPrettyDate(weekStart);
+  const endLabel = formatPrettyDate(weekEnd);
+  const appUrl = env("NEXT_PUBLIC_APP_URL", "https://v2.goxxii.com").replace(/\/$/, "");
+  const money = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  const subject = `[XXII Detention] Customers by detention billed — ${startLabel} to ${endLabel}`;
+  const lines = customers.map(
+    (c) =>
+      `• ${c.name}: ${c.detentions} detentions · ${c.hours} hours · billed ${money(c.billed)} · received ${money(c.received)} · ${c.rate}%`
+  );
+  const text = [
+    "Hi Art,",
+    "",
+    `Customers by detention billed for ${startLabel} through ${endLabel}.`,
+    "",
+    ...(lines.length ? lines : ["No detentions billed this week."]),
+    "",
+    `Board: ${appUrl}/detention`,
+  ].join("\n");
+
+  const tableRows = customers
+    .map(
+      (c) => `<tr>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">${escapeHtml(c.name)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${c.detentions}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${c.hours}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${escapeHtml(money(c.billed))}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${escapeHtml(money(c.received))}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700">${c.rate}%</td>
+      </tr>`
+    )
+    .join("");
+  const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45">
+      <p>Hi Art,</p>
+      <p>Customers by detention billed for <strong>${escapeHtml(startLabel)}</strong> through <strong>${escapeHtml(endLabel)}</strong>.</p>
+      ${
+        customers.length
+          ? `<table style="border-collapse:collapse;width:100%;max-width:760px;margin:12px 0 8px">
+        <thead>
+          <tr style="background:#f8fafc;text-align:left">
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0">Name</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Detentions</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Hours</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Billed</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Received</th>
+            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Rate</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>`
+          : `<p>No detentions billed this week.</p>`
+      }
+      <p style="margin-top:18px"><a href="${escapeHtml(appUrl)}/detention">Open detention board</a></p>
     </div>
   `;
 

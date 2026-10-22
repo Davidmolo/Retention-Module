@@ -1,12 +1,20 @@
 import { fail, ok } from "@/lib/http";
-import { getDetentionComplianceByDispatcher } from "@/lib/detention/summary";
+import {
+  getArComplianceGroup,
+  getDetentionComplianceByDispatcher,
+  getDetentionComplianceTrajectory,
+} from "@/lib/detention/summary";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const groups = await getDetentionComplianceByDispatcher();
-    return ok({ groups });
+    const [groups, ar, weeks] = await Promise.all([
+      getDetentionComplianceByDispatcher(),
+      getArComplianceGroup(),
+      getDetentionComplianceTrajectory(),
+    ]);
+    return ok({ groups, ar, weeks });
   } catch (error) {
     return fail(error);
   }

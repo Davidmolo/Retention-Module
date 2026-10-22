@@ -1,6 +1,10 @@
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
-import { resolveDispatcherCompliance } from "@/lib/detention/compliance";
+import {
+  isArMailbox,
+  resolveArCompliance,
+  resolveDispatcherCompliance,
+} from "@/lib/detention/compliance";
 import {
   canonicalDispatcherName,
   dispatcherMatchKeys,
@@ -10,6 +14,7 @@ import { weekOf, weekRange } from "@/lib/week";
 import type {
   DetentionComplianceGroup,
   DetentionComplianceItem,
+  DetentionComplianceWeek,
   DetentionDispatcherSummary,
   DetentionPeriodSummary,
 } from "@/lib/detention/types";
@@ -382,14 +387,9 @@ export async function getDetentionComplianceByDispatcher(): Promise<
     if (!hadEmailOnRow && dispatcherEmail) {
       emailBackfill.push({ id: String(r.id), email: dispatcherEmail });
     }
-    if (storedRaw === "n/a" && compliance !== "n/a") {
-      clearNa.push({ id: String(r.id), compliance });
-    }
-    // Paid/Denied stuck on no_follow_up — sync stored badge with live rules.
     if (
-      storedRaw === "no_follow_up" &&
-      compliance !== "no_follow_up" &&
-      (String(r.status || "") === "Paid" || String(r.status || "") === "Denied")
+      (storedRaw === "n/a" || storedRaw === "no_follow_up") &&
+      compliance !== storedRaw
     ) {
       clearNa.push({ id: String(r.id), compliance });
     }
@@ -434,7 +434,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
           `UPDATE detentions
               SET dispatcher_compliance = ?,
                   dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)
-            WHERE id = ? AND dispatcher_compliance = 'n/a'`,
+            WHERE id = ? AND dispatcher_compliance IN ('n/a', 'no_follow_up')`,
           [c.compliance, c.id]
         );
       }
@@ -454,4 +454,154 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   return [...groups.values()].sort((a, b) =>
     a.dispatcher.localeCompare(b.dispatcher)
   );
+}
+
+function mondayOfYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const day = dt.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  dt.setUTCDate(dt.getUTCDate() + diff);
+  return dt.toISOString().slice(0, 10);
+}
+
+function addDaysYmd(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().slice(0, 10);
+}
+
+function shortRange(start: string, end: string): string {
+  const fmt = (ymd: string) => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  };
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
+/** Monday–Sunday counts of detention emails, answered vs not. */
+export async function getDetentionComplianceTrajectory(
+  limit = 12
+): Promise<DetentionComplianceWeek[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT
+       DATE_FORMAT(DATE(COALESCE(email_date, created_at)), '%Y-%m-%d') AS email_day,
+       dispatcher_replied_at
+     FROM detentions
+     WHERE COALESCE(email_date, created_at) IS NOT NULL`
+  );
+
+  const map = new Map<
+    string,
+    { received: number; answered: number }
+  >();
+  for (const r of rows) {
+    const day = String(r.email_day || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    const start = mondayOfYmd(day);
+    let acc = map.get(start);
+    if (!acc) {
+      acc = { received: 0, answered: 0 };
+      map.set(start, acc);
+    }
+    acc.received += 1;
+    if (r.dispatcher_replied_at) acc.answered += 1;
+  }
+
+  return [...map.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .slice(0, limit)
+    .map(([start, acc]) => {
+      const end = addDaysYmd(start, 6);
+      return {
+        key: start,
+        label: shortRange(start, end),
+        start,
+        end,
+        received: acc.received,
+        answered: acc.answered,
+        unanswered: acc.received - acc.answered,
+      };
+    });
+}
+
+/**
+ * AR compliance for threads a dispatcher or Art already answered.
+ * Missing ar@ mail inside 48h of that answer is no follow-up for AR.
+ */
+export async function getArComplianceGroup(): Promise<DetentionComplianceGroup> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT
+       id, customer, load_number, shipment_number, driver_name, amount, status,
+       email_date, thread_url, dispatcher, dispatcher_email,
+       dispatcher_replied_at, last_reply_from, last_reply_at,
+       ar_replied_at, ar_compliance
+     FROM detentions
+     WHERE dispatcher_replied_at IS NOT NULL
+        OR ar_replied_at IS NOT NULL
+     ORDER BY COALESCE(email_date, created_at) DESC`
+  );
+
+  const group: DetentionComplianceGroup = {
+    dispatcher: "Accounts Receivable",
+    dispatcherEmail: "ar@goxxii.com",
+    total: 0,
+    ok: 0,
+    missed: 0,
+    pending: 0,
+    noFollowUp: 0,
+    na: 0,
+    items: [],
+  };
+
+  for (const r of rows) {
+    const teamRepliedAt = r.dispatcher_replied_at
+      ? new Date(r.dispatcher_replied_at)
+      : null;
+    let arRepliedAt = r.ar_replied_at ? new Date(r.ar_replied_at) : null;
+    if (
+      !arRepliedAt &&
+      isArMailbox(r.last_reply_from ? String(r.last_reply_from) : null) &&
+      r.last_reply_at
+    ) {
+      arRepliedAt = new Date(r.last_reply_at);
+    }
+    const compliance = resolveArCompliance({
+      status: String(r.status || ""),
+      teamRepliedAt,
+      arRepliedAt,
+    });
+    if (compliance === "n/a") continue;
+
+    const item: DetentionComplianceItem = {
+      id: String(r.id),
+      customer: r.customer ? String(r.customer) : null,
+      loadNumber: r.load_number ? String(r.load_number) : null,
+      shipmentNumber: r.shipment_number ? String(r.shipment_number) : null,
+      driverName: r.driver_name ? String(r.driver_name) : null,
+      amount: r.amount == null ? null : Number(r.amount),
+      status: String(r.status || ""),
+      emailDate: r.email_date ? new Date(r.email_date).toISOString() : null,
+      threadUrl: r.thread_url ? String(r.thread_url) : null,
+      dispatcher: r.dispatcher ? String(r.dispatcher) : null,
+      dispatcherEmail: r.dispatcher_email ? String(r.dispatcher_email) : null,
+      dispatcherRepliedAt: teamRepliedAt ? teamRepliedAt.toISOString() : null,
+      dispatcherCompliance: compliance,
+    };
+    group.items.push(item);
+    group.total += 1;
+    if (compliance === "ok") group.ok += 1;
+    else if (compliance === "pending") group.pending += 1;
+    else if (compliance === "no_follow_up") group.noFollowUp += 1;
+    else if (compliance === "missed") group.missed += 1;
+    else group.na += 1;
+  }
+
+  return group;
 }

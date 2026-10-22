@@ -406,7 +406,7 @@ export function DetentionBoard() {
           <KpiCard
             title="Paid"
             value={String(kpis.paid)}
-            hint={`Collected ${money(kpis.paidAmount ?? 0)}`}
+            hint={`Collected ${money(kpis.paidAmount ?? 0)} · ${kpis.paidRate ?? 0}% paid`}
             tone="good"
             active={status === "Paid" && !awaitingOnly && !followUpOnly}
             onClick={() =>

@@ -10,7 +10,9 @@ const USERS_URL = process.env.OPENROAD_USERS_URL;
 export interface TmsUserRecord {
   id?: number;
   name?: string | null;
+  first_name?: string | null;
   lastname?: string | null;
+  last_name?: string | null;
   type?: string | null;
   status?: string | null;
   email?: string | null;
@@ -44,8 +46,8 @@ const UPSERT_SQL =
 function rowOf(u: TmsUserRecord): unknown[] {
   return [
     u.id,
-    u.name ?? null,
-    u.lastname ?? null,
+    u.first_name ?? u.name ?? null,
+    u.last_name ?? u.lastname ?? null,
     u.type ?? null,
     u.status ?? null,
     u.email ?? null,
