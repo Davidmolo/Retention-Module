@@ -178,7 +178,12 @@ async function loadDriverMeta(
     `SELECT
        d.id,
        NULLIF(TRIM(CONCAT_WS(' ', d.first_name, d.last_name)), '') AS name,
-       NULLIF(TRIM(CONCAT_WS(' ', mgr.first_name, mgr.last_name)), '') AS dispatcher
+       CASE
+         WHEN LOWER(TRIM(COALESCE(mgr.status, ''))) IN (
+           'inactive', 'terminated', 'disabled', 'suspended', 'deleted', 'removed', 'archived'
+         ) THEN NULL
+         ELSE NULLIF(TRIM(CONCAT_WS(' ', mgr.first_name, mgr.last_name)), '')
+       END AS dispatcher
      FROM drivers d
      LEFT JOIN tms_users mgr ON mgr.id = d.manager_id
      WHERE d.id IN (${driverIds.map(() => "?").join(",")})`,

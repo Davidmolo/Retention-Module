@@ -13,6 +13,7 @@ import {
   Inbox,
   MapPin,
   RefreshCw,
+  Plus,
   Search,
 } from "lucide-react";
 import type {
@@ -22,7 +23,7 @@ import type {
   DetentionNote,
   DetentionStatus,
 } from "@/lib/detention/types";
-import { DETENTION_STATUSES } from "@/lib/detention/types";
+import { ManualDetentionDialog } from "@/components/detention/ManualDetentionDialog";
 import {
   gmailSearchUrl,
   normalizeGmailThreadUrl,
@@ -189,6 +190,7 @@ export function DetentionBoard() {
   const [pipelineItems, setPipelineItems] = useState<DetentionListItem[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const applyKpiFilter = useCallback((next: KpiFilter) => {
     // KPI sections are exclusive — switching always clears the others.
@@ -362,6 +364,14 @@ export function DetentionBoard() {
             Track detention claims from OpenRoad — status, amounts, and follow-ups.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--xxii-brand,#1e4d9c)] px-4 text-sm font-semibold text-white"
+        >
+          <Plus size={16} />
+          Add detention
+        </button>
       </div>
 
       {kpis ? (
@@ -1253,6 +1263,17 @@ function DetentionDetailDrawer({
           ) : null}
         </div>
       </aside>
+      {addOpen ? (
+        <ManualDetentionDialog
+          dispatchers={dispatchers}
+          onClose={() => setAddOpen(false)}
+          onCreated={async (id) => {
+            setAddOpen(false);
+            await load();
+            setSelectedId(id);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

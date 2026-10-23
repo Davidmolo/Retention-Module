@@ -74,7 +74,12 @@ const DRIVER_SELECT = `
     ${HIRE_DATE_SQL} AS hireDate,
     DATE_FORMAT(d.dob, '%Y-%m-%d') AS birthDate,
     DATE_FORMAT(d.date_removed, '%Y-%m-%d') AS dateRemoved,
-    NULLIF(TRIM(CONCAT_WS(' ', mgr.first_name, mgr.last_name)), '') AS dispatcher,
+    CASE
+      WHEN LOWER(TRIM(COALESCE(mgr.status, ''))) IN (
+        'inactive', 'terminated', 'disabled', 'suspended', 'deleted', 'removed', 'archived'
+      ) THEN NULL
+      ELSE NULLIF(TRIM(CONCAT_WS(' ', mgr.first_name, mgr.last_name)), '')
+    END AS dispatcher,
     c.loaded_mile_rate AS cpm
   FROM drivers d
   LEFT JOIN compensations c ON c.id = d.compensation_id

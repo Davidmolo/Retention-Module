@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import {
@@ -933,6 +934,105 @@ export async function upsertDetention(
       updatedAt,
     ]
   );
+}
+
+function parseDetentionMinutes(raw: string): number | null {
+  const text = raw.trim().toLowerCase();
+  if (!text) return null;
+  const clock = text.match(/^(\d{1,3}):(\d{2})$/);
+  if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
+  const hours = text.match(/^(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours)$/);
+  if (hours) return Math.round(Number(hours[1]) * 60);
+  const mins = text.match(/^(\d+(?:\.\d+)?)\s*(m|min|mins|minute|minutes)$/);
+  if (mins) return Math.round(Number(mins[1]));
+  if (/^\d+$/.test(text)) return Number(text);
+  return null;
+}
+
+export async function createManualDetention(input: {
+  customer: string;
+  dispatcher: string;
+  loadNumber: string;
+  driverName: string;
+  puLocation?: string | null;
+  puAppt?: string | null;
+  delLocation?: string | null;
+  emailDate: string;
+  timeLabel?: string | null;
+  amount: number;
+  actor?: string | null;
+}): Promise<Detention> {
+  const customer = input.customer.trim();
+  const dispatcherName = input.dispatcher.trim();
+  const loadNumber = input.loadNumber.trim().replace(/^#/, "");
+  const driverName = input.driverName.trim();
+  const emailDate = input.emailDate.trim();
+  if (!customer || !dispatcherName || !loadNumber || !driverName) {
+    const err = new Error("Customer, dispatcher, load number, and driver are required");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(emailDate)) {
+    const err = new Error("Email date must be YYYY-MM-DD");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+  if (!Number.isFinite(input.amount) || input.amount < 0) {
+    const err = new Error("Amount must be a number");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+
+  const timeLabel = input.timeLabel?.trim() || null;
+  const mins = timeLabel ? parseDetentionMinutes(timeLabel) : null;
+  const amount = Math.round(input.amount * 100) / 100;
+  const actor = input.actor?.trim() || "user";
+  const id = nanoid(16);
+  const history: DetentionHistoryEvent[] = [
+    {
+      type: "create",
+      timestamp: new Date().toISOString(),
+      user: actor,
+      text: "Added manually",
+    },
+  ];
+
+  await upsertDetention({
+    id,
+    customer,
+    dispatcher: dispatcherName,
+    loadNumber,
+    driverName,
+    puLocation: input.puLocation?.trim() || null,
+    puAppt: input.puAppt?.trim() || null,
+    delLocation: input.delLocation?.trim() || null,
+    detentionMins: mins,
+    detentionTimeLabel: timeLabel,
+    amount,
+    billableAmount: amount,
+    status: "New",
+    awaitingUs: true,
+    emailDate: `${emailDate} 12:00:00`,
+    history,
+    source: "manual",
+  });
+
+  const pool = getPool();
+  await pool.query(
+    `UPDATE detentions
+        SET dispatcher_compliance = 'n/a',
+            dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)
+      WHERE id = ?`,
+    [id]
+  );
+
+  const created = await getDetention(id);
+  if (!created) {
+    const err = new Error("Detention was not saved");
+    (err as Error & { status?: number }).status = 500;
+    throw err;
+  }
+  return created;
 }
 
 export { DETENTION_STATUSES };

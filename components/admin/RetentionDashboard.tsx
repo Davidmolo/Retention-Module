@@ -436,7 +436,6 @@ function DriverListPanel({
                       </span>
                       <span className="text-xs text-[var(--xxii-muted)]">
                         {d.dispatcher}
-                        {d.nonResponse ? " · Non-response" : ""}
                         {d.repeatedLowRatings ? " · Repeated low" : ""}
                       </span>
                     </span>
