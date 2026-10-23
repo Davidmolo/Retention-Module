@@ -16,12 +16,13 @@ import {
   Plus,
   Search,
 } from "lucide-react";
-import type {
-  DetentionAnalytics,
-  DetentionKpis,
-  DetentionListItem,
-  DetentionNote,
-  DetentionStatus,
+import {
+  DETENTION_STATUSES,
+  type DetentionAnalytics,
+  type DetentionKpis,
+  type DetentionListItem,
+  type DetentionNote,
+  type DetentionStatus,
 } from "@/lib/detention/types";
 import { ManualDetentionDialog } from "@/components/detention/ManualDetentionDialog";
 import {
