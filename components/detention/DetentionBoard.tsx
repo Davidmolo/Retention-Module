@@ -818,6 +818,17 @@ export function DetentionBoard() {
           onChanged={() => void load()}
         />
       ) : null}
+      {addOpen ? (
+        <ManualDetentionDialog
+          dispatchers={dispatchers}
+          onClose={() => setAddOpen(false)}
+          onCreated={async (id) => {
+            setAddOpen(false);
+            await load();
+            setSelectedId(id);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1264,17 +1275,6 @@ function DetentionDetailDrawer({
           ) : null}
         </div>
       </aside>
-      {addOpen ? (
-        <ManualDetentionDialog
-          dispatchers={dispatchers}
-          onClose={() => setAddOpen(false)}
-          onCreated={async (id) => {
-            setAddOpen(false);
-            await load();
-            setSelectedId(id);
-          }}
-        />
-      ) : null}
     </div>
   );
 }
