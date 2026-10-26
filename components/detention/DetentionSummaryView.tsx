@@ -20,6 +20,7 @@ import clsx from "clsx";
 import {
   DETENTION_STATUSES,
   type DetentionDispatcherSummary,
+  type DetentionPartyRow,
   type DetentionPeriodSummary,
 } from "@/lib/detention/types";
 import { SkeletonSummaryCards } from "@/components/ui/skeleton";
@@ -288,6 +289,7 @@ function SummaryTable({
 type DispatcherSortKey =
   | "dispatcher"
   | "submitted"
+  | "approved"
   | "submittedAmount"
   | "paid"
   | "collectedAmount"
@@ -340,7 +342,9 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
             By dispatcher
           </h2>
           <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
-            Claims received and collected by dispatcher. Click a column to sort.
+            Submitted is every claim received. Detention Approved leaves out
+            Denied — those are not real detentions. The rate uses approved
+            dollars only.
           </p>
         </div>
         {rows.length ? (
@@ -366,15 +370,16 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
         </div>
       ) : (
         <div className="max-h-[min(60vh,560px)] overflow-auto">
-          <table className="w-full min-w-[860px] table-fixed text-left text-sm">
+          <table className="w-full min-w-[980px] table-fixed text-left text-sm">
             <colgroup>
-              <col className="w-[18%]" />
+              <col className="w-[16%]" />
+              <col className="w-[10%]" />
+              <col className="w-[14%]" />
               <col className="w-[11%]" />
+              <col className="w-[7%]" />
               <col className="w-[12%]" />
               <col className="w-[8%]" />
-              <col className="w-[13%]" />
               <col className="w-[10%]" />
-              <col className="w-[11%]" />
               <col className="w-[12%]" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
@@ -392,6 +397,15 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
                   sortKey={sortKey}
                   sortDir={sortDir}
                   onSort={onSort}
+                  title="Every claim received, including ones later denied"
+                />
+                <SortTh
+                  label="Detention Approved"
+                  col="approved"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                  title="Real detentions. Denied is excluded. This is the total the rate uses."
                 />
                 <SortTh
                   label="Submitted $"
@@ -421,7 +435,7 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
                   sortKey={sortKey}
                   sortDir={sortDir}
                   onSort={onSort}
-                  title="Collection rate"
+                  title="Collected $ divided by detention-approved $"
                 />
                 <SortTh
                   label="Still open"
@@ -452,6 +466,9 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
                     {r.submitted}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
+                    {r.approved}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
                     {money(r.submittedAmount)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
@@ -479,12 +496,59 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
   );
 }
 
+function CustomersBilledTable({ rows }: { rows: DetentionPartyRow[] }) {
+  return (
+    <div className="xxii-card overflow-hidden">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-base font-semibold text-foreground">
+          Customers by detention billed
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Name, detentions, hours, billed, received, and rate for the same
+          filters as the tables above.
+        </p>
+      </div>
+      {!rows.length ? (
+        <div className="p-6 text-sm text-muted-foreground">No data yet.</div>
+      ) : (
+        <div className="max-h-[360px] overflow-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-2 font-medium">Name</th>
+                <th className="px-4 py-2 font-medium">Detentions</th>
+                <th className="px-4 py-2 font-medium">Hours</th>
+                <th className="px-4 py-2 font-medium">Billed</th>
+                <th className="px-4 py-2 font-medium">Received</th>
+                <th className="px-4 py-2 font-medium">Rate</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r) => (
+                <tr key={r.name} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-2 font-medium">{r.name}</td>
+                  <td className="px-4 py-2 tabular-nums">{r.detentions}</td>
+                  <td className="px-4 py-2 tabular-nums">{r.hours}</td>
+                  <td className="px-4 py-2 tabular-nums">{money(r.billed)}</td>
+                  <td className="px-4 py-2 tabular-nums">{money(r.received)}</td>
+                  <td className="px-4 py-2 tabular-nums">{r.rate}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DetentionSummaryView() {
   const [weeks, setWeeks] = useState<DetentionPeriodSummary[]>([]);
   const [months, setMonths] = useState<DetentionPeriodSummary[]>([]);
   const [dispatchers, setDispatchers] = useState<DetentionDispatcherSummary[]>(
     []
   );
+  const [customers, setCustomers] = useState<DetentionPartyRow[]>([]);
   const [dispatcherOptions, setDispatcherOptions] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([...DETENTION_STATUSES]);
   const [days, setDays] = useState(90);
@@ -513,6 +577,7 @@ export function DetentionSummaryView() {
       setWeeks(json.data.weeks || []);
       setMonths(json.data.months || []);
       setDispatchers(json.data.dispatchers || []);
+      setCustomers(json.data.customers || []);
       const opts = json.data.filterOptions;
       if (opts?.dispatchers?.length) setDispatcherOptions(opts.dispatchers);
       if (opts?.statuses?.length) setStatuses(opts.statuses);
@@ -667,6 +732,7 @@ export function DetentionSummaryView() {
             currentBadge="Current month"
           />
           <DispatcherTable rows={dispatchers} />
+          <CustomersBilledTable rows={customers} />
         </>
       )}
     </div>

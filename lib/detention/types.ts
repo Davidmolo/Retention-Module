@@ -90,8 +90,15 @@ export type DetentionPeriodSummary = {
 /** Submitted vs paid track record per dispatcher (David’s reporting ask). */
 export type DetentionDispatcherSummary = {
   dispatcher: string;
+  /** Every claim received, including ones later denied. */
   submitted: number;
   submittedAmount: number;
+  /**
+   * Real detentions. Denied is not a detention (driver stayed overnight,
+   * no actual detention). Rate uses this count and its dollars.
+   */
+  approved: number;
+  approvedAmount: number;
   paid: number;
   collectedAmount: number;
   open: number;

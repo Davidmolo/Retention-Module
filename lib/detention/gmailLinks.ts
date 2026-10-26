@@ -1,11 +1,11 @@
 ﻿/**
- * Gmail deep-links for detention threads live in the shared AR mailbox
- * (usually ar@goxxii.com). Links that use /mail/u/0/ open whatever account
- * is signed in as slot 0 in the browser — often the user's personal inbox —
- * so Gmail can't find the thread and dumps them in Inbox.
+ * Gmail thread ids belong to the mailbox that ingested the detention
+ * (usually ar@). Opening that id with authuser=ar@, or with /mail/#search
+ * and no account index, sends David and other members to their own inbox.
  *
- * Prefer authuser=<mailbox> so Gmail switches to the right account when it
- * is already signed in. Always offer a search fallback by load/shipment.
+ * Search the account they are already signed into (/mail/u/0/#search/…).
+ * The detention notice is in that mailbox. The query is the OpenRoad
+ * subject plus the load and shipment numbers.
  */
 
 function mailboxEmail(): string {
@@ -46,6 +46,7 @@ export function buildGmailThreadUrl(threadId: string): string {
   return `https://mail.google.com/mail/?authuser=${auth}#all/${threadId}`;
 }
 
+/** Open this detention in the Gmail account the viewer is signed into. */
 export function gmailSearchUrl(opts: {
   loadNumber?: string | null;
   shipmentNumber?: string | null;
@@ -57,20 +58,18 @@ export function gmailSearchUrl(opts: {
   // OpenRoad subject uses shipment as "Load #NNNN"; the real load number is
   // only in the body as "Load Number: #XXXX". Phrase-searching "Load #<load>"
   // therefore misses. Search "Detention completed" + bare numbers (OR).
-  const parts: string[] = ['"Detention completed"'];
+  const parts: string[] = ["in:anywhere", '"Detention completed"'];
   const ors: string[] = [];
   if (load) ors.push(load);
   if (ship && ship !== load) {
     ors.push(ship);
-    // Subject-line form: Detention completed: Load #<shipment>
     ors.push(`"Load #${ship}"`);
   }
   if (ors.length === 1) parts.push(ors[0]);
   else parts.push(`(${ors.join(" OR ")})`);
 
-  const q = encodeURIComponent(parts.join(" "));
-  const auth = encodeURIComponent(mailboxEmail());
-  return `https://mail.google.com/mail/?authuser=${auth}#search/${q}`;
+  const q = encodeURIComponent(parts.join(" ")).replace(/%20/g, "+");
+  return `https://mail.google.com/mail/u/0/#search/${q}`;
 }
 
 export function detentionGmailMailboxLabel(): string {

@@ -327,8 +327,8 @@ export function InsightsPanel({
           {k.successRate}%
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Money by week/month/dispatcher lives on Summary. This view keeps charts
-          Art’s app has that Summary does not.
+          Money by week, month, and dispatcher, and customers by detention billed,
+          live on Summary. This view keeps the charts.
         </p>
       </div>
 
@@ -443,52 +443,6 @@ export function InsightsPanel({
         </div>
       </div>
 
-      <PartyTable
-        title="Customers by detention billed"
-        rows={analytics.byCustomer}
-      />
-    </div>
-  );
-}
-
-function PartyTable({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: DetentionAnalytics["byCustomer"];
-}) {
-  return (
-    <div className="xxii-card overflow-hidden">
-      <div className="border-b border-border px-4 py-3 text-sm font-semibold">
-        {title}
-      </div>
-      <div className="max-h-[360px] overflow-auto">
-        <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-4 py-2 font-medium">Name</th>
-              <th className="px-4 py-2 font-medium">Detentions</th>
-              <th className="px-4 py-2 font-medium">Hours</th>
-              <th className="px-4 py-2 font-medium">Billed</th>
-              <th className="px-4 py-2 font-medium">Received</th>
-              <th className="px-4 py-2 font-medium">Rate</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {rows.map((r) => (
-              <tr key={r.name} className="hover:bg-slate-50/80">
-                <td className="px-4 py-2 font-medium">{r.name}</td>
-                <td className="px-4 py-2 tabular-nums">{r.detentions}</td>
-                <td className="px-4 py-2 tabular-nums">{r.hours}</td>
-                <td className="px-4 py-2 tabular-nums">{money(r.billed)}</td>
-                <td className="px-4 py-2 tabular-nums">{money(r.received)}</td>
-                <td className="px-4 py-2 tabular-nums">{r.rate}%</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

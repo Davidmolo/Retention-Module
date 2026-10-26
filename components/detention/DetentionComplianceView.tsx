@@ -18,11 +18,7 @@ import type {
   DetentionComplianceGroup,
   DetentionComplianceWeek,
 } from "@/lib/detention/types";
-import {
-  detentionGmailMailboxLabel,
-  gmailSearchUrl,
-  normalizeGmailThreadUrl,
-} from "@/lib/detention/gmailLinks";
+import { gmailSearchUrl } from "@/lib/detention/gmailLinks";
 
 
 
@@ -234,7 +230,8 @@ export function DetentionComplianceView() {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Pick a dispatcher on the left — full detention details stay on the
-            right. Nothing is removed; this just avoids endless scrolling.
+            right. Denied claims are not real detentions, so they are left out
+            of these totals.
           </p>
         </div>
         <Link
@@ -252,8 +249,8 @@ export function DetentionComplianceView() {
               Weekly trajectory
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Detention emails each Monday–Sunday week. Answered means the
-              dispatcher or Art replied.
+            Detention emails each Monday–Sunday week. Answered means the
+            dispatcher or Art replied. Denied claims are left out.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -555,17 +552,6 @@ export function DetentionComplianceView() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex flex-col gap-1">
-                                {normalizeGmailThreadUrl(item.threadUrl) ? (
-                                  <a
-                                    href={normalizeGmailThreadUrl(item.threadUrl)!}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    title={`Opens in ${detentionGmailMailboxLabel()} — that mailbox must be signed in`}
-                                    className="inline-flex items-center gap-1 text-xs font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
-                                  >
-                                    Thread <ExternalLink size={12} />
-                                  </a>
-                                ) : null}
                                 {gmailSearchUrl({
                                   loadNumber: item.loadNumber,
                                   shipmentNumber: item.shipmentNumber,
@@ -577,18 +563,14 @@ export function DetentionComplianceView() {
                                     })!}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline"
+                                    title="Opens this detention email in the Gmail account you are signed into"
+                                    className="inline-flex items-center gap-1 text-xs font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
                                   >
-                                    Search <ExternalLink size={12} />
+                                    Thread <ExternalLink size={12} />
                                   </a>
-                                ) : null}
-                                {!normalizeGmailThreadUrl(item.threadUrl) &&
-                                !gmailSearchUrl({
-                                  loadNumber: item.loadNumber,
-                                  shipmentNumber: item.shipmentNumber,
-                                })
-                                  ? "—"
-                                  : null}
+                                ) : (
+                                  "—"
+                                )}
                               </div>
                             </td>
                           </tr>

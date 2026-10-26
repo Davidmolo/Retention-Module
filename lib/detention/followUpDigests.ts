@@ -11,6 +11,7 @@ import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import { sendAppEmail } from "@/lib/mail";
 import { canonicalDispatcherName } from "@/lib/detention/dispatcherNames";
+import { gmailSearchUrl } from "@/lib/detention/gmailLinks";
 import {
   lookupDispatcherEmail,
   runDetentionComplianceScan,
@@ -75,20 +76,12 @@ type FollowUpRow = {
   ageDays: number;
 };
 
-/**
- * Search the reader's own Gmail. ar@ thread IDs do not open in a
- * dispatcher's mailbox, and authuser=ar@ does nothing if they are not signed in.
- */
+/** Search the reader's own Gmail. ar@ thread ids open their inbox instead. */
 function threadLink(r: FollowUpRow): string | null {
-  const load = r.loadNumber.replace(/^#/, "").trim();
-  const ship = r.shipmentNumber.replace(/^#/, "").trim();
-  const terms = [...new Set([load, ship].filter(Boolean))];
-  if (!terms.length) return null;
-  const q =
-    terms.length === 1
-      ? `Detention ${terms[0]}`
-      : `Detention (${terms.join(" OR ")})`;
-  return `https://mail.google.com/mail/#search/${encodeURIComponent(q)}`;
+  return gmailSearchUrl({
+    loadNumber: r.loadNumber,
+    shipmentNumber: r.shipmentNumber,
+  });
 }
 
 function ymdFromParts(y: number, month: number, day: number): string {

@@ -1,5 +1,6 @@
 import { fail, ok } from "@/lib/http";
 import {
+  getDetentionCustomersBilled,
   getDetentionDispatcherSummary,
   getDetentionMonthlySummary,
   getDetentionWeeklySummary,
@@ -26,16 +27,19 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const filters = parseFilters(searchParams);
-    const [weeks, months, dispatchers, dispatcherOptions] = await Promise.all([
+    const [weeks, months, dispatchers, customers, dispatcherOptions] =
+      await Promise.all([
       getDetentionWeeklySummary(26, filters),
       getDetentionMonthlySummary(18, filters),
       getDetentionDispatcherSummary(filters),
+      getDetentionCustomersBilled(filters),
       listDetentionSummaryDispatchers(),
     ]);
     return ok({
       weeks,
       months,
       dispatchers,
+      customers,
       filters,
       filterOptions: {
         statuses: [...DETENTION_STATUSES],

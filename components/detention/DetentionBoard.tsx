@@ -25,10 +25,7 @@ import {
   type DetentionStatus,
 } from "@/lib/detention/types";
 import { ManualDetentionDialog } from "@/components/detention/ManualDetentionDialog";
-import {
-  gmailSearchUrl,
-  normalizeGmailThreadUrl,
-} from "@/lib/detention/gmailLinks";
+import { gmailSearchUrl } from "@/lib/detention/gmailLinks";
 import {
   DetentionViewTabs,
   InsightsPanel,
@@ -1142,9 +1139,15 @@ function DetentionDetailDrawer({
                   >
                     <Copy size={14} /> Copy for email
                   </button>
-                  {normalizeGmailThreadUrl(d.threadUrl) ? (
+                  {gmailSearchUrl({
+                    loadNumber: d.loadNumber,
+                    shipmentNumber: d.shipmentNumber,
+                  }) ? (
                     <a
-                      href={normalizeGmailThreadUrl(d.threadUrl)!}
+                      href={gmailSearchUrl({
+                        loadNumber: d.loadNumber,
+                        shipmentNumber: d.shipmentNumber,
+                      })!}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
@@ -1170,30 +1173,16 @@ function DetentionDetailDrawer({
                   >
                     Mark replied
                   </button>
-                  {gmailSearchUrl({
-                    loadNumber: d.loadNumber,
-                    shipmentNumber: d.shipmentNumber,
-                  }) ? (
-                    <a
-                      href={gmailSearchUrl({
-                        loadNumber: d.loadNumber,
-                        shipmentNumber: d.shipmentNumber,
-                      })!}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-slate-50"
-                    >
-                      Search Gmail <ExternalLink size={14} />
-                    </a>
-                  ) : null}
                 </div>
-                {(d.threadUrl || d.loadNumber) && (
+                {gmailSearchUrl({
+                  loadNumber: d.loadNumber,
+                  shipmentNumber: d.shipmentNumber,
+                }) ? (
                   <p className="text-xs text-slate-500">
-                    Threads live in{" "}
-                    <span className="font-medium">ar@goxxii.com</span>. Sign
-                    into that mailbox for Direct thread links.
+                    Opens this detention email in the Gmail account you are
+                    signed into.
                   </p>
-                )}
+                ) : null}
               </div>
 
               <section>

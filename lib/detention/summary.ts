@@ -16,6 +16,7 @@ import type {
   DetentionComplianceItem,
   DetentionComplianceWeek,
   DetentionDispatcherSummary,
+  DetentionPartyRow,
   DetentionPeriodSummary,
 } from "@/lib/detention/types";
 
@@ -241,6 +242,8 @@ export async function getDetentionDispatcherSummary(
        COALESCE(NULLIF(TRIM(dispatcher), ''), 'Unassigned') AS dispatcher_name,
        COUNT(*) AS submitted,
        COALESCE(SUM(COALESCE(amount, 0)), 0) AS submitted_amount,
+       SUM(CASE WHEN COALESCE(status, '') <> 'Denied' THEN 1 ELSE 0 END) AS approved,
+       COALESCE(SUM(CASE WHEN COALESCE(status, '') <> 'Denied' THEN COALESCE(amount, 0) ELSE 0 END), 0) AS approved_amount,
        SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count,
        COALESCE(SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END), 0) AS collected_amount,
        SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS open_count,
@@ -260,6 +263,7 @@ export async function getDetentionDispatcherSummary(
     );
     const key = dispatcher.toLowerCase();
     const submittedAmount = money(r.submitted_amount);
+    const approvedAmount = money(r.approved_amount);
     const collectedAmount = money(r.collected_amount);
     const prev = merged.get(key);
     if (!prev) {
@@ -267,6 +271,8 @@ export async function getDetentionDispatcherSummary(
         dispatcher,
         submitted: Number(r.submitted || 0),
         submittedAmount,
+        approved: Number(r.approved || 0),
+        approvedAmount,
         paid: Number(r.paid_count || 0),
         collectedAmount,
         open: Number(r.open_count || 0),
@@ -276,6 +282,8 @@ export async function getDetentionDispatcherSummary(
     } else {
       prev.submitted += Number(r.submitted || 0);
       prev.submittedAmount += submittedAmount;
+      prev.approved += Number(r.approved || 0);
+      prev.approvedAmount += approvedAmount;
       prev.paid += Number(r.paid_count || 0);
       prev.collectedAmount += collectedAmount;
       prev.open += Number(r.open_count || 0);
@@ -287,8 +295,8 @@ export async function getDetentionDispatcherSummary(
     .map((row) => ({
       ...row,
       collectionRate:
-        row.submittedAmount > 0
-          ? Math.round((row.collectedAmount / row.submittedAmount) * 1000) / 10
+        row.approvedAmount > 0
+          ? Math.round((row.collectedAmount / row.approvedAmount) * 1000) / 10
           : 0,
     }))
     .sort(
@@ -297,6 +305,38 @@ export async function getDetentionDispatcherSummary(
         b.submittedAmount - a.submittedAmount ||
         a.dispatcher.localeCompare(b.dispatcher)
     );
+}
+
+/** Same columns as the old Insights “Customers by detention billed” table. */
+export async function getDetentionCustomersBilled(
+  filters: DetentionSummaryFilters = {}
+): Promise<DetentionPartyRow[]> {
+  const pool = getPool();
+  const { whereSql, params } = buildSummaryWhere(filters);
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT COALESCE(NULLIF(TRIM(customer), ''), 'Unknown') AS name,
+            COUNT(*) AS cnt,
+            SUM(COALESCE(detention_mins, 0)) AS mins,
+            SUM(COALESCE(amount, 0)) AS billed,
+            SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END) AS received
+       FROM detentions
+      WHERE ${whereSql}
+      GROUP BY COALESCE(NULLIF(TRIM(customer), ''), 'Unknown')
+      ORDER BY billed DESC`,
+    params
+  );
+  return rows.map((r) => {
+    const billed = Math.round(money(r.billed) * 100) / 100;
+    const received = Math.round(money(r.received) * 100) / 100;
+    return {
+      name: String(r.name || "Unknown"),
+      detentions: Number(r.cnt || 0),
+      hours: Math.round((Number(r.mins || 0) / 60) * 10) / 10,
+      billed,
+      received,
+      rate: billed > 0 ? Math.round((received / billed) * 1000) / 10 : 0,
+    };
+  });
 }
 
 export async function getDetentionComplianceByDispatcher(): Promise<
@@ -339,6 +379,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   const clearNa: { id: string; compliance: string }[] = [];
 
   for (const { r, dispatcher, key } of raws) {
+    if (String(r.status || "") === "Denied") continue;
     if (!groups.has(key)) {
       groups.set(key, {
         dispatcher,
@@ -451,9 +492,9 @@ export async function getDetentionComplianceByDispatcher(): Promise<
     });
   }
 
-  return [...groups.values()].sort((a, b) =>
-    a.dispatcher.localeCompare(b.dispatcher)
-  );
+  return [...groups.values()]
+    .filter((g) => g.total > 0)
+    .sort((a, b) => a.dispatcher.localeCompare(b.dispatcher));
 }
 
 function mondayOfYmd(ymd: string): string {
@@ -493,7 +534,8 @@ export async function getDetentionComplianceTrajectory(
        DATE_FORMAT(DATE(COALESCE(email_date, created_at)), '%Y-%m-%d') AS email_day,
        dispatcher_replied_at
      FROM detentions
-     WHERE COALESCE(email_date, created_at) IS NOT NULL`
+     WHERE COALESCE(email_date, created_at) IS NOT NULL
+       AND COALESCE(status, '') <> 'Denied'`
   );
 
   const map = new Map<
@@ -561,6 +603,7 @@ export async function getArComplianceGroup(): Promise<DetentionComplianceGroup> 
   };
 
   for (const r of rows) {
+    if (String(r.status || "") === "Denied") continue;
     const teamRepliedAt = r.dispatcher_replied_at
       ? new Date(r.dispatcher_replied_at)
       : null;
