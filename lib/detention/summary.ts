@@ -294,9 +294,11 @@ export async function getDetentionDispatcherSummary(
   return [...merged.values()]
     .map((row) => ({
       ...row,
+      // Paid claims / detention approved. Cash received can be higher than
+      // the billed amount, so a dollar ratio goes over 100% with claims still open.
       collectionRate:
-        row.approvedAmount > 0
-          ? Math.round((row.collectedAmount / row.approvedAmount) * 1000) / 10
+        row.approved > 0
+          ? Math.round((row.paid / row.approved) * 1000) / 10
           : 0,
     }))
     .sort(

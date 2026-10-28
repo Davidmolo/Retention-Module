@@ -95,7 +95,7 @@ export type DetentionDispatcherSummary = {
   submittedAmount: number;
   /**
    * Real detentions. Denied is not a detention (driver stayed overnight,
-   * no actual detention). Rate uses this count and its dollars.
+   * no actual detention). Rate % is paid divided by this count.
    */
   approved: number;
   approvedAmount: number;

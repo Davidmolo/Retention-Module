@@ -343,8 +343,8 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
           </h2>
           <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
             Submitted is every claim received. Detention Approved leaves out
-            Denied — those are not real detentions. The rate uses approved
-            dollars only.
+            Denied — those are not real detentions. Rate % is paid claims
+            divided by detention approved.
           </p>
         </div>
         {rows.length ? (
@@ -435,7 +435,7 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
                   sortKey={sortKey}
                   sortDir={sortDir}
                   onSort={onSort}
-                  title="Collected $ divided by detention-approved $"
+                  title="Paid claims divided by detention approved. Denied is left out."
                 />
                 <SortTh
                   label="Still open"
