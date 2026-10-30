@@ -100,6 +100,17 @@ export const OO_DIESEL_FEE_PER_GALLON = 0.12;
 /** Wagner: $0.20/gal added on top of Relay driver total (paid). */
 export const OO_WAGNER_PER_GALLON_ADDON = 0.2;
 
+/** Named OO drivers whose R&M is $0.07/mi instead of the global OO R&M rate. */
+export const OO_RM_007_NAMES = ['Donald Smith'] as const;
+
+export function ooRmPerMileForDriver(
+  name: string | null | undefined,
+  defaultRm: number
+): number {
+  if (nameMatchesList(name, OO_RM_007_NAMES)) return 0.07;
+  return defaultRm;
+}
+
 export function ooFuelMode(name: string | null | undefined): OoFuelMode {
   if (nameMatchesList(name, OO_FUEL_RETAIL_PAID_NAMES)) return 'retail_paid';
   if (nameMatchesList(name, OO_FUEL_WAGNER_NAMES)) return 'wagner';

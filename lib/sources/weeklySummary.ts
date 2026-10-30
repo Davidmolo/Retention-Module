@@ -10,6 +10,7 @@ import {
   ownerOperatorVisibleTotals,
   OO_DIESEL_FEE_PER_GALLON,
   OO_WAGNER_PER_GALLON_ADDON,
+  ooRmPerMileForDriver,
   OWNER_OPERATOR_EXCEPTION_NAMES,
   OWNER_OPERATOR_FILTER,
   OWNER_OPERATOR_TYPES,
@@ -77,7 +78,7 @@ function expenseRatesForDriver(
     };
   }
   return {
-    rm: globals.ooRmPerMile,
+    rm: ooRmPerMileForDriver(driver.name, globals.ooRmPerMile),
     liability: globals.ooLiabilityPerMile,
     liabilityFlat: globals.ooLiabilityFlat,
     equipmentLease:
@@ -359,9 +360,20 @@ export async function getWeeklySummary(
                     COUNT(*) trips,
                     SUM(COALESCE(l.miles, 0) + COALESCE(l.empty_miles, 0)) miles,
                     SUM(COALESCE(l.miles, 0)) loadedMiles,
-                    -- Client GP sheet uses linehaul (not load.total / accessorials).
-                    SUM(COALESCE(l.linehaul_rate, l.revenue, 0)) revenue
+                    -- Linehaul is on load_financials. Detention received minus
+                    -- detention paid to the driver stays on total gross.
+                    SUM(
+                      COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
+                      + GREATEST(0, COALESCE(lf.detention_sum, 0) - COALESCE(det.paid, 0))
+                    ) revenue
                FROM loads l
+               LEFT JOIN load_financials lf ON lf.load_id = l.id
+               LEFT JOIN (
+                 SELECT load_id, driver_id, SUM(amount) paid
+                   FROM driver_accessorials
+                  WHERE LOWER(COALESCE(category, '')) LIKE '%detention%'
+                  GROUP BY load_id, driver_id
+               ) det ON det.load_id = l.id AND det.driver_id = l.driver_id
               WHERE l.driver_id IS NOT NULL
                 AND DATE(l.delivery_at) BETWEEN ? AND ?
                 AND COALESCE(l.driver_count, 0) < 2
@@ -386,9 +398,22 @@ export async function getWeeklySummary(
                         ELSE COALESCE(l.miles, 0)
                       END
                     ) loadedMiles,
-                    SUM(COALESCE(NULLIF(dr.revenue, 0), l.linehaul_rate, l.revenue, 0)) revenue
+                    SUM(
+                      COALESCE(
+                        NULLIF(dr.revenue, 0),
+                        COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
+                      )
+                      + GREATEST(0, COALESCE(lf.detention_sum, 0) - COALESCE(det.paid, 0))
+                    ) revenue
                FROM driver_routes dr
                JOIN loads l ON l.id = dr.load_id
+               LEFT JOIN load_financials lf ON lf.load_id = l.id
+               LEFT JOIN (
+                 SELECT load_id, driver_id, SUM(amount) paid
+                   FROM driver_accessorials
+                  WHERE LOWER(COALESCE(category, '')) LIKE '%detention%'
+                  GROUP BY load_id, driver_id
+               ) det ON det.load_id = l.id AND det.driver_id = dr.driver_id
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id IS NULL
                 AND DATE(l.delivery_at) BETWEEN ? AND ?
@@ -407,9 +432,18 @@ export async function getWeeklySummary(
                     -- not the full load linehaul — OpenRoad DriverRoute is per-leg.
                     -- Week by route created_at (leg planned/started), not updated_at —
                     -- updated_at often jumps when a later driver is added to the load.
-                    SUM(COALESCE(dr.revenue, l.linehaul_rate, l.revenue, 0)) revenue
+                    SUM(
+                      CASE
+                        WHEN COALESCE(dr.revenue, 0) <> 0 THEN dr.revenue
+                        WHEN COALESCE(l.miles, 0) > 0 THEN
+                          COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
+                          * COALESCE(dr.loaded_miles, 0) / l.miles
+                        ELSE 0
+                      END
+                    ) revenue
                FROM driver_routes dr
                JOIN loads l ON l.id = dr.load_id
+               LEFT JOIN load_financials lf ON lf.load_id = l.id
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id IS NOT NULL
                 AND l.driver_id <> dr.driver_id
@@ -422,9 +456,25 @@ export async function getWeeklySummary(
                     COUNT(DISTINCT dr.load_id) trips,
                     SUM(COALESCE(dr.loaded_miles, 0) + COALESCE(dr.empty_miles, 0)) miles,
                     SUM(COALESCE(dr.loaded_miles, 0)) loadedMiles,
-                    SUM(COALESCE(dr.revenue, 0)) revenue
+                    SUM(
+                      CASE
+                        WHEN COALESCE(dr.revenue, 0) <> 0 THEN dr.revenue
+                        WHEN COALESCE(l.miles, 0) > 0 THEN
+                          COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
+                          * COALESCE(dr.loaded_miles, 0) / l.miles
+                        ELSE 0
+                      END
+                      + GREATEST(0, COALESCE(lf.detention_sum, 0) - COALESCE(det.paid, 0))
+                    ) revenue
                FROM driver_routes dr
                JOIN loads l ON l.id = dr.load_id
+               LEFT JOIN load_financials lf ON lf.load_id = l.id
+               LEFT JOIN (
+                 SELECT load_id, driver_id, SUM(amount) paid
+                   FROM driver_accessorials
+                  WHERE LOWER(COALESCE(category, '')) LIKE '%detention%'
+                  GROUP BY load_id, driver_id
+               ) det ON det.load_id = l.id AND det.driver_id = dr.driver_id
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id = dr.driver_id
                 AND DATE(l.delivery_at) BETWEEN ? AND ?
@@ -456,8 +506,10 @@ export async function getWeeklySummary(
             AND DATE(COALESCE(tt.exit_date, tt.post_date)) BETWEEN ? AND ?
           GROUP BY a.driver_id
        ) p ON p.driver_id = d.id
-      WHERE d.status = 'active'
-        AND (
+      WHERE (
+          (
+            LOWER(COALESCE(d.status, '')) = 'active'
+            AND (
           f.driver_id IS NOT NULL
           OR t.driver_id IS NOT NULL
           OR p.driver_id IS NOT NULL
@@ -483,6 +535,17 @@ export async function getWeeklySummary(
               )
             )`
           ).join(' OR ')}
+            )
+          )
+          OR (
+            LOWER(COALESCE(d.status, '')) <> 'active'
+            AND (
+              f.driver_id IS NOT NULL
+              OR t.driver_id IS NOT NULL
+              OR p.driver_id IS NOT NULL
+              OR acc.driver_id IS NOT NULL
+            )
+          )
         )
       ORDER BY name`,
     [
@@ -604,11 +667,16 @@ export async function getWeeklySummary(
         : Number(r.samsaraMpg);
     const galForMpg =
       gallons > 0 ? gallons : relayGalAmt > 0 ? relayGalAmt : 0;
+    const gallonsDerivedMpg =
+      galForMpg > 0 && mileage > 0 ? mileage / galForMpg : null;
+    // Prefer Samsara MPG. Gallons-derived fallback only inside the plausible
+    // truck band — otherwise null so company fuel falls back to card spend
+    // (avoids Moreland-class inflated Fuel from mis-attributed gallons).
     const fuelMpg =
-      samsaraMpg != null && Number.isFinite(samsaraMpg) && samsaraMpg > 0
+      samsaraMpg != null && isValidFuelMpg(samsaraMpg)
         ? samsaraMpg
-        : galForMpg > 0 && mileage > 0
-          ? mileage / galForMpg
+        : isPlausibleTruckMpg(gallonsDerivedMpg)
+          ? gallonsDerivedMpg
           : null;
 
     const fuelMode = ooFuelMode(name);
@@ -781,6 +849,24 @@ export function isValidFuelMpg(v: number): boolean {
   return Number.isFinite(v) && v > 0 && v < 1000;
 }
 
+/**
+ * Class-8 / company-truck MPG band for the (miles/MPG)×PPG fuel formula.
+ * Gallons-derived MPG outside this range usually means mis-attributed fuel
+ * cards and inflates Fuel. Prefer Samsara when present; only accept the
+ * gallons fallback inside this band.
+ */
+export const PLAUSIBLE_TRUCK_MPG_MIN = 5.5;
+export const PLAUSIBLE_TRUCK_MPG_MAX = 12;
+
+export function isPlausibleTruckMpg(v: number | null | undefined): boolean {
+  return (
+    v != null &&
+    Number.isFinite(v) &&
+    v >= PLAUSIBLE_TRUCK_MPG_MIN &&
+    v <= PLAUSIBLE_TRUCK_MPG_MAX
+  );
+}
+
 /** Net P/G ($/gal) — same column precision as fuel_ppg DECIMAL(8,4)-friendly. */
 export function isValidFuelPpg(v: number): boolean {
   return Number.isFinite(v) && v >= 0 && v < 100;
@@ -934,16 +1020,21 @@ export async function getStoredWeeklySummary(
 ): Promise<WeeklySummary> {
   const { start, end } = weekRange(year, week);
   const status = (opts.status ?? 'active').trim() || 'active';
+  const allStatuses = status.toLowerCase() === 'all';
   const driverType = opts.driverType?.trim() || '';
 
   const typeFilter = driverTypeFilterSql(driverType);
-  const params: (string | number)[] = [year, week, status, ...typeFilter.params];
+  const statusSql = allStatuses
+    ? ''
+    : `AND LOWER(COALESCE(driver_status, '')) = LOWER(?)`;
+  const statusParams = allStatuses ? [] : [status];
+  const params: (string | number)[] = [year, week, ...statusParams, ...typeFilter.params];
 
   const [rows] = await getPool().query<ReportRow[]>(
     `SELECT *
        FROM gross_profit_reports
       WHERE year = ? AND week = ?
-        AND LOWER(COALESCE(driver_status, '')) = LOWER(?)
+        ${statusSql}
         ${typeFilter.sql}
       ORDER BY driver_name`,
     params
@@ -953,20 +1044,20 @@ export async function getStoredWeeklySummary(
     `SELECT DISTINCT driver_type AS driverType
        FROM gross_profit_reports
       WHERE year = ? AND week = ?
-        AND LOWER(COALESCE(driver_status, '')) = LOWER(?)
+        ${statusSql}
         AND driver_type IS NOT NULL
         AND TRIM(driver_type) <> ''
       ORDER BY driver_type`,
-    [year, week, status]
+    [year, week, ...statusParams]
   );
   // Names for OO exceptions (may still be labeled contract_driver).
   const [nameRows] = await getPool().query<RowDataPacket[]>(
     `SELECT DISTINCT driver_name AS driverName
        FROM gross_profit_reports
       WHERE year = ? AND week = ?
-        AND LOWER(COALESCE(driver_status, '')) = LOWER(?)
+        ${statusSql}
         AND driver_name IS NOT NULL`,
-    [year, week, status]
+    [year, week, ...statusParams]
   );
   let driverTypes = collapseDriverTypesForFilter(
     typeRows.map((r) => String(r.driverType)).filter(Boolean)

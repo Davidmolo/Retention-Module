@@ -3,6 +3,7 @@ import { getPool } from '../db';
 import { fetchOpenRoadJson, fetchPage } from './client';
 import { toSqlDateTime } from '../dates';
 import { weekRange } from '../week';
+import { allocateRouteRevenueForLoads } from './driverRoutes';
 
 // OpenRoad /load_financials → load_financials + driver_accessorials.
 // Docs: https://app.openroadtms.com/api-docs/ext/v1/index.html#/
@@ -34,6 +35,10 @@ interface LoadFinancialRecord {
   storage_sum?: unknown;
   misc_sum?: unknown;
   deductions_sum?: unknown;
+  linehaul_rate?: unknown;
+  fuel_surcharge?: unknown;
+  detention_sum?: unknown;
+  total?: unknown;
   created_at?: unknown;
   updated_at?: unknown;
   additional_charges?: unknown[];
@@ -50,6 +55,10 @@ const LF_COLS = [
   'storage_sum',
   'misc_sum',
   'deductions_sum',
+  'linehaul_rate',
+  'fuel_surcharge',
+  'detention_sum',
+  'total',
   'source_created_at',
   'source_updated_at',
 ];
@@ -109,6 +118,10 @@ function lfRow(r: LoadFinancialRecord): unknown[] {
     num(r.storage_sum),
     num(r.misc_sum),
     num(r.deductions_sum),
+    num(r.linehaul_rate),
+    num(r.fuel_surcharge),
+    num(r.detention_sum),
+    num(r.total),
     toSqlDateTime(r.created_at),
     toSqlDateTime(r.updated_at),
   ];
@@ -310,5 +323,8 @@ export async function syncLoadFinancialsForWeek(
       result.skipped += r.skipped;
     }
   }
+  // Route shares use linehaul. Financials are the source of that amount,
+  // and they are only known after this sync.
+  await allocateRouteRevenueForLoads(ids);
   return result;
 }

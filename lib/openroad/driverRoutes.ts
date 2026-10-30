@@ -112,9 +112,11 @@ async function revenueByLoadId(
     miles: unknown;
     revenue: unknown;
   })[]>(
-    `SELECT id, miles,
-            COALESCE(linehaul_rate, revenue, 0) AS revenue
-       FROM loads WHERE id IN (?)`,
+    `SELECT l.id, l.miles,
+            COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0) AS revenue
+       FROM loads l
+       LEFT JOIN load_financials lf ON lf.load_id = l.id
+      WHERE l.id IN (?)`,
     [loadIds]
   );
   for (const row of rows) {
@@ -153,9 +155,11 @@ export async function allocateRouteRevenueForLoads(
     miles: unknown;
     revenue: unknown;
   })[]>(
-    `SELECT id, miles,
-            COALESCE(linehaul_rate, revenue, 0) AS revenue
-       FROM loads WHERE id IN (?)`,
+    `SELECT l.id, l.miles,
+            COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0) AS revenue
+       FROM loads l
+       LEFT JOIN load_financials lf ON lf.load_id = l.id
+      WHERE l.id IN (?)`,
     [ids]
   );
   const loadMap = new Map(

@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   }
   try {
     const summary = await getStoredWeeklySummary(year, week, {
-      status: 'active',
+      status: 'all',
       driverType,
     });
     return NextResponse.json(summary);

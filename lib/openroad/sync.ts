@@ -1,6 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { getPool } from '../db';
 import { fetchDriversPage, type TmsDriver } from './client';
+import { applyDispatcherRosterRules } from './dispatcherRoster';
 import { toSqlDate as toDate, toSqlDateTime as toDateTime } from '../dates';
 
 function isOpenRoadActive(status: string | null | undefined): boolean {
@@ -134,5 +135,10 @@ export async function syncTmsDrivers(): Promise<TmsSyncResult> {
     }
     page += 1;
   }
+
+  const roster = await applyDispatcherRosterRules();
+  console.log(
+    `[openroad] roster rules: cleared Tom Simkus from ${roster.tomCleared} driver(s), Lindsay Norris updated=${roster.lindsayUpdated}`
+  );
   return result;
 }

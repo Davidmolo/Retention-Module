@@ -2,6 +2,8 @@
 // Auth: HTTP Basic (username/password from env).
 
 import dns from 'dns';
+import https from 'https';
+import { Resolver } from 'dns/promises';
 
 // Some Windows DNS resolvers flake on app.openroadtms.com (EAI_AGAIN).
 try {
@@ -95,33 +97,64 @@ export async function fetchPage(
   url.searchParams.set('per_page', String(perPage));
   if (sort) url.searchParams.set('sort', sort);
 
-  const res = await fetch(url, {
-    headers: {
-      Authorization: authHeader(),
-      Accept: 'application/json',
-      'User-Agent': 'grossprofit-sync/1.0',
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`OpenRoad fetch failed: ${res.status} ${await res.text()}`);
-  }
-  const json = await res.json();
+  const json = await openRoadGet(url.toString());
   return { items: extractArray(json), lastPage: extractLastPage(json) };
+}
+
+const dnsResolver = new Resolver();
+dnsResolver.setServers(['8.8.8.8', '1.1.1.1']);
+const ipCache = new Map<string, { ip: string; at: number }>();
+
+async function hostIp(hostname: string): Promise<string> {
+  const hit = ipCache.get(hostname);
+  if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.ip;
+  const ips = await dnsResolver.resolve4(hostname);
+  const ip = ips[0];
+  if (!ip) throw new Error(`No address for ${hostname}`);
+  ipCache.set(hostname, { ip, at: Date.now() });
+  return ip;
+}
+
+/** GET JSON. Resolves OpenRoad through public DNS because the local resolver flakes. */
+async function openRoadGet(urlString: string): Promise<unknown> {
+  const url = new URL(urlString);
+  const ip = await hostIp(url.hostname);
+  const text = await new Promise<string>((resolve, reject) => {
+    const req = https.request(
+      {
+        host: ip,
+        servername: url.hostname,
+        path: `${url.pathname}${url.search}`,
+        method: 'GET',
+        headers: {
+          Host: url.hostname,
+          Authorization: authHeader(),
+          Accept: 'application/json',
+          'User-Agent': 'grossprofit-sync/1.0',
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(chunk as Buffer));
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8');
+          if ((res.statusCode ?? 500) >= 400) {
+            reject(new Error(`OpenRoad fetch failed: ${res.statusCode} ${body.slice(0, 200)}`));
+            return;
+          }
+          resolve(body);
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+  return JSON.parse(text) as unknown;
 }
 
 /** GET one OpenRoad resource URL; returns parsed JSON body. */
 export async function fetchOpenRoadJson(url: string): Promise<unknown> {
-  const res = await fetch(url, {
-    headers: {
-      Authorization: authHeader(),
-      Accept: 'application/json',
-      'User-Agent': 'grossprofit-sync/1.0',
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`OpenRoad fetch failed: ${res.status} ${await res.text()}`);
-  }
-  return res.json();
+  return openRoadGet(url);
 }
 
 export async function fetchDriversPage(
