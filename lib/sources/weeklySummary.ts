@@ -28,6 +28,10 @@ import {
 //       driver_count < 2, assigned: FULL load, delivery week. Skip canceled.
 //       driver_count = 1 orphan: routes / cancel fees. Skip canceled haul miles.
 //       driver_count >= 2: route share. Helper uses route week; owner uses delivery week.
+//   - Multi-driver routes: ONLY the final route per driver/load, and drop any
+//       leg superseded by a later route on the same load + stop positions
+//       (OpenRoad keeps old DriverRoute rows after splits/replans; settlement
+//       shows the final miles only — Mantas Oct 30).
 //   - gross = load linehaul_rate (fallback revenue/total); matches client GP sheet
 //   - Driver's pay = compensation (mi×rate / % / flat)
 //       + OpenRoad driver_accessorials for this settlement (payroll) week
@@ -37,6 +41,34 @@ import {
 // The remaining lines mirror the Excel template's formulas/constants.
 // R&M / liability / factoring (+ OO overrides, XXII fee) come from gp_config
 // and gp_oo_driver_overrides (Configurations); hardcoded values are fallbacks.
+
+/** SQL AND-clauses: keep one final driver_routes row (alias `dr`). */
+const FINAL_ROUTE_ONLY_SQL = `
+                AND dr.id = (
+                  SELECT dr_latest.id
+                    FROM driver_routes dr_latest
+                   WHERE dr_latest.load_id = dr.load_id
+                     AND dr_latest.driver_id = dr.driver_id
+                   ORDER BY COALESCE(dr_latest.source_created_at, dr_latest.source_updated_at) DESC,
+                            dr_latest.id DESC
+                   LIMIT 1
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM driver_routes dr_newer
+                   WHERE dr_newer.load_id = dr.load_id
+                     AND dr_newer.position_from <=> dr.position_from
+                     AND dr_newer.position_to <=> dr.position_to
+                     AND (
+                       COALESCE(dr_newer.source_created_at, dr_newer.source_updated_at)
+                         > COALESCE(dr.source_created_at, dr.source_updated_at)
+                       OR (
+                         COALESCE(dr_newer.source_created_at, dr_newer.source_updated_at)
+                           <=> COALESCE(dr.source_created_at, dr.source_updated_at)
+                         AND dr_newer.id > dr.id
+                       )
+                     )
+                )`;
 
 // Shared fixed lines (same for company / contract / OO).
 const FIXED = {
@@ -422,6 +454,7 @@ export async function getWeeklySummary(
                   LOWER(TRIM(COALESCE(l.status, ''))) = 'canceled'
                   AND COALESCE(dr.loaded_miles, 0) + COALESCE(dr.empty_miles, 0) > 0
                 )
+                ${FINAL_ROUTE_ONLY_SQL}
               GROUP BY dr.driver_id
              UNION ALL
              SELECT dr.driver_id,
@@ -432,6 +465,7 @@ export async function getWeeklySummary(
                     -- not the full load linehaul — OpenRoad DriverRoute is per-leg.
                     -- Week by route created_at (leg planned/started), not updated_at —
                     -- updated_at often jumps when a later driver is added to the load.
+                    -- Final route only (no superseded OpenRoad route history).
                     SUM(
                       CASE
                         WHEN COALESCE(dr.revenue, 0) <> 0 THEN dr.revenue
@@ -450,6 +484,7 @@ export async function getWeeklySummary(
                 AND DATE(COALESCE(dr.source_created_at, dr.source_updated_at))
                     BETWEEN ? AND ?
                 AND COALESCE(l.driver_count, 0) >= 2
+                ${FINAL_ROUTE_ONLY_SQL}
               GROUP BY dr.driver_id
              UNION ALL
              SELECT dr.driver_id,
@@ -479,6 +514,7 @@ export async function getWeeklySummary(
                 AND l.driver_id = dr.driver_id
                 AND DATE(l.delivery_at) BETWEEN ? AND ?
                 AND COALESCE(l.driver_count, 0) >= 2
+                ${FINAL_ROUTE_ONLY_SQL}
               GROUP BY dr.driver_id
            ) trip_parts
           GROUP BY driver_id
