@@ -14,6 +14,7 @@ import {
   OWNER_OPERATOR_EXCEPTION_NAMES,
   OWNER_OPERATOR_FILTER,
   OWNER_OPERATOR_TYPES,
+  gpExcludeDriverNamesSql,
 } from './driverTypeGroups';
 import {
   getGpExpenseRates,
@@ -544,6 +545,7 @@ export async function getWeeklySummary(
        ) p ON p.driver_id = d.id
       WHERE (
           (
+            -- Active only (OpenRoad "terminated" → suspended; Mantas: hide them).
             LOWER(COALESCE(d.status, '')) = 'active'
             AND (
           f.driver_id IS NOT NULL
@@ -573,16 +575,8 @@ export async function getWeeklySummary(
           ).join(' OR ')}
             )
           )
-          OR (
-            LOWER(COALESCE(d.status, '')) <> 'active'
-            AND (
-              f.driver_id IS NOT NULL
-              OR t.driver_id IS NOT NULL
-              OR p.driver_id IS NOT NULL
-              OR acc.driver_id IS NOT NULL
-            )
-          )
         )
+        ${gpExcludeDriverNamesSql(`TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name))`).sql}
       ORDER BY name`,
     [
       year,
@@ -614,6 +608,9 @@ export async function getWeeklySummary(
         const parts = ex.toLowerCase().split(/\s+/);
         return [ex.toLowerCase(), parts[0], parts[parts.length - 1]];
       }),
+      ...gpExcludeDriverNamesSql(
+        `TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name))`
+      ).params,
     ]
   );
 
@@ -1060,11 +1057,18 @@ export async function getStoredWeeklySummary(
   const driverType = opts.driverType?.trim() || '';
 
   const typeFilter = driverTypeFilterSql(driverType);
+  const excludeFilter = gpExcludeDriverNamesSql('driver_name');
   const statusSql = allStatuses
     ? ''
     : `AND LOWER(COALESCE(driver_status, '')) = LOWER(?)`;
   const statusParams = allStatuses ? [] : [status];
-  const params: (string | number)[] = [year, week, ...statusParams, ...typeFilter.params];
+  const params: (string | number)[] = [
+    year,
+    week,
+    ...statusParams,
+    ...typeFilter.params,
+    ...excludeFilter.params,
+  ];
 
   const [rows] = await getPool().query<ReportRow[]>(
     `SELECT *
@@ -1072,6 +1076,7 @@ export async function getStoredWeeklySummary(
       WHERE year = ? AND week = ?
         ${statusSql}
         ${typeFilter.sql}
+        ${excludeFilter.sql}
       ORDER BY driver_name`,
     params
   );
@@ -1081,10 +1086,11 @@ export async function getStoredWeeklySummary(
        FROM gross_profit_reports
       WHERE year = ? AND week = ?
         ${statusSql}
+        ${excludeFilter.sql}
         AND driver_type IS NOT NULL
         AND TRIM(driver_type) <> ''
       ORDER BY driver_type`,
-    [year, week, ...statusParams]
+    [year, week, ...statusParams, ...excludeFilter.params]
   );
   // Names for OO exceptions (may still be labeled contract_driver).
   const [nameRows] = await getPool().query<RowDataPacket[]>(
@@ -1092,8 +1098,9 @@ export async function getStoredWeeklySummary(
        FROM gross_profit_reports
       WHERE year = ? AND week = ?
         ${statusSql}
+        ${excludeFilter.sql}
         AND driver_name IS NOT NULL`,
-    [year, week, ...statusParams]
+    [year, week, ...statusParams, ...excludeFilter.params]
   );
   let driverTypes = collapseDriverTypesForFilter(
     typeRows.map((r) => String(r.driverType)).filter(Boolean)

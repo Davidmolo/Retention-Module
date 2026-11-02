@@ -15,6 +15,12 @@ export const OWNER_OPERATOR_EXCEPTION_NAMES = [
   'Chevarres Smith',
 ] as const;
 
+/**
+ * Never show on Gross Profit (Mantas): not a company-driver GP card even if
+ * TMS status is active.
+ */
+export const GP_EXCLUDE_DRIVER_NAMES = ['Liudas Jurevicius'] as const;
+
 export function normalizeDriverTypeKey(t: string | null | undefined): string {
   return (t ?? '').trim().toLowerCase().replace(/\s+/g, '_');
 }
@@ -51,6 +57,34 @@ export function isOwnerOperator(driver: {
     isOwnerOperatorType(driver.driverType) ||
     isOwnerOperatorExceptionName(driver.name)
   );
+}
+
+/** True if this driver must never appear on the GP sheet. */
+export function isGpExcludedDriverName(name: string | null | undefined): boolean {
+  return nameMatchesList(name, GP_EXCLUDE_DRIVER_NAMES);
+}
+
+/** SQL AND fragment to drop GP-excluded names (uses `driver_name` by default). */
+export function gpExcludeDriverNamesSql(
+  nameColumn = 'driver_name'
+): { sql: string; params: string[] } {
+  if (!GP_EXCLUDE_DRIVER_NAMES.length) return { sql: '', params: [] };
+  const parts = GP_EXCLUDE_DRIVER_NAMES.map(() => {
+    return `(
+      LOWER(TRIM(${nameColumn})) = ?
+      OR LOWER(TRIM(${nameColumn})) LIKE ?
+    )`;
+  });
+  const params = GP_EXCLUDE_DRIVER_NAMES.flatMap((ex) => {
+    const tokens = ex.toLowerCase().split(/\s+/);
+    const first = tokens[0];
+    const last = tokens[tokens.length - 1];
+    return [ex.toLowerCase(), `${first} % ${last}`];
+  });
+  return {
+    sql: ` AND NOT (${parts.join(' OR ')})`,
+    params,
+  };
 }
 
 /** Match "First Last" allowing optional middle name (same token rule). */
