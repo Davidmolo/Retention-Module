@@ -1,7 +1,8 @@
 /**
  * Daily Detention emails:
- *   1) Mantas — T-2 compliance digests
- *   2) Art — follow-up digests (per dispatcher + AR submitted)
+ *   1) Dispatchers and Mantas — T-2 compliance. Art is not copied.
+ *   2) Dispatchers and accounting — follow-ups. Art is not copied.
+ *   3) Art — one combined report, Monday only.
  *   pnpm detention:reminders
  */
 import nextEnv from "@next/env";

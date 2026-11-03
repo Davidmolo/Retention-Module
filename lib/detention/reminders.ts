@@ -1,16 +1,13 @@
 /**
  * Daily Detention compliance digests (48h / T-2 calendar day).
  *
- * - Each dispatcher: only their loads from the target day (emails + answered /
- *   unanswered / compliance %). Mantas is not copied on these.
- * - Art: rollup overview of every dispatcher’s compliance (dispatchers are not
- *   on To). Mantas stays on this overview.
- * - David: one summary each Monday for the Monday–Sunday week that just ended
- *   (emails, answered, paid, denied, pending, dispatcher compliance, and
- *   Accounts Receivable follow-up on the claims the team already answered).
- * - Art: that same Monday, customers by detention billed for the week.
- * - Accounts Receivable: daily T-2 compliance. A dispatcher or Art reply with
- *   no ar@ email inside 48h is AR no-follow-up, not the dispatcher’s.
+ * - Each dispatcher: only their loads from the target day. Art is not copied.
+ * - Mantas: daily rollup of every dispatcher’s compliance. Art is not on it.
+ * - David: one summary each Monday for the Monday–Sunday week that just ended.
+ *   Art is not copied.
+ * - Art: one Monday report with dispatcher follow-ups, accounting, accounts
+ *   receivable, the week summary, and customers by detention billed.
+ * - Accounts Receivable: daily T-2 compliance. Art is not copied.
  * - Art’s reply on a thread counts as dispatcher compliance (see replyScan).
  */
 import type { RowDataPacket } from "mysql2";
@@ -19,8 +16,9 @@ import { sendAppEmail } from "@/lib/mail";
 import { isArMailbox, resolveArCompliance } from "@/lib/detention/compliance";
 import { canonicalDispatcherName } from "@/lib/detention/dispatcherNames";
 import { gmailSearchUrl } from "@/lib/detention/gmailLinks";
+import { artFollowUpReportParts } from "@/lib/detention/followUpDigests";
 import {
-  lookupDispatcherEmail,
+  lookupDispatcherSend,
   runDetentionComplianceScan,
 } from "@/lib/detention/replyScan";
 
@@ -33,6 +31,24 @@ function parseEmails(raw: string): string[] {
     .split(/[,;\s]+/)
     .map((e) => e.trim().toLowerCase())
     .filter((e) => e.includes("@"));
+}
+
+function artMailboxSet(): Set<string> {
+  return new Set(
+    parseEmails(
+      [
+        env("DETENTION_REMINDER_ART_TO", "art@goxxii.com"),
+        env("DETENTION_CUSTOMER_BILLED_TO", ""),
+        env("DETENTION_FOLLOWUP_CC", ""),
+        "art@goxxii.com",
+      ].join(",")
+    )
+  );
+}
+
+function withoutArt(emails: string[]): string[] {
+  const art = artMailboxSet();
+  return emails.filter((e) => !art.has(e));
 }
 
 function appTimezone(): string {
@@ -130,6 +146,7 @@ type DayDetention = {
 type DispatcherDayStats = {
   name: string;
   email: string | null;
+  suspended: string | null;
   total: number;
   answered: number;
   unanswered: number;
@@ -339,10 +356,11 @@ async function groupByDispatcher(
     const answered = list.filter(isAnswered).length;
     const total = list.length;
     const unanswered = total - answered;
-    const email = await lookupDispatcherEmail(name);
+    const box = await lookupDispatcherSend(name);
     groups.push({
       name,
-      email,
+      email: box.email,
+      suspended: box.suspended,
       total,
       answered,
       unanswered,
@@ -612,7 +630,7 @@ async function loadArComplianceRows(opts: {
 }): Promise<ArDigestRow[]> {
   const pool = getPool();
   const params: string[] = [];
-  let where = `dispatcher_replied_at IS NOT NULL`;
+  let where = `dispatcher_replied_at IS NOT NULL AND COALESCE(status, '') <> 'Denied'`;
   if (opts.day) {
     where += ` AND DATE(COALESCE(email_date, created_at)) = ?`;
     params.push(opts.day);
@@ -669,7 +687,7 @@ async function sendArComplianceDigest(opts: {
   targetDate: string;
   appUrl: string;
 }): Promise<{ ok: boolean; emailed: number; mocked: boolean; error?: string }> {
-  const to = parseEmails(env("DETENTION_AR_COMPLIANCE_TO", "ar@goxxii.com"));
+  const to = withoutArt(parseEmails(env("DETENTION_AR_COMPLIANCE_TO", "ar@goxxii.com")));
   if (!to.length) return { ok: true, emailed: 0, mocked: false };
 
   const dayRows = await loadArComplianceRows({ day: opts.targetDate });
@@ -746,12 +764,8 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
     /\/$/,
     ""
   );
-  const overviewCc = parseEmails(
-    env("DETENTION_REMINDER_CC", "mantas@goxxii.com")
-  );
-  const dispatcherCc = overviewCc.filter((e) => e !== "mantas@goxxii.com");
-  const artTo = parseEmails(
-    env("DETENTION_REMINDER_ART_TO", env("DETENTION_REMINDER_TO", "Art@goxxii.com"))
+  const overviewTo = withoutArt(
+    parseEmails(env("DETENTION_REMINDER_CC", "mantas@goxxii.com"))
   );
 
   const today = ymdInTz(new Date());
@@ -794,12 +808,18 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
   const errors: string[] = [];
 
   for (const stats of groups) {
-    if (!stats.email) continue;
+    if (!stats.email) {
+      if (stats.suspended) {
+        errors.push(
+          `${stats.name}: not emailed, ${stats.suspended} is a suspended user`
+        );
+      }
+      continue;
+    }
     if (!stats.items.length && !stats.aging.length) continue;
     const body = dispatcherDigestBodies({ stats, targetDate, appUrl });
     const send = await sendAppEmail({
       to: stats.email,
-      cc: dispatcherCc,
       subject: body.subject,
       text: body.text,
       html: body.html,
@@ -813,7 +833,7 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
     }
   }
 
-  if (artTo.length) {
+  if (overviewTo.length) {
     const body = artDigestBodies({
       groups,
       targetDate,
@@ -823,18 +843,16 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
       fleetAging,
     });
     const send = await sendAppEmail({
-      to: artTo,
-      cc: overviewCc,
+      to: overviewTo,
       subject: body.subject,
       text: body.text,
       html: body.html,
     });
     if (send.ok) {
       emailed += 1;
-      artEmailed = true;
       if (send.mocked) anyMocked = true;
     } else {
-      errors.push(`Art: ${send.error || "send failed"}`);
+      errors.push(`Mantas: ${send.error || "send failed"}`);
     }
   }
 
@@ -858,7 +876,7 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
   }
 
   return {
-    ok: true,
+    ok: !errors.some((e) => e.includes("suspended user")),
     targetDate,
     dueCount: items.length + aging.length,
     dispatcherEmails,
@@ -898,8 +916,8 @@ export async function runDetentionWeeklySummary(): Promise<{
   };
   if (!force && weekdayInTz(new Date()) !== "Monday") return empty;
 
-  const to = parseEmails(
-    env("DETENTION_WEEKLY_SUMMARY_TO", "david@goxxii.com")
+  const to = withoutArt(
+    parseEmails(env("DETENTION_WEEKLY_SUMMARY_TO", "david@goxxii.com"))
   );
   if (!to.length) {
     return { ...empty, skipped: false, ok: false, error: "No weekly summary recipient" };
@@ -1054,8 +1072,8 @@ type CustomerBilledRow = {
 };
 
 /**
- * Monday email to Art: customers by detention billed for the Monday–Sunday
- * week that just ended. Same columns as Summary → Customers by detention billed.
+ * Monday email to Art only. One report: dispatcher follow-ups, accounting,
+ * accounts receivable, the week summary, and customers by detention billed.
  */
 export async function runDetentionCustomerBilledWeekly(): Promise<{
   ok: boolean;
@@ -1096,6 +1114,7 @@ export async function runDetentionCustomerBilledWeekly(): Promise<{
             SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END) AS received
        FROM detentions
       WHERE DATE(COALESCE(email_date, created_at)) BETWEEN ? AND ?
+        AND COALESCE(status, '') <> 'Denied'
       GROUP BY COALESCE(NULLIF(TRIM(customer), ''), 'Unknown')
       ORDER BY billed DESC`,
     [weekStart, weekEnd]
@@ -1118,16 +1137,42 @@ export async function runDetentionCustomerBilledWeekly(): Promise<{
   const appUrl = env("NEXT_PUBLIC_APP_URL", "https://v2.goxxii.com").replace(/\/$/, "");
   const money = (n: number) =>
     n.toLocaleString("en-US", { style: "currency", currency: "USD" });
-  const subject = `[XXII Detention] Customers by detention billed — ${startLabel} to ${endLabel}`;
+  const items = await loadDetentionsForRange(weekStart, weekEnd);
+  const approvedItems = items.filter((d) => d.status !== "Denied");
+  const groups = (await groupByDispatcher(approvedItems, [])).filter((g) => g.total > 0);
+  const fleetTotal = approvedItems.length;
+  const fleetAnswered = approvedItems.filter(isAnswered).length;
+  const fleetPct = fleetTotal ? pct(fleetAnswered, fleetTotal) : 0;
+  const paid = items.filter((d) => d.status === "Paid").length;
+  const denied = items.filter((d) => d.status === "Denied").length;
+  const pending = items.filter((d) => d.status !== "Paid" && d.status !== "Denied").length;
+  const ar = arPerformance(approvedItems);
+  const followUps = await artFollowUpReportParts();
+  const subject = `[XXII Detention] Weekly report — ${startLabel} to ${endLabel}`;
   const lines = customers.map(
     (c) =>
       `• ${c.name}: ${c.detentions} detentions · ${c.hours} hours · billed ${money(c.billed)} · received ${money(c.received)} · ${c.rate}%`
   );
+  const dispatcherLines = groups.map(
+    (g) =>
+      `• ${g.name}: ${g.total} emails, ${g.answered} answered, ${g.unanswered} not answered — ${g.compliancePct}%`
+  );
+  const arSummary = ar.started
+    ? `Accounts Receivable: ${ar.started} claims after a dispatcher or Art reply · ${ar.onTime} on time · ${ar.noFollow} no follow-up · ${ar.waiting} still inside 48 hours · ${ar.rate}%`
+    : "Accounts Receivable: no claims this week had a dispatcher or Art reply yet.";
   const text = [
     "Hi Art,",
     "",
-    `Customers by detention billed for ${startLabel} through ${endLabel}.`,
+    `One detention report for ${startLabel} through ${endLabel}.`,
     "",
+    followUps.text,
+    "",
+    arSummary,
+    "",
+    `Week: ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetPct}% · Paid ${paid} · Denied ${denied} · Pending ${pending}`,
+    ...(dispatcherLines.length ? dispatcherLines : ["No detention emails this week."]),
+    "",
+    "Customers by detention billed",
     ...(lines.length ? lines : ["No detentions billed this week."]),
     "",
     `Board: ${appUrl}/detention`,
@@ -1145,10 +1190,39 @@ export async function runDetentionCustomerBilledWeekly(): Promise<{
       </tr>`
     )
     .join("");
+  const weekRows = groups
+    .map(
+      (g) => `<tr>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">${escapeHtml(g.name)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${g.total}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${g.answered}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${g.unanswered}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700">${g.compliancePct}%</td>
+      </tr>`
+    )
+    .join("");
   const html = `
     <div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45">
       <p>Hi Art,</p>
-      <p>Customers by detention billed for <strong>${escapeHtml(startLabel)}</strong> through <strong>${escapeHtml(endLabel)}</strong>.</p>
+      <p>One detention report for <strong>${escapeHtml(startLabel)}</strong> through <strong>${escapeHtml(endLabel)}</strong>.</p>
+      ${followUps.html}
+      <h3 style="margin:18px 0 6px">Accounts Receivable</h3>
+      <p>${escapeHtml(arSummary)}</p>
+      <h3 style="margin:18px 0 6px">Detention week</h3>
+      <p>${fleetTotal} emails · ${fleetAnswered} answered · <strong>${fleetPct}%</strong> · Paid ${paid} · Denied ${denied} · Pending ${pending}</p>
+      ${
+        groups.length
+          ? `<table style="border-collapse:collapse;width:100%;max-width:760px;margin:12px 0 8px">
+        <thead><tr style="background:#f8fafc;text-align:left">
+          <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0">Dispatcher</th>
+          <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Emails</th>
+          <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Answered</th>
+          <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Not answered</th>
+          <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Compliance</th>
+        </tr></thead><tbody>${weekRows}</tbody></table>`
+          : `<p>No detention emails this week.</p>`
+      }
+      <h3 style="margin:18px 0 6px">Customers by detention billed</h3>
       ${
         customers.length
           ? `<table style="border-collapse:collapse;width:100%;max-width:760px;margin:12px 0 8px">

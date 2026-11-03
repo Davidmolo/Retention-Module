@@ -1,11 +1,10 @@
 /**
- * Art’s detention follow-up digests (separate from Mantas T-2 compliance digests).
+ * Detention follow-up emails (separate from the T-2 compliance digests).
  *
- * 1. One email per dispatcher — only their open (non-Submitted) due loads; CC Art.
+ * 1. One email per dispatcher — only their open due loads. Art is not copied.
  * 2. Thread links for dispatch (no detention board URL).
- * 3. Submitted due items → Accounts Receivable (CC Art).
- * 4. Age label instead of raw timestamps (“30 days, since Sep 14”).
- * 5. Subject + opener + totals + rows grouped by who owes the next move.
+ * 3. Submitted due items go to accounting. Art is not copied.
+ * 4. Art gets these sections once, inside his Monday report.
  */
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
@@ -13,7 +12,7 @@ import { sendAppEmail } from "@/lib/mail";
 import { canonicalDispatcherName } from "@/lib/detention/dispatcherNames";
 import { gmailSearchUrl } from "@/lib/detention/gmailLinks";
 import {
-  lookupDispatcherEmail,
+  lookupDispatcherSend,
   runDetentionComplianceScan,
 } from "@/lib/detention/replyScan";
 
@@ -423,13 +422,57 @@ export type FollowUpDigestResult = {
   error?: string;
 };
 
-/**
- * Art’s follow-up digests: per-dispatcher open loads + AR submitted list.
- */
+/** Open dispatcher loads and submitted accounting loads, for Art’s Monday report. */
+export async function artFollowUpReportParts(): Promise<{ text: string; html: string }> {
+  const all = await loadDueFollowUps();
+  const open = all.filter((r) => r.status !== "Submitted");
+  const submitted = sortFollowUps(all.filter((r) => r.status === "Submitted"));
+  const byName = new Map<string, FollowUpRow[]>();
+  for (const row of open) {
+    const list = byName.get(row.dispatcher) || [];
+    list.push(row);
+    byName.set(row.dispatcher, list);
+  }
+  const groups = [...byName.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const text = [
+    "Dispatchers",
+    ...(groups.length
+      ? groups.flatMap(([name, rows]) => {
+          const t = totals(sortFollowUps(rows));
+          return [
+            `${name}: ${t.count} open · ${moneyExact(t.value)} · oldest ${t.oldestDays} days`,
+            ...sortFollowUps(rows).map((r) => rowText(r)),
+          ];
+        })
+      : ["No open dispatcher detentions."]),
+    "",
+    "Accounting",
+    ...(submitted.length
+      ? [
+          `${totals(submitted).count} submitted and unpaid · ${moneyExact(totals(submitted).value)}`,
+          ...submitted.map((r) => rowText(r, { showDispatcher: true })),
+        ]
+      : ["No submitted unpaid detentions."]),
+  ];
+  const groupHtml = groups
+    .map(([name, rows]) => {
+      const sorted = sortFollowUps(rows);
+      const t = totals(sorted);
+      return `<p style="margin:12px 0 4px"><strong>${escapeHtml(name)}</strong> — ${t.count} open · ${escapeHtml(moneyExact(t.value))}</p><ul style="margin:0;padding-left:18px">${sorted
+        .map((r) => `<li>${escapeHtml(rowText(r).replace(/^• /, ""))}</li>`)
+        .join("")}</ul>`;
+    })
+    .join("");
+  const acct = submitted.length
+    ? `<ul style="margin:0;padding-left:18px">${submitted
+        .map((r) => `<li>${escapeHtml(rowText(r, { showDispatcher: true }).replace(/^• /, ""))}</li>`)
+        .join("")}</ul>`
+    : `<p>No submitted unpaid detentions.</p>`;
+  const html = `<h3 style="margin:18px 0 6px">Dispatchers</h3>${groupHtml || "<p>No open dispatcher detentions.</p>"}<h3 style="margin:18px 0 6px">Accounting</h3>${acct}`;
+  return { text: text.join("\n"), html };
+}
+
 export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResult> {
-  const artCc = parseEmails(
-    env("DETENTION_FOLLOWUP_CC", env("DETENTION_REMINDER_ART_TO", "art@goxxii.com"))
-  );
   const arTo = parseEmails(
     env(
       "DETENTION_FOLLOWUP_AR_TO",
@@ -479,11 +522,16 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
   for (const [, rawRows] of byDispatcher) {
     const rows = sortFollowUps(rawRows);
     const name = rows[0].dispatcher;
-    const email = await lookupDispatcherEmail(name);
-    if (!email) {
-      errors.push(`${name}: no dispatcher email`);
+    const box = await lookupDispatcherSend(name);
+    if (!box.email) {
+      errors.push(
+        box.suspended
+          ? `${name}: not emailed, ${box.suspended} is a suspended user`
+          : `${name}: no dispatcher email`
+      );
       continue;
     }
+    const email = box.email;
 
     const t = totals(rows);
     // Split on a real reply, not awaiting_us (intake leaves that flag on).
@@ -539,7 +587,6 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
 
     const send = await sendAppEmail({
       to: email,
-      cc: artCc,
       subject,
       text,
       html,
@@ -594,7 +641,6 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
 
     const send = await sendAppEmail({
       to: arTo,
-      cc: artCc,
       subject,
       text,
       html,
@@ -621,7 +667,7 @@ export async function runDetentionFollowUpDigests(): Promise<FollowUpDigestResul
   }
 
   return {
-    ok: true,
+    ok: !errors.some((e) => e.includes("suspended user")),
     dueCount: all.length,
     dispatcherEmails,
     arEmailed,

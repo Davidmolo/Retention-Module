@@ -504,8 +504,8 @@ function CustomersBilledTable({ rows }: { rows: DetentionPartyRow[] }) {
           Customers by detention billed
         </h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Name, detentions, hours, billed, received, and rate for the same
-          filters as the tables above.
+          Name, detentions, hours, billed, received, and rate. Denied claims
+          are left out, same as Detention Approved.
         </p>
       </div>
       {!rows.length ? (

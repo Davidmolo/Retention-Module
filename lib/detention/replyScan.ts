@@ -37,73 +37,88 @@ export { artReplyEmails, arReplyEmails };
  * Tries TMS roster (all known name aliases), then email already saved on
  * other detentions for the same dispatcher (sibling backfill).
  */
-export async function lookupDispatcherEmail(
+export type DispatcherMailbox = {
+  email: string | null;
+  /** Set when the only address on file belongs to a suspended user. Do not send. */
+  suspended: string | null;
+};
+
+function mailboxFromUsers(
+  rows: { email?: string | null; status?: string | null }[]
+): DispatcherMailbox {
+  const list = rows
+    .map((r) => ({
+      email: String(r.email || "").trim().toLowerCase(),
+      status: String(r.status || "").trim().toLowerCase(),
+    }))
+    .filter((r) => r.email.includes("@"));
+  const active = list.find((r) => r.status === "active");
+  if (active) return { email: active.email, suspended: null };
+  const blocked = list.find((r) => r.status && r.status !== "active");
+  if (blocked) return { email: null, suspended: blocked.email };
+  return { email: null, suspended: null };
+}
+
+/** Active roster email only. A suspended address is returned in `suspended` and is not a send target. */
+export async function lookupDispatcherSend(
   dispatcherName: string | null
-): Promise<string | null> {
-  if (!dispatcherName?.trim()) return null;
+): Promise<DispatcherMailbox> {
+  const empty = { email: null, suspended: null };
+  if (!dispatcherName?.trim()) return empty;
   const pool = getPool();
   const keys = dispatcherMatchKeys(dispatcherName);
-  const canonical = canonicalDispatcherName(dispatcherName);
-  const nameCandidates = [
-    ...new Set([dispatcherName.trim(), canonical].filter(Boolean)),
-  ];
-
   try {
-    // Roster match on all known name forms (aliases are lowercased keys)
     if (keys.length) {
       const placeholders = keys.map(() => "?").join(",");
       const [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT email
+        `SELECT email, status
            FROM tms_users
           WHERE email IS NOT NULL AND TRIM(email) <> ''
             AND LOWER(TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,''))))
-                IN (${placeholders})
-          LIMIT 1`,
+                IN (${placeholders})`,
         keys
       );
-      const email = String(rows[0]?.email || "")
-        .trim()
-        .toLowerCase();
-      if (email.includes("@")) return email;
-    }
+      const roster = mailboxFromUsers(rows);
+      if (roster.email) return roster;
 
-    for (const name of nameCandidates) {
-      const [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT email
-           FROM tms_users
-          WHERE email IS NOT NULL AND TRIM(email) <> ''
-            AND LOWER(TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,'')))) = LOWER(?)
-          LIMIT 1`,
-        [name]
-      );
-      const email = String(rows[0]?.email || "")
-        .trim()
-        .toLowerCase();
-      if (email.includes("@")) return email;
-    }
-
-    // Same dispatcher on another detention already has an email — reuse it.
-    // Normalize trailing dots ("Alex M." → "alex m") to match alias keys.
-    if (keys.length) {
-      const placeholders = keys.map(() => "?").join(",");
       const [sib] = await pool.query<RowDataPacket[]>(
         `SELECT dispatcher_email AS email
            FROM detentions
           WHERE dispatcher_email IS NOT NULL AND TRIM(dispatcher_email) <> ''
             AND LOWER(TRIM(TRAILING '.' FROM TRIM(dispatcher))) IN (${placeholders})
           ORDER BY updated_at DESC
-          LIMIT 1`,
+          LIMIT 5`,
         keys
       );
-      const email = String(sib[0]?.email || "")
-        .trim()
-        .toLowerCase();
-      if (email.includes("@")) return email;
+      const saved = [
+        ...new Set(
+          sib
+            .map((r) => String(r.email || "").trim().toLowerCase())
+            .filter((e) => e.includes("@"))
+        ),
+      ];
+      if (saved.length) {
+        const [users] = await pool.query<RowDataPacket[]>(
+          `SELECT email, status FROM tms_users WHERE LOWER(email) IN (${saved.map(() => "?").join(",")})`,
+          saved
+        );
+        const known = mailboxFromUsers(users);
+        if (known.email) return known;
+        if (known.suspended) return known;
+        return { email: saved[0], suspended: null };
+      }
+      return roster;
     }
   } catch {
-    return null;
+    return empty;
   }
-  return null;
+  return empty;
+}
+
+export async function lookupDispatcherEmail(
+  dispatcherName: string | null
+): Promise<string | null> {
+  return (await lookupDispatcherSend(dispatcherName)).email;
 }
 
 type ThreadMsg = {
@@ -245,7 +260,8 @@ export async function runDetentionComplianceScan(opts?: {
   };
 
   const params: (string | number)[] = [];
-  let where = `thread_id IS NOT NULL AND TRIM(thread_id) <> ''`;
+  let where = `thread_id IS NOT NULL AND TRIM(thread_id) <> ''
+      AND COALESCE(status, '') <> 'Denied'`;
   if (onlyIds.length) {
     where += ` AND id IN (${onlyIds.map(() => "?").join(",")})`;
     params.push(...onlyIds);

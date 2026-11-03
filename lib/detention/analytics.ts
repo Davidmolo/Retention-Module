@@ -286,6 +286,7 @@ export async function getDetentionAnalytics(
             SUM(${RCVD}) AS received
        FROM detentions
       WHERE ${win.sql}
+        AND COALESCE(status, '') <> 'Denied'
       GROUP BY COALESCE(NULLIF(TRIM(customer), ''), 'Unknown')
       ORDER BY billed DESC
       LIMIT 25`,

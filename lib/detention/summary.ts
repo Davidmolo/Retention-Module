@@ -323,6 +323,7 @@ export async function getDetentionCustomersBilled(
             SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END) AS received
        FROM detentions
       WHERE ${whereSql}
+        AND COALESCE(status, '') <> 'Denied'
       GROUP BY COALESCE(NULLIF(TRIM(customer), ''), 'Unknown')
       ORDER BY billed DESC`,
     params
