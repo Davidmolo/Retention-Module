@@ -20,6 +20,7 @@
     "sync:fuel": "bun scripts/sync-fuel.mjs",
     "sync:fuel:daemon": "bun scripts/sync-fuel-daemon.mjs",
     "sync:relay-fuel": "bun scripts/sync-relay-fuel.mjs",
+    "sync:openroad-fuel": "bun scripts/sync-openroad-fuel.mjs",
     "sync:tolls": "node --import tsx scripts/sync-tolls.mjs",
     "sync:tms-drivers": "node --import tsx scripts/sync-tms-drivers.mjs",
     "sync:tms-users": "node --import tsx scripts/sync-tms-users.mjs",

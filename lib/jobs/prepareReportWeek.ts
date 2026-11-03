@@ -4,6 +4,8 @@ import { syncTmsLoads } from '../openroad/loads';
 import { syncTmsDriverRoutes } from '../openroad/driverRoutes';
 import { syncLoadFinancialsForWeek } from '../openroad/loadFinancials';
 import { linkFuelDrivers } from '../dat/linkFuelDrivers';
+import { syncOpenRoadFuelForWeek } from '../openroad/fuelCardTransactions';
+import { syncTolls, linkTollsToTrucks } from '../prepass/sync';
 import { syncRelayFuelForWeek } from '../relay/syncFuel';
 import { syncSamsaraMpg } from '../samsara/mpg';
 
@@ -30,7 +32,8 @@ function log(msg: string) {
 /**
  * Phase A — pull fresh API data into MySQL before computing a week report.
  *
- * Order: pay rates, loads, routes (driver counts), accessorials, fuel, MPG.
+ * Order: pay rates, loads, routes, accessorials, PrePass tolls, fuel (Relay +
+ * OpenRoad cards), Samsara MPG.
  * Set GENERATE_REPORT_SKIP_LOADS_SYNC=1 to skip the full loads sync when
  * loads were just synced.
  */
@@ -82,15 +85,58 @@ export async function prepareReportWeek(
   steps.fuelLink = fuelLink;
   log(`fuel link: name=${fuelLink.nameLinked} unit=${fuelLink.unitLinked}`);
 
-  if (process.env.RELAY_API_KEY) {
-    const relay = await syncRelayFuelForWeek(year, week);
-    steps.relayFuel = relay;
+  // PrePass: pad ±3 days on post date so Exit-Date week edges are present.
+  try {
+    const padStart = new Date(`${start}T12:00:00.000Z`);
+    padStart.setUTCDate(padStart.getUTCDate() - 3);
+    const padEnd = new Date(`${end}T12:00:00.000Z`);
+    padEnd.setUTCDate(padEnd.getUTCDate() + 3);
+    const tollRange = {
+      start: padStart.toISOString().slice(0, 10),
+      end: padEnd.toISOString().slice(0, 10),
+    };
+    const tolls = await syncTolls(tollRange);
+    const linked = await linkTollsToTrucks();
+    steps.prepass = { ...tolls, linked };
     log(
-      `relay fuel: fetched=${relay.fetched} matched=${relay.matched} drivers=${relay.drivers}`
+      `prepass: fetched=${tolls.fetched} stored=${tolls.stored} linked=${linked}`
     );
+  } catch (e) {
+    steps.prepass = { skipped: true, reason: (e as Error).message };
+    log(`prepass: failed — ${(e as Error).message}`);
+  }
+
+  if (process.env.RELAY_API_KEY) {
+    try {
+      const relay = await syncRelayFuelForWeek(year, week);
+      steps.relayFuel = relay;
+      log(
+        `relay fuel: fetched=${relay.fetched} matched=${relay.matched} drivers=${relay.drivers}`
+      );
+    } catch (e) {
+      steps.relayFuel = {
+        skipped: true,
+        reason: (e as Error).message,
+      };
+      log(`relay fuel: failed — ${(e as Error).message}`);
+    }
   } else {
     steps.relayFuel = { skipped: true, reason: 'RELAY_API_KEY not set' };
     log('relay fuel: skipped (RELAY_API_KEY not set)');
+  }
+
+  try {
+    const orFuel = await syncOpenRoadFuelForWeek(year, week);
+    steps.openroadFuel = orFuel;
+    log(
+      `openroad fuel: fetched=${orFuel.fetched} matched=${orFuel.matched} drivers=${orFuel.drivers}`
+    );
+  } catch (e) {
+    steps.openroadFuel = {
+      skipped: true,
+      reason: (e as Error).message,
+    };
+    log(`openroad fuel: failed — ${(e as Error).message}`);
   }
 
   const mpg = await syncSamsaraMpg(year, week);

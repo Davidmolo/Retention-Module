@@ -7,7 +7,8 @@
 //
 // Before each week is stored (Phase A — prepareReportWeek):
 //   compensations, loads, driver_routes (this week + previous), load_financials,
-//   fuel link, Relay, Samsara MPG.
+//   fuel link, PrePass tolls, Relay, OpenRoad fuel cards (company Net P/G),
+//   Samsara MPG.
 // Then Phase B: storeWeeklySummary.
 //
 // Cron example (weekly, Tuesday 06:00, after all source syncs):

@@ -28,16 +28,19 @@ import {
 //   - trips/miles/gross — solo vs share (never full load on multi-driver):
 //       driver_count < 2, assigned: FULL load, delivery week. Skip canceled.
 //       driver_count = 1 orphan: routes / cancel fees. Skip canceled haul miles.
-//       driver_count >= 2: route share. Helper uses route week; owner uses delivery week.
+//       driver_count >= 2: equal 1/n of (linehaul + net detention) — Mantas sheet.
+//         Miles still from final routes. Helper week = route created; owner = delivery.
 //   - Multi-driver routes: ONLY the final route per driver/load, and drop any
 //       leg superseded by a later route on the same load + stop positions
 //       (OpenRoad keeps old DriverRoute rows after splits/replans; settlement
 //       shows the final miles only — Mantas Oct 30).
-//   - gross = load linehaul_rate (fallback revenue/total); matches client GP sheet
+//   - gross = linehaul + max(0, detention_sum − detention accessorial paid);
+//       matches Mantas total gross in for company drivers
 //   - Driver's pay = compensation (mi×rate / % / flat)
 //       + OpenRoad driver_accessorials for this settlement (payroll) week
 //   - Per Mile pay: loaded×loaded_mile_rate + empty×empty_mile_rate
-//   - fuel: card spend, or (miles/MPG)×PPG when Samsara MPG + card PPG exist
+//   - fuel: (miles/MPG)×Net P/G; company Net P/G from OpenRoad fuel cards
+//       (diesel net ÷ gal), else .dat / Relay; fallback spend = card total
 //   - prepass: toll_charge on assigned trucks by Exit Date (Tue→Mon week)
 // The remaining lines mirror the Excel template's formulas/constants.
 // R&M / liability / factoring (+ OO overrides, XXII fee) come from gp_config
@@ -275,6 +278,10 @@ interface AggRow extends RowDataPacket {
   relayPaid: string | number;
   relayGallons: string | number;
   relayTxnCount: string | number;
+  /** OpenRoad /fuel_card_transactions diesel week totals (0 when none). */
+  orDieselGallons: string | number;
+  orDieselNet: string | number;
+  orFuelTxnCount: string | number;
   samsaraMpg: string | number | null;
   trips: string | number;
   miles: string | number;
@@ -316,6 +323,9 @@ export async function getWeeklySummary(
             COALESCE(rf.amount_paid, 0) AS relayPaid,
             COALESCE(rf.gallons, 0) AS relayGallons,
             COALESCE(rf.txn_count, 0) AS relayTxnCount,
+            COALESCE(orf.diesel_gallons, 0) AS orDieselGallons,
+            COALESCE(orf.diesel_net, 0) AS orDieselNet,
+            COALESCE(orf.txn_count, 0) AS orFuelTxnCount,
             -- MPG: driver_id → last-name match on samsara_driver_mpg → vehicle unit
             COALESCE(
               (SELECT sm.efficiency_mpge
@@ -380,8 +390,10 @@ export async function getWeeklySummary(
        ) f ON f.driver_id = d.id
        LEFT JOIN relay_fuel_week_totals rf
          ON rf.driver_id = d.id AND rf.year = ? AND rf.week = ?
+       LEFT JOIN openroad_fuel_week_totals orf
+         ON orf.driver_id = d.id AND orf.year = ? AND orf.week = ?
        LEFT JOIN (
-         -- count < 2 = full load; count >= 2 = route share.
+         -- count < 2 = full load; count >= 2 = equal 1/n (Mantas sheet).
          SELECT driver_id,
                 SUM(trips) trips,
                 SUM(miles) miles,
@@ -458,27 +470,30 @@ export async function getWeeklySummary(
                 ${FINAL_ROUTE_ONLY_SQL}
               GROUP BY dr.driver_id
              UNION ALL
+             -- Team helper: equal 1/n of (linehaul + company net detention).
+             -- Miles from final route. Week = route created (not delivery).
              SELECT dr.driver_id,
                     COUNT(DISTINCT dr.load_id) trips,
                     SUM(COALESCE(dr.loaded_miles, 0) + COALESCE(dr.empty_miles, 0)) miles,
                     SUM(COALESCE(dr.loaded_miles, 0)) loadedMiles,
-                    -- Helper: use allocated route revenue (from driver_routes split),
-                    -- not the full load linehaul — OpenRoad DriverRoute is per-leg.
-                    -- Week by route created_at (leg planned/started), not updated_at —
-                    -- updated_at often jumps when a later driver is added to the load.
-                    -- Final route only (no superseded OpenRoad route history).
                     SUM(
-                      CASE
-                        WHEN COALESCE(dr.revenue, 0) <> 0 THEN dr.revenue
-                        WHEN COALESCE(l.miles, 0) > 0 THEN
-                          COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
-                          * COALESCE(dr.loaded_miles, 0) / l.miles
-                        ELSE 0
-                      END
+                      (
+                        COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
+                        + GREATEST(
+                          0,
+                          COALESCE(lf.detention_sum, 0) - COALESCE(det_all.paid, 0)
+                        )
+                      ) / GREATEST(COALESCE(l.driver_count, 1), 1)
                     ) revenue
                FROM driver_routes dr
                JOIN loads l ON l.id = dr.load_id
                LEFT JOIN load_financials lf ON lf.load_id = l.id
+               LEFT JOIN (
+                 SELECT load_id, SUM(amount) paid
+                   FROM driver_accessorials
+                  WHERE LOWER(COALESCE(category, '')) LIKE '%detention%'
+                  GROUP BY load_id
+               ) det_all ON det_all.load_id = l.id
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id IS NOT NULL
                 AND l.driver_id <> dr.driver_id
@@ -488,29 +503,29 @@ export async function getWeeklySummary(
                 ${FINAL_ROUTE_ONLY_SQL}
               GROUP BY dr.driver_id
              UNION ALL
+             -- Team primary/owner: same equal 1/n gross; miles from final route.
              SELECT dr.driver_id,
                     COUNT(DISTINCT dr.load_id) trips,
                     SUM(COALESCE(dr.loaded_miles, 0) + COALESCE(dr.empty_miles, 0)) miles,
                     SUM(COALESCE(dr.loaded_miles, 0)) loadedMiles,
                     SUM(
-                      CASE
-                        WHEN COALESCE(dr.revenue, 0) <> 0 THEN dr.revenue
-                        WHEN COALESCE(l.miles, 0) > 0 THEN
-                          COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
-                          * COALESCE(dr.loaded_miles, 0) / l.miles
-                        ELSE 0
-                      END
-                      + GREATEST(0, COALESCE(lf.detention_sum, 0) - COALESCE(det.paid, 0))
+                      (
+                        COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
+                        + GREATEST(
+                          0,
+                          COALESCE(lf.detention_sum, 0) - COALESCE(det_all.paid, 0)
+                        )
+                      ) / GREATEST(COALESCE(l.driver_count, 1), 1)
                     ) revenue
                FROM driver_routes dr
                JOIN loads l ON l.id = dr.load_id
                LEFT JOIN load_financials lf ON lf.load_id = l.id
                LEFT JOIN (
-                 SELECT load_id, driver_id, SUM(amount) paid
+                 SELECT load_id, SUM(amount) paid
                    FROM driver_accessorials
                   WHERE LOWER(COALESCE(category, '')) LIKE '%detention%'
-                  GROUP BY load_id, driver_id
-               ) det ON det.load_id = l.id AND det.driver_id = dr.driver_id
+                  GROUP BY load_id
+               ) det_all ON det_all.load_id = l.id
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id = dr.driver_id
                 AND DATE(l.delivery_at) BETWEEN ? AND ?
@@ -591,6 +606,8 @@ export async function getWeeklySummary(
       end,
       year,
       week,
+      year,
+      week,
       start,
       end,
       start,
@@ -669,8 +686,10 @@ export async function getWeeklySummary(
     const prepass = Number(r.prepass); // tolls on assigned trucks, this week
 
     // Fuel:
-    //   Company — PPG from .dat (amount÷gallons), else Relay paid÷diesel-gal;
-    //     MPG from Samsara (fallback miles÷gallons from .dat or Relay)
+    //   Company — Net P/G from OpenRoad fuel_card diesel
+    //     (diesel_amount−discount)÷diesel_gallons (Mantas / OR UI), else
+    //     .dat amount÷gallons, else Relay paid÷diesel-gal;
+    //     MPG from Samsara (fallback miles÷gallons from OR / .dat / Relay)
     //     → fuel $ = (miles / MPG) × PPG (fallback: card spend).
     //   Owner-operator (client rules):
     //     Cheryl Day / Donald Smith — left=txn retail (no discount), right=paid;
@@ -683,23 +702,37 @@ export async function getWeeklySummary(
     const relayTxns = Number(r.relayTxnCount ?? 0);
     const relayPaidAmt = Number(r.relayPaid);
     const relayGalAmt = Number(r.relayGallons);
+    const orGalAmt = Number(r.orDieselGallons);
+    const orDieselNetAmt = Number(r.orDieselNet);
     const cardPpg = gallons > 0 ? cardFuel / gallons : null;
+    const orPpg =
+      orGalAmt > 0 && orDieselNetAmt > 0
+        ? orDieselNetAmt / orGalAmt
+        : null;
     const relayPpg =
       relayGalAmt > 0 && relayPaidAmt > 0
         ? relayPaidAmt / relayGalAmt
         : null;
     const fuelPpg =
-      cardPpg != null && Number.isFinite(cardPpg) && cardPpg >= 0
-        ? cardPpg
-        : relayPpg != null && Number.isFinite(relayPpg) && relayPpg >= 0
-          ? relayPpg
-          : null;
+      orPpg != null && Number.isFinite(orPpg) && orPpg >= 0
+        ? orPpg
+        : cardPpg != null && Number.isFinite(cardPpg) && cardPpg >= 0
+          ? cardPpg
+          : relayPpg != null && Number.isFinite(relayPpg) && relayPpg >= 0
+            ? relayPpg
+            : null;
     const samsaraMpg =
       r.samsaraMpg == null || r.samsaraMpg === ''
         ? null
         : Number(r.samsaraMpg);
     const galForMpg =
-      gallons > 0 ? gallons : relayGalAmt > 0 ? relayGalAmt : 0;
+      orGalAmt > 0
+        ? orGalAmt
+        : gallons > 0
+          ? gallons
+          : relayGalAmt > 0
+            ? relayGalAmt
+            : 0;
     const gallonsDerivedMpg =
       galForMpg > 0 && mileage > 0 ? mileage / galForMpg : null;
     // Prefer Samsara MPG. Gallons-derived fallback only inside the plausible
@@ -773,7 +806,9 @@ export async function getWeeklySummary(
       const computedFuel = computeFuelCost(mileage, fuelMpg, fuelPpg);
       fuel =
         computedFuel == null
-          ? cardFuel
+          ? orDieselNetAmt > 0
+            ? Math.round(orDieselNetAmt * 100) / 100
+            : cardFuel
           : Math.round(computedFuel * 100) / 100;
     }
 
