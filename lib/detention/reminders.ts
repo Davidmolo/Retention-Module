@@ -3,7 +3,7 @@
  *
  * - Each dispatcher: only their loads from the target day. Art is not copied.
  * - Mantas: daily rollup of every dispatcher’s compliance. Art is not on it.
- * - David: one summary each Monday for the Monday–Sunday week that just ended.
+ * - David: one summary each Wednesday for the Monday–Sunday week that just ended.
  *   Art is not copied.
  * - Art: one Monday report with dispatcher follow-ups, accounting, accounts
  *   receivable, the week summary, and customers by detention billed.
@@ -16,7 +16,11 @@ import { sendAppEmail } from "@/lib/mail";
 import { isArMailbox, resolveArCompliance } from "@/lib/detention/compliance";
 import { canonicalDispatcherName } from "@/lib/detention/dispatcherNames";
 import { gmailSearchUrl } from "@/lib/detention/gmailLinks";
-import { artFollowUpReportParts } from "@/lib/detention/followUpDigests";
+import {
+  artFollowUpReportParts,
+  brandHeaderHtml,
+  emailShellHtml,
+} from "@/lib/detention/followUpDigests";
 import {
   lookupDispatcherSend,
   runDetentionComplianceScan,
@@ -889,9 +893,18 @@ export async function runDetentionComplianceDigests(): Promise<ReminderRunResult
   };
 }
 
+/** Monday–Sunday that ended before today. On Wednesday that is the week just finished. */
+function previousMondaySunday(todayYmd: string): { start: string; end: string } {
+  const [y, m, d] = todayYmd.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const back = dow === 0 ? 7 : dow;
+  const end = addDaysYmd(todayYmd, -back);
+  return { start: addDaysYmd(end, -6), end };
+}
+
 /**
  * David’s weekly summary: Monday–Sunday that just ended.
- * Sent on Monday only, with the 6:00 AM Chicago detention run.
+ * Sent on Wednesday only, with the 6:00 AM Chicago detention run.
  */
 export async function runDetentionWeeklySummary(): Promise<{
   ok: boolean;
@@ -903,8 +916,7 @@ export async function runDetentionWeeklySummary(): Promise<{
   error?: string;
 }> {
   const today = ymdInTz(new Date());
-  const weekEnd = addDaysYmd(today, -1);
-  const weekStart = addDaysYmd(today, -7);
+  const { start: weekStart, end: weekEnd } = previousMondaySunday(today);
   const force = env("DETENTION_WEEKLY_SUMMARY_FORCE") === "1";
   const empty = {
     ok: true,
@@ -914,7 +926,7 @@ export async function runDetentionWeeklySummary(): Promise<{
     emailed: 0,
     mocked: false,
   };
-  if (!force && weekdayInTz(new Date()) !== "Monday") return empty;
+  if (!force && weekdayInTz(new Date()) !== "Wednesday") return empty;
 
   const to = withoutArt(
     parseEmails(env("DETENTION_WEEKLY_SUMMARY_TO", "david@goxxii.com"))
@@ -945,10 +957,22 @@ export async function runDetentionWeeklySummary(): Promise<{
   );
 
   const subject = `[XXII Detention] Weekly summary — ${startLabel} to ${endLabel} (${fleetPct}%)`;
-  const lines = groups.map(
-    (g) =>
-      `• ${g.name}: ${g.total} emails, ${g.answered} answered, ${g.unanswered} not answered — ${g.compliancePct}%`
-  );
+  const unansweredOf = (g: DispatcherDayStats) =>
+    g.items.filter((d) => !isAnswered(d));
+  const unansweredLine = (d: DayDetention) => {
+    const load = d.loadNumber || d.shipmentNumber || "—";
+    const link = threadLink(d);
+    return `• ${d.customer} · Load ${load} · $${d.amount.toFixed(2)} · ${d.status}${link ? ` · ${link}` : ""}`;
+  };
+  const lines = groups.flatMap((g) => {
+    const open = unansweredOf(g);
+    return [
+      `• ${g.name}: ${g.total} emails, ${g.answered} answered, ${g.unanswered} not answered — ${g.compliancePct}%`,
+      ...(open.length
+        ? ["  Unanswered:", ...open.map((d) => `  ${unansweredLine(d)}`)]
+        : []),
+    ];
+  });
   const arSummary = ar.started
     ? `Accounts Receivable: ${ar.started} claims after a dispatcher or Art reply · ${ar.onTime} on time · ${ar.noFollow} no follow-up · ${ar.waiting} still inside 48 hours · ${ar.rate}%`
     : "Accounts Receivable: no claims this week had a dispatcher or Art reply yet, so AR was not scored.";
@@ -963,6 +987,7 @@ export async function runDetentionWeeklySummary(): Promise<{
     "",
     `Fleet: ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} not answered · ${fleetPct}%`,
     "Compliance counts real detentions only. Denied claims are left out.",
+    "Unanswered detention emails are listed under each dispatcher.",
     `Paid: ${paid} · Denied: ${denied} · Pending: ${pending}`,
     "",
     ...(lines.length ? lines : ["No detention emails this week."]),
@@ -978,39 +1003,72 @@ export async function runDetentionWeeklySummary(): Promise<{
     `Board: ${appUrl}/detention/compliance`,
   ].join("\n");
 
-  const tableRows = groups
-    .map(
-      (g) => `<tr>
-        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">${escapeHtml(g.name)}</td>
-        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${g.total}</td>
-        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;color:#047857">${g.answered}</td>
-        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;color:#b91c1c">${g.unanswered}</td>
-        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:800">${g.compliancePct}%</td>
-      </tr>`
-    )
+  const statRow = (nameHtml: string, g: DispatcherDayStats) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
+      <tr>
+        <td style="padding:12px 16px;font-weight:700;color:#0f172a">${nameHtml}</td>
+        <td width="64" align="right" style="padding:12px 8px;color:#0f172a">${g.total}</td>
+        <td width="72" align="right" style="padding:12px 8px;color:#047857">${g.answered}</td>
+        <td width="88" align="right" style="padding:12px 8px;color:#b91c1c">${g.unanswered}</td>
+        <td width="72" align="right" style="padding:12px 16px 12px 8px;font-weight:800;color:#0f172a">${g.compliancePct}%</td>
+      </tr>
+    </table>`;
+  const dispatcherBlocks = groups
+    .map((g) => {
+      const open = unansweredOf(g);
+      const list = open
+        .map((d) => {
+          const load = d.loadNumber || d.shipmentNumber || "—";
+          const link = threadLink(d);
+          const openLink = link
+            ? `<a href="${escapeHtml(link)}" style="color:#0369a1;font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap">Open thread &#8250;</a>`
+            : `<span style="color:#94a3b8;font-size:12px">No thread</span>`;
+          return `<tr>
+            <td style="padding:12px 0;border-top:1px solid #e2e8f0;vertical-align:top">
+              <div style="font-size:15px;font-weight:800;color:#0f172a">${escapeHtml(d.customer)}</div>
+              <div style="font-size:13px;color:#64748b;margin-top:3px">Load ${escapeHtml(load)} · ${escapeHtml(d.status)}</div>
+            </td>
+            <td style="padding:12px 0 12px 8px;border-top:1px solid #e2e8f0;vertical-align:top;text-align:right;white-space:nowrap">
+              <div style="font-size:15px;font-weight:800;color:#0f172a">$${d.amount.toFixed(2)}</div>
+              <div style="margin-top:8px">${openLink}</div>
+            </td>
+          </tr>`;
+        })
+        .join("");
+      if (!open.length) {
+        return `<div style="border-bottom:1px solid #e2e8f0">${statRow(escapeHtml(g.name), g)}</div>`;
+      }
+      const chevron = `<span style="display:inline-block;width:7px;height:7px;margin:0 10px 2px 0;border-right:2px solid #64748b;border-bottom:2px solid #64748b;transform:rotate(45deg);vertical-align:middle"></span>`;
+      return `<details style="border-bottom:1px solid #e2e8f0">
+        <summary style="cursor:pointer;list-style:none">${statRow(chevron + escapeHtml(g.name), g)}</summary>
+        <div style="padding:4px 16px 8px 16px;background:#f8fafc">
+          <div style="padding:10px 0 0;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b">Unanswered</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">${list}</table>
+        </div>
+      </details>`;
+    })
     .join("");
 
-  const html = `
-    <div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45">
+  const html = emailShellHtml(`
+    <style>summary::-webkit-details-marker{display:none}summary{list-style:none}</style>
+    ${brandHeaderHtml("Weekly detention summary")}
+    <div style="padding:8px 24px 8px">
       <p>Hi David,</p>
       <p>Detention summary for <strong>${escapeHtml(startLabel)}</strong> through <strong>${escapeHtml(endLabel)}</strong>.</p>
       <p style="margin:12px 0"><strong>Fleet:</strong> ${fleetTotal} emails · ${fleetAnswered} answered · ${fleetTotal - fleetAnswered} not answered · <strong>${fleetPct}%</strong></p>
-      <p style="margin:0 0 12px;color:#64748b;font-size:12px">Compliance counts real detentions only. Denied claims are left out.</p>
+      <p style="margin:0 0 12px;color:#64748b;font-size:12px">Compliance counts real detentions only. Denied claims are left out. Click a dispatcher name to open the unanswered emails under that row.</p>
       <p style="margin:12px 0"><strong>Paid:</strong> ${paid} · <strong>Denied:</strong> ${denied} · <strong>Pending:</strong> ${pending}</p>
       ${
         groups.length
-          ? `<table style="border-collapse:collapse;width:100%;max-width:720px;margin:12px 0 8px">
-        <thead>
-          <tr style="background:#f8fafc;text-align:left">
-            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0">Dispatcher</th>
-            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Emails</th>
-            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Answered</th>
-            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Not answered</th>
-            <th style="padding:8px 10px;border-bottom:2px solid #e2e8f0;text-align:right">Compliance</th>
-          </tr>
-        </thead>
-        <tbody>${tableRows}</tbody>
-      </table>`
+          ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:12px 0 0">
+        <tr style="background:#f8fafc">
+          <th align="left" style="padding:8px 16px;border-bottom:2px solid #e2e8f0;font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:#64748b">Dispatcher</th>
+          <th width="64" align="right" style="padding:8px;border-bottom:2px solid #e2e8f0;font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:#64748b">Emails</th>
+          <th width="72" align="right" style="padding:8px;border-bottom:2px solid #e2e8f0;font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:#64748b">Answered</th>
+          <th width="88" align="right" style="padding:8px;border-bottom:2px solid #e2e8f0;font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:#64748b">Not answered</th>
+          <th width="72" align="right" style="padding:8px 16px 8px 8px;border-bottom:2px solid #e2e8f0;font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:#64748b">Compliance</th>
+        </tr>
+      </table>
+      ${dispatcherBlocks}`
           : `<p>No detention emails this week.</p>`
       }
       <p style="margin:16px 0 4px"><strong>Accounts Receivable:</strong> ${
@@ -1038,7 +1096,7 @@ export async function runDetentionWeeklySummary(): Promise<{
       }
       <p style="margin-top:18px"><a href="${escapeHtml(appUrl)}/detention/compliance">Open compliance board</a></p>
     </div>
-  `;
+  `);
 
   const send = await sendAppEmail({ to, subject, text, html });
   if (!send.ok) {

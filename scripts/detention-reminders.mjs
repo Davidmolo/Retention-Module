@@ -3,6 +3,7 @@
  *   1) Dispatchers and Mantas — T-2 compliance. Art is not copied.
  *   2) Dispatchers and accounting — follow-ups. Art is not copied.
  *   3) Art — one combined report, Monday only.
+ *   4) David — weekly summary, Wednesday only. Same Monday–Sunday week.
  *   pnpm detention:reminders
  */
 import nextEnv from "@next/env";

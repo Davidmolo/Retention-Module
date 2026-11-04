@@ -220,7 +220,7 @@ function brandAssetUrl(file: string): string {
   return `${base}/brand/${file}`;
 }
 
-function brandHeaderHtml(title: string): string {
+export function brandHeaderHtml(title: string): string {
   const stamp = formatAsOfStamp();
   const hero = env("EMAIL_BRAND_LOGO_URL") || brandAssetUrl("xxii-logo-white.png");
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 0;border-collapse:collapse;background:#01052C">
@@ -398,7 +398,7 @@ function groupListHtml(
   </div>`;
 }
 
-function emailShellHtml(inner: string): string {
+export function emailShellHtml(inner: string): string {
   return `<!DOCTYPE html>
 <html><body style="margin:0;padding:0;background:#01052C">
   <div style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.45;max-width:640px;margin:0 auto;background:#ffffff">
