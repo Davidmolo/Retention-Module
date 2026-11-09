@@ -19,4 +19,7 @@ run_step "tms-driver-routes" sync:tms-driver-routes --all
 run_step "tms-assignments" sync:tms-assignments
 run_step "tms-load-financials" sync:tms-load-financials
 
+# Keep GP sheet DB in sync with live sources + latest formulas (current + previous week).
+run_step "gp-snapshots" refresh:gp-snapshots
+
 finish_pipeline "daily-tms"

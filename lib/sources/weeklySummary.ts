@@ -15,6 +15,7 @@ import {
   OWNER_OPERATOR_FILTER,
   OWNER_OPERATOR_TYPES,
   gpExcludeDriverNamesSql,
+  shouldHideZeroActivityOwnerOperator,
 } from './driverTypeGroups';
 import {
   getGpExpenseRates,
@@ -25,26 +26,38 @@ import {
 } from './gpConfig';
 
 // Computes a weekly Gross Profit summary entirely from the database:
-//   - trips/miles/gross — solo vs share (never full load on multi-driver):
-//       driver_count < 2, assigned: FULL load, delivery week. Skip canceled.
-//       driver_count = 1 orphan: routes / cancel fees. Skip canceled haul miles.
-//       driver_count >= 2: equal 1/n of (linehaul + net detention) — Mantas sheet.
-//         Miles still from final routes. Helper week = route created; owner = delivery.
+//   - trips/miles/gross — OpenRoad settlement = sheet (Mantas Nov 2026):
+//       Primary/owner gets FULL settlement linehaul (load_financials), delivery week.
+//       No equal 1/n. Helpers do not take gross from the primary's load (OR
+//       settlement puts that linehaul on the primary's card only). Miles still
+//       from final routes for every driver on the load.
+//       driver_count = 1 orphan: routes / cancel fees. Skip canceled.
 //   - Multi-driver routes: ONLY the final route per driver/load, and drop any
 //       leg superseded by a later route on the same load + stop positions
 //       (OpenRoad keeps old DriverRoute rows after splits/replans; settlement
 //       shows the final miles only — Mantas Oct 30).
-//   - gross = linehaul + max(0, detention_sum − detention accessorial paid);
-//       matches Mantas total gross in for company drivers
+//   - gross = linehaul + detention_received − detention paid to driver
+//       (detention accessorial). If detention_sum is not on the settlement
+//       (no detention accessorial on the load), do not add it — Mantas W44 Minor.
 //   - Driver's pay = compensation (mi×rate / % / flat)
 //       + OpenRoad driver_accessorials for this settlement (payroll) week
 //   - Per Mile pay: loaded×loaded_mile_rate + empty×empty_mile_rate
 //   - fuel: (miles/MPG)×Net P/G; company Net P/G from OpenRoad fuel cards
-//       (diesel net ÷ gal), else .dat / Relay; fallback spend = card total
+//       matched by OR driver_id only (else .dat / Relay); fallback spend = card total
 //   - prepass: toll_charge on assigned trucks by Exit Date (Tue→Mon week)
 // The remaining lines mirror the Excel template's formulas/constants.
 // R&M / liability / factoring (+ OO overrides, XXII fee) come from gp_config
 // and gp_oo_driver_overrides (Configurations); hardcoded values are fallbacks.
+
+/** Settlement-visible company detention: only when a detention accessorial exists. */
+const NET_DETENTION_SQL = `GREATEST(
+                      0,
+                      CASE
+                        WHEN COALESCE(det.paid, 0) > 0
+                          THEN COALESCE(lf.detention_sum, 0)
+                        ELSE 0
+                      END - COALESCE(det.paid, 0)
+                    )`;
 
 /** SQL AND-clauses: keep one final driver_routes row (alias `dr`). */
 const FINAL_ROUTE_ONLY_SQL = `
@@ -393,7 +406,7 @@ export async function getWeeklySummary(
        LEFT JOIN openroad_fuel_week_totals orf
          ON orf.driver_id = d.id AND orf.year = ? AND orf.week = ?
        LEFT JOIN (
-         -- count < 2 = full load; count >= 2 = equal 1/n (Mantas sheet).
+         -- OR settlement = sheet: primary gets FULL linehaul; helpers miles only.
          SELECT driver_id,
                 SUM(trips) trips,
                 SUM(miles) miles,
@@ -405,11 +418,9 @@ export async function getWeeklySummary(
                     COUNT(*) trips,
                     SUM(COALESCE(l.miles, 0) + COALESCE(l.empty_miles, 0)) miles,
                     SUM(COALESCE(l.miles, 0)) loadedMiles,
-                    -- Linehaul is on load_financials. Detention received minus
-                    -- detention paid to the driver stays on total gross.
                     SUM(
                       COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
-                      + GREATEST(0, COALESCE(lf.detention_sum, 0) - COALESCE(det.paid, 0))
+                      + ${NET_DETENTION_SQL}
                     ) revenue
                FROM loads l
                LEFT JOIN load_financials lf ON lf.load_id = l.id
@@ -448,7 +459,7 @@ export async function getWeeklySummary(
                         NULLIF(dr.revenue, 0),
                         COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
                       )
-                      + GREATEST(0, COALESCE(lf.detention_sum, 0) - COALESCE(det.paid, 0))
+                      + ${NET_DETENTION_SQL}
                     ) revenue
                FROM driver_routes dr
                JOIN loads l ON l.id = dr.load_id
@@ -470,30 +481,15 @@ export async function getWeeklySummary(
                 ${FINAL_ROUTE_ONLY_SQL}
               GROUP BY dr.driver_id
              UNION ALL
-             -- Team helper: equal 1/n of (linehaul + company net detention).
-             -- Miles from final route. Week = route created (not delivery).
+             -- Team helper: miles only (gross stays on primary's OR settlement card).
+             -- Week = route created (not delivery).
              SELECT dr.driver_id,
                     COUNT(DISTINCT dr.load_id) trips,
                     SUM(COALESCE(dr.loaded_miles, 0) + COALESCE(dr.empty_miles, 0)) miles,
                     SUM(COALESCE(dr.loaded_miles, 0)) loadedMiles,
-                    SUM(
-                      (
-                        COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
-                        + GREATEST(
-                          0,
-                          COALESCE(lf.detention_sum, 0) - COALESCE(det_all.paid, 0)
-                        )
-                      ) / GREATEST(COALESCE(l.driver_count, 1), 1)
-                    ) revenue
+                    0 revenue
                FROM driver_routes dr
                JOIN loads l ON l.id = dr.load_id
-               LEFT JOIN load_financials lf ON lf.load_id = l.id
-               LEFT JOIN (
-                 SELECT load_id, SUM(amount) paid
-                   FROM driver_accessorials
-                  WHERE LOWER(COALESCE(category, '')) LIKE '%detention%'
-                  GROUP BY load_id
-               ) det_all ON det_all.load_id = l.id
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id IS NOT NULL
                 AND l.driver_id <> dr.driver_id
@@ -503,33 +499,37 @@ export async function getWeeklySummary(
                 ${FINAL_ROUTE_ONLY_SQL}
               GROUP BY dr.driver_id
              UNION ALL
-             -- Team primary/owner: same equal 1/n gross; miles from final route.
+             -- Team primary/owner: settlement Linehaul ≈ final route.revenue
+             -- (OR attributes that to the primary's card; fallback load_financials).
+             -- Miles from final route. No 1/n.
              SELECT dr.driver_id,
                     COUNT(DISTINCT dr.load_id) trips,
                     SUM(COALESCE(dr.loaded_miles, 0) + COALESCE(dr.empty_miles, 0)) miles,
                     SUM(COALESCE(dr.loaded_miles, 0)) loadedMiles,
                     SUM(
-                      (
-                        COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
-                        + GREATEST(
-                          0,
-                          COALESCE(lf.detention_sum, 0) - COALESCE(det_all.paid, 0)
-                        )
-                      ) / GREATEST(COALESCE(l.driver_count, 1), 1)
+                      COALESCE(
+                        NULLIF(dr.revenue, 0),
+                        lf.linehaul_rate,
+                        l.linehaul_rate,
+                        l.revenue,
+                        0
+                      )
+                      + ${NET_DETENTION_SQL}
                     ) revenue
                FROM driver_routes dr
                JOIN loads l ON l.id = dr.load_id
                LEFT JOIN load_financials lf ON lf.load_id = l.id
                LEFT JOIN (
-                 SELECT load_id, SUM(amount) paid
+                 SELECT load_id, driver_id, SUM(amount) paid
                    FROM driver_accessorials
                   WHERE LOWER(COALESCE(category, '')) LIKE '%detention%'
-                  GROUP BY load_id
-               ) det_all ON det_all.load_id = l.id
+                  GROUP BY load_id, driver_id
+               ) det ON det.load_id = l.id AND det.driver_id = dr.driver_id
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id = dr.driver_id
                 AND DATE(l.delivery_at) BETWEEN ? AND ?
                 AND COALESCE(l.driver_count, 0) >= 2
+                AND LOWER(TRIM(COALESCE(l.status, ''))) <> 'canceled'
                 ${FINAL_ROUTE_ONLY_SQL}
               GROUP BY dr.driver_id
            ) trip_parts
@@ -898,7 +898,17 @@ export async function getWeeklySummary(
     };
   });
 
-  const totals = drivers.reduce(
+  const visible = drivers.filter(
+    (d) =>
+      !shouldHideZeroActivityOwnerOperator({
+        name: d.name,
+        driverType: d.driverType,
+        mileage: d.mileage,
+        grossIncome: d.grossIncome,
+      })
+  );
+
+  const totals = visible.reduce(
     (acc, d) => ({
       trips: acc.trips + d.trips,
       mileage: acc.mileage + d.mileage,
@@ -909,7 +919,7 @@ export async function getWeeklySummary(
     { trips: 0, mileage: 0, grossIncome: 0, totalExpenses: 0, grossProfit: 0 }
   );
 
-  return { year, week, start, end, drivers, totals, driverTypes: [] };
+  return { year, week, start, end, drivers: visible, totals, driverTypes: [] };
 }
 
 /** Fuel MPG is stored as DECIMAL(8,2) — reject anything that can't round-trip. */
@@ -1294,7 +1304,16 @@ export async function getStoredWeeklySummary(
       grossProfit,
     };
   });
-  const totals = drivers.reduce(
+  const visible = drivers.filter(
+    (d) =>
+      !shouldHideZeroActivityOwnerOperator({
+        name: d.name,
+        driverType: d.driverType,
+        mileage: d.mileage,
+        grossIncome: d.grossIncome,
+      })
+  );
+  const totals = visible.reduce(
     (acc, d) => ({
       trips: acc.trips + d.trips,
       mileage: acc.mileage + d.mileage,
@@ -1304,7 +1323,7 @@ export async function getStoredWeeklySummary(
     }),
     { trips: 0, mileage: 0, grossIncome: 0, totalExpenses: 0, grossProfit: 0 }
   );
-  return { year, week, start, end, drivers, totals, driverTypes };
+  return { year, week, start, end, drivers: visible, totals, driverTypes };
 }
 
 export interface StoredFuelInputsResult {

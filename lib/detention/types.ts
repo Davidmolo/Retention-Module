@@ -10,6 +10,17 @@ export const DETENTION_STATUSES = [
 
 export type DetentionStatus = (typeof DETENTION_STATUSES)[number];
 
+/**
+ * Open Amount (Mantas): confirmed claims not paid yet.
+ * Excludes Denied (can't collect) and early/draft statuses.
+ */
+export const DETENTION_OPEN_STATUSES = ["Submitted", "Approved"] as const;
+
+/** SQL `IN (...)` list for open-amount / open-count queries. */
+export const DETENTION_OPEN_STATUS_SQL = DETENTION_OPEN_STATUSES.map(
+  (s) => `'${s}'`
+).join(", ");
+
 export type DetentionHistoryEvent = {
   type: string;
   timestamp: string;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
+import { ensureGpWeek } from '@/lib/sources/ensureGpWeek';
 import { getStoredWeeklySummary } from '@/lib/sources/weeklySummary';
 import { buildSummaryWorkbook } from '@/lib/sources/exportSummary';
 
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'year and week are required' }, { status: 400 });
   }
   try {
+    await ensureGpWeek(year, week);
     const summary = await getStoredWeeklySummary(year, week, {
       status: 'active',
       driverType,

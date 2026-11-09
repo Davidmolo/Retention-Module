@@ -40,17 +40,6 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function unitKey(u: unknown): string {
-  return String(u ?? '')
-    .trim()
-    .replace(/^0+/, '')
-    .toLowerCase();
-}
-
-function cardDigits(c: unknown): string {
-  return String(c ?? '').replace(/\D/g, '');
-}
-
 async function fetchFuelCardsForRange(
   start: string,
   end: string
@@ -105,76 +94,12 @@ export async function syncOpenRoadFuelForWeek(
   const [drvRows] = await pool.query<RowDataPacket[]>(`SELECT id FROM drivers`);
   const driverIds = new Set(drvRows.map((r) => Number(r.id)));
 
-  // unit + date → unique driver via assignments (when OR leaves driver_id null)
-  const [asgRows] = await pool.query<RowDataPacket[]>(
-    `SELECT a.driver_id,
-            tr.unit,
-            DATE(a.start_date) AS start_date,
-            DATE(a.end_date) AS end_date
-       FROM assignments a
-       JOIN trucks tr ON tr.id = a.truck_id
-      WHERE a.truck_id IS NOT NULL
-        AND tr.unit IS NOT NULL
-        AND TRIM(CAST(tr.unit AS CHAR)) <> ''
-        AND DATE(a.start_date) <= ?
-        AND (a.end_date IS NULL OR DATE(a.end_date) >= ?)`,
-    [end, start]
-  );
-
-  type Asg = {
-    driverId: number;
-    unit: string;
-    start: string;
-    end: string | null;
-  };
-  const assignments: Asg[] = asgRows.map((r) => ({
-    driverId: Number(r.driver_id),
-    unit: unitKey(r.unit),
-    start: String(r.start_date).slice(0, 10),
-    end: r.end_date == null ? null : String(r.end_date).slice(0, 10),
-  }));
-
-  const driversForUnitDate = (unit: string, date: string): number[] => {
-    const u = unitKey(unit);
-    if (!u) return [];
-    const ids = new Set<number>();
-    for (const a of assignments) {
-      if (a.unit !== u) continue;
-      if (a.start > date) continue;
-      if (a.end != null && a.end < date) continue;
-      ids.add(a.driverId);
-    }
-    return [...ids];
-  };
-
-  // card digits → driver via already-linked .dat rows
-  const [cardRows] = await pool.query<RowDataPacket[]>(
-    `SELECT driver_id,
-            TRIM(LEADING 'U' FROM TRIM(card_number)) AS card
-       FROM fuel_transactions
-      WHERE driver_id IS NOT NULL
-        AND card_number IS NOT NULL
-        AND TRIM(card_number) <> ''`
-  );
-  const byCard = new Map<string, number>();
-  for (const r of cardRows) {
-    const card = cardDigits(r.card);
-    const id = Number(r.driver_id);
-    if (card && id && !byCard.has(card)) byCard.set(card, id);
-  }
-
+  // Mantas: trust OR driver_id only (settlement Fuel tab). No unit/card fallback.
   const resolveDriver = (t: OpenRoadFuelCardTxn): number | null => {
     const rawId = t.driver_id == null ? null : Number(t.driver_id);
     if (rawId != null && Number.isFinite(rawId) && driverIds.has(rawId)) {
       return rawId;
     }
-    const date = String(t.date ?? '').slice(0, 10);
-    if (date && t.unit) {
-      const hits = driversForUnitDate(String(t.unit), date);
-      if (hits.length === 1) return hits[0];
-    }
-    const card = cardDigits(t.card);
-    if (card && byCard.has(card)) return byCard.get(card)!;
     return null;
   };
 

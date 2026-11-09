@@ -189,8 +189,8 @@ export async function getDetentionMonthlySummary(
        COALESCE(SUM(COALESCE(amount, 0)), 0) AS submitted_amount,
        SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count,
        COALESCE(SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END), 0) AS collected_amount,
-       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS open_count,
-       COALESCE(SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN COALESCE(amount, 0) ELSE 0 END), 0) AS open_amount
+       SUM(CASE WHEN status IN ('Submitted','Approved') THEN 1 ELSE 0 END) AS open_count,
+       COALESCE(SUM(CASE WHEN status IN ('Submitted','Approved') THEN COALESCE(amount, 0) ELSE 0 END), 0) AS open_amount
      FROM detentions
      WHERE ${whereSql}
      GROUP BY DATE_FORMAT(${EMAIL_DAY}, '%Y-%m')
@@ -246,8 +246,8 @@ export async function getDetentionDispatcherSummary(
        COALESCE(SUM(CASE WHEN COALESCE(status, '') <> 'Denied' THEN COALESCE(amount, 0) ELSE 0 END), 0) AS approved_amount,
        SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count,
        COALESCE(SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END), 0) AS collected_amount,
-       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS open_count,
-       COALESCE(SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN COALESCE(amount, 0) ELSE 0 END), 0) AS open_amount
+       SUM(CASE WHEN status IN ('Submitted','Approved') THEN 1 ELSE 0 END) AS open_count,
+       COALESCE(SUM(CASE WHEN status IN ('Submitted','Approved') THEN COALESCE(amount, 0) ELSE 0 END), 0) AS open_amount
      FROM detentions
      WHERE ${whereSql}
      GROUP BY COALESCE(NULLIF(TRIM(dispatcher), ''), 'Unassigned')

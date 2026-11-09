@@ -9,6 +9,7 @@ import type {
   DetentionPartyRow,
   DetentionStatusBucket,
 } from "@/lib/detention/types";
+import { DETENTION_OPEN_STATUS_SQL } from "@/lib/detention/types";
 
 const EMAIL_DAY = "DATE(COALESCE(email_date, created_at))";
 const AMT = "COALESCE(amount, 0)";
@@ -37,7 +38,7 @@ export async function getDetentionKpisForWindow(
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT
        COUNT(*) AS total,
-       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS open_count,
+       SUM(CASE WHEN status IN (${DETENTION_OPEN_STATUS_SQL}) THEN 1 ELSE 0 END) AS open_count,
        SUM(CASE WHEN awaiting_us = 1 AND status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS awaiting_count,
        SUM(CASE WHEN follow_up_date IS NOT NULL AND follow_up_date <= CURDATE()
                  AND status NOT IN ('Paid','Denied') THEN 1 ELSE 0 END) AS follow_up_count,
@@ -46,10 +47,10 @@ export async function getDetentionKpisForWindow(
        SUM(CASE WHEN status = 'New' THEN 1 ELSE 0 END) AS new_count,
        SUM(CASE WHEN status IN ('Pending POD','Docs Pending') THEN 1 ELSE 0 END) AS pending_pod_count,
        SUM(CASE WHEN status IN ('Submitted','Approved') THEN 1 ELSE 0 END) AS submitted_count,
-       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN ${AMT} ELSE 0 END) AS open_amount,
+       SUM(CASE WHEN status IN (${DETENTION_OPEN_STATUS_SQL}) THEN ${AMT} ELSE 0 END) AS open_amount,
        SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END) AS paid_amount,
        SUM(${AMT}) AS billed_amount,
-       SUM(CASE WHEN status NOT IN ('Paid','Denied') THEN ${AMT} ELSE 0 END) AS outstanding_amount,
+       SUM(CASE WHEN status IN (${DETENTION_OPEN_STATUS_SQL}) THEN ${AMT} ELSE 0 END) AS outstanding_amount,
        SUM(${RCVD}) AS received_amount,
        SUM(CASE WHEN status IN ('Paid','Denied') THEN ${AMT} ELSE 0 END) AS decided_amount,
        SUM(CASE WHEN status = 'Paid' THEN ${AMT} ELSE 0 END) AS paid_billed_amount,
@@ -213,7 +214,7 @@ export async function getDetentionAnalytics(
        SUM(CASE WHEN DATEDIFF(CURDATE(), ${EMAIL_DAY}) > 60 THEN 1 ELSE 0 END) AS c4,
        SUM(CASE WHEN DATEDIFF(CURDATE(), ${EMAIL_DAY}) > 60 THEN ${AMT} ELSE 0 END) AS a4
      FROM detentions
-     WHERE status NOT IN ('Paid','Denied') AND ${win.sql}`,
+     WHERE status IN (${DETENTION_OPEN_STATUS_SQL}) AND ${win.sql}`,
     win.params
   );
   const ar = ageRows[0] || {};

@@ -16,6 +16,7 @@
     "backfill:drivers": "bun scripts/backfill-drivers.mjs",
     "generate:week": "bun scripts/generate-week.mjs",
     "generate:report": "bun scripts/generate-report.mjs",
+    "refresh:gp-snapshots": "bun scripts/refresh-gp-snapshots.mjs",
     "import:fuel": "bun scripts/import-fuel.mjs",
     "sync:fuel": "bun scripts/sync-fuel.mjs",
     "sync:fuel:daemon": "bun scripts/sync-fuel-daemon.mjs",

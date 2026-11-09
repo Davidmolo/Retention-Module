@@ -428,7 +428,7 @@ export function DetentionBoard() {
           <KpiCard
             title="Open amount"
             value={money(kpis.openAmount)}
-            hint="Not paid / denied"
+            hint="Confirmed (Submitted/Approved), not paid — Denied excluded"
           />
         </div>
       ) : null}

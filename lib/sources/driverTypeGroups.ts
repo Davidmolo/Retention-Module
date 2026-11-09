@@ -19,7 +19,33 @@ export const OWNER_OPERATOR_EXCEPTION_NAMES = [
  * Never show on Gross Profit (Mantas): not a company-driver GP card even if
  * TMS status is active.
  */
-export const GP_EXCLUDE_DRIVER_NAMES = ['Liudas Jurevicius'] as const;
+export const GP_EXCLUDE_DRIVER_NAMES = [
+  'Liudas Jurevicius',
+  'TEST',
+] as const;
+
+/**
+ * Idle OO (0 miles, 0 linehaul) stay on the sheet at ~-$19 fixed cost —
+ * except these specials (Wagner / D.Smith / Day): hide when zero activity.
+ * Mantas Nov 2026.
+ */
+export const OO_HIDE_WHEN_ZERO_ACTIVITY_NAMES = [
+  'Robert Wagner',
+  'Donald Smith',
+  'Cheryl Day',
+] as const;
+
+/** True when an OO with no miles and no gross should be dropped from GP. */
+export function shouldHideZeroActivityOwnerOperator(driver: {
+  name: string;
+  driverType: string | null;
+  mileage: number;
+  grossIncome: number;
+}): boolean {
+  if (!isOwnerOperator(driver)) return false;
+  if (driver.mileage > 0 || driver.grossIncome > 0) return false;
+  return nameMatchesList(driver.name, OO_HIDE_WHEN_ZERO_ACTIVITY_NAMES);
+}
 
 export function normalizeDriverTypeKey(t: string | null | undefined): string {
   return (t ?? '').trim().toLowerCase().replace(/\s+/g, '_');
@@ -76,7 +102,8 @@ export function gpExcludeDriverNamesSql(
     )`;
   });
   const params = GP_EXCLUDE_DRIVER_NAMES.flatMap((ex) => {
-    const tokens = ex.toLowerCase().split(/\s+/);
+    const tokens = ex.toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length === 1) return [tokens[0], tokens[0]];
     const first = tokens[0];
     const last = tokens[tokens.length - 1];
     return [ex.toLowerCase(), `${first} % ${last}`];
@@ -87,23 +114,22 @@ export function gpExcludeDriverNamesSql(
   };
 }
 
-/** Match "First Last" allowing optional middle name (same token rule). */
+/** Match list entries: single-token exact, or "First Last" (optional middle). */
 function nameMatchesList(
   name: string | null | undefined,
   list: readonly string[]
 ): boolean {
-  const tokens = (name ?? '')
+  const normalized = (name ?? '')
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .split(' ')
-    .filter(Boolean);
-  if (tokens.length < 2) return false;
-  const first = tokens[0];
-  const last = tokens[tokens.length - 1];
+    .replace(/\s+/g, ' ');
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (!tokens.length) return false;
   return list.some((ex) => {
-    const parts = ex.toLowerCase().split(/\s+/);
-    return parts.length >= 2 && first === parts[0] && last === parts[parts.length - 1];
+    const parts = ex.toLowerCase().split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return normalized === parts[0];
+    if (tokens.length < 2) return false;
+    return tokens[0] === parts[0] && tokens[tokens.length - 1] === parts[parts.length - 1];
   });
 }
 
