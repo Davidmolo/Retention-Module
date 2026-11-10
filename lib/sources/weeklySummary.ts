@@ -28,9 +28,9 @@ import {
 // Computes a weekly Gross Profit summary entirely from the database:
 //   - trips/miles/gross — OpenRoad settlement = sheet (Mantas Nov 2026):
 //       Primary/owner gets FULL settlement linehaul (load_financials), delivery week.
-//       No equal 1/n. Helpers do not take gross from the primary's load (OR
-//       settlement puts that linehaul on the primary's card only). Miles still
-//       from final routes for every driver on the load.
+//       No equal 1/n. Company helpers: miles only. OO helpers: settlement route
+//       LH (route.revenue / mile share) when it appears on their card — Mantas.
+//       Miles from final routes for every driver on the load.
 //       driver_count = 1 orphan: routes / cancel fees. Skip canceled.
 //   - Multi-driver routes: ONLY the final route per driver/load, and drop any
 //       leg superseded by a later route on the same load + stop positions
@@ -406,7 +406,8 @@ export async function getWeeklySummary(
        LEFT JOIN openroad_fuel_week_totals orf
          ON orf.driver_id = d.id AND orf.year = ? AND orf.week = ?
        LEFT JOIN (
-         -- OR settlement = sheet: primary gets FULL linehaul; helpers miles only.
+         -- OR settlement = sheet: primary gets FULL linehaul; company helpers
+         -- miles only; OO helpers get settlement route LH when on their card.
          SELECT driver_id,
                 SUM(trips) trips,
                 SUM(miles) miles,
@@ -481,15 +482,44 @@ export async function getWeeklySummary(
                 ${FINAL_ROUTE_ONLY_SQL}
               GROUP BY dr.driver_id
              UNION ALL
-             -- Team helper: miles only (gross stays on primary's OR settlement card).
-             -- Week = route created (not delivery).
+             -- Team helper: company = miles only; OO = settlement LH on their card
+             -- (route.revenue, else loaded-mile share of load LH). Week = route created.
              SELECT dr.driver_id,
                     COUNT(DISTINCT dr.load_id) trips,
                     SUM(COALESCE(dr.loaded_miles, 0) + COALESCE(dr.empty_miles, 0)) miles,
                     SUM(COALESCE(dr.loaded_miles, 0)) loadedMiles,
-                    0 revenue
+                    SUM(
+                      CASE
+                        WHEN LOWER(REPLACE(TRIM(COALESCE(hd.driver_type, '')), ' ', '_'))
+                             IN ('owner_operator', 'leased_owner')
+                          OR (${OWNER_OPERATOR_EXCEPTION_NAMES.map(
+                            () => `(
+                              LOWER(TRIM(hd.first_name)) = ?
+                              AND LOWER(TRIM(hd.last_name)) = ?
+                            )`
+                          ).join(' OR ')})
+                        THEN (
+                          -- TMS settlement often rounds helper LH to $100 steps
+                          FLOOR(
+                            COALESCE(
+                              NULLIF(dr.revenue, 0),
+                              ROUND(
+                                COALESCE(lf.linehaul_rate, l.linehaul_rate, l.revenue, 0)
+                                * COALESCE(dr.loaded_miles, 0)
+                                / NULLIF(COALESCE(l.miles, 0), 0),
+                                2
+                              ),
+                              0
+                            ) / 100
+                          ) * 100
+                        )
+                        ELSE 0
+                      END
+                    ) revenue
                FROM driver_routes dr
                JOIN loads l ON l.id = dr.load_id
+               JOIN drivers hd ON hd.id = dr.driver_id
+               LEFT JOIN load_financials lf ON lf.load_id = l.id
               WHERE dr.driver_id IS NOT NULL
                 AND l.driver_id IS NOT NULL
                 AND l.driver_id <> dr.driver_id
@@ -612,6 +642,11 @@ export async function getWeeklySummary(
       end,
       start,
       end,
+      // OO helper exception first/last (CASE), then helper week range
+      ...OWNER_OPERATOR_EXCEPTION_NAMES.flatMap((ex) => {
+        const parts = ex.toLowerCase().split(/\s+/);
+        return [parts[0], parts[parts.length - 1]];
+      }),
       start,
       end,
       start,
@@ -691,14 +726,11 @@ export async function getWeeklySummary(
     //     .dat amount÷gallons, else Relay paid÷diesel-gal;
     //     MPG from Samsara (fallback miles÷gallons from OR / .dat / Relay)
     //     → fuel $ = (miles / MPG) × PPG (fallback: card spend).
-    //   Owner-operator (client rules):
-    //     Cheryl Day / Donald Smith — left=txn retail (no discount), right=paid;
-    //       $ = retail − paid
-    //     Robert Wagner — left=retail, right=paid+(diesel_gal×$0.20);
-    //       $ = retail − right
+    //   Owner-operator (Mantas: settlement = truth):
+    //     Most OO (incl. Day / D.Smith) — diesel gal × $0.12 (Relay fee)
+    //     Robert Wagner — left=retail, right=paid+(diesel_gal×$0.20)
     //     Chevarres Smith — Fuel = $0
-    //     Other OO — single field: diesel gallons × $0.12 (fee expense)
-    //     Prefer Relay week totals when synced (retail/paid = full txn).
+    //     Prefer Relay week totals when synced.
     const relayTxns = Number(r.relayTxnCount ?? 0);
     const relayPaidAmt = Number(r.relayPaid);
     const relayGalAmt = Number(r.relayGallons);

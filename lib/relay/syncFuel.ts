@@ -88,11 +88,12 @@ export async function syncRelayFuelForWeek(
   week: number
 ): Promise<RelayFuelSyncResult> {
   const { start, end } = weekRange(year, week);
-  // Fetch ±1 calendar day in UTC so Chicago-local edge txns are included,
-  // then keep only those whose America/Chicago date falls in [start, end].
+  // Pad UTC fetch window past week end: Chicago-local Mon night fills often
+  // land after 00:00Z the next calendar day (e.g. Tue 03:32Z = Mon evening).
+  // Still filter to America/Chicago dates in [start, end] only.
   const txns = await fetchFuelTransactions({
     dtstart: `${dayBefore(start)}T00:00:00Z`,
-    dtend: `${dayAfter(end)}T00:00:00Z`,
+    dtend: `${dayAfter(dayAfter(end))}T00:00:00Z`,
   });
 
   const byKey = new Map<string, Agg>();
