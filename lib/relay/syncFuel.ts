@@ -165,12 +165,12 @@ export async function syncRelayFuelForWeek(
   }
 
   const resolveDriver = (a: Agg): number | null => {
-    const card = a.integrationId.replace(/\D/g, '');
-    if (card && byCard.has(card)) return byCard.get(card)!;
+    // Prefer Relay driver name. Never fall back to .dat card→driver when a name
+    // is present — reused/mis-linked cards (e.g. Tim on a card once tied to
+    // Donald) were inflating D.Smith settlement Fuel Card totals.
     const fl = norm(`${a.firstName} ${a.lastName}`);
     if (fl && byFl.has(fl)) return byFl.get(fl)!;
     if (fl && byFull.has(fl)) return byFull.get(fl)!;
-    // optional middle-name: try first+last against full keys that start/end match
     if (a.firstName && a.lastName) {
       const first = norm(a.firstName);
       const last = norm(a.lastName);
@@ -181,6 +181,9 @@ export async function syncRelayFuelForWeek(
       const uniq = [...new Set(hits.map(([, id]) => id))];
       if (uniq.length === 1) return uniq[0];
     }
+    if (a.firstName || a.lastName) return null;
+    const card = a.integrationId.replace(/\D/g, '');
+    if (card && byCard.has(card)) return byCard.get(card)!;
     return null;
   };
 

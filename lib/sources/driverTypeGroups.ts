@@ -135,16 +135,19 @@ function nameMatchesList(
 
 /**
  * OO Fuel rules (Mantas: settlement = source of truth):
- * - Most OO — diesel gallons × $0.12 (Relay settlement fee), including Day / D.Smith
+ * - Cheryl Day / Donald Smith — settlement Fuel Card: left=retail (no discount),
+ *   right=paid (with discount); $ = retail − paid (Relay matches SS card block)
  * - Robert Wagner — left = retail; right = paid + (diesel_gal × $0.20);
- *   $ = retail − right  (sheet: 2699.59 − 2594.59 = 105)
- * - Chevarres Smith — Fuel field always $0 (no gal fee / no Relay savings)
- * Do not invent retail−paid “savings” lines that are not on settlement.
+ *   $ = retail − right
+ * - Chevarres Smith — Fuel field always $0
+ * - All other OO — diesel gallons × $0.12 (Relay settlement fee, e.g. Singh)
  */
 export type OoFuelMode = 'retail_paid' | 'wagner' | 'per_gallon_fee' | 'zero';
 
-/** @deprecated Mantas Nov 2026: Day/D.Smith use per_gallon_fee (settlement). */
-export const OO_FUEL_RETAIL_PAID_NAMES = [] as const;
+export const OO_FUEL_RETAIL_PAID_NAMES = [
+  'Cheryl Day',
+  'Donald Smith',
+] as const;
 
 export const OO_FUEL_WAGNER_NAMES = ['Robert Wagner'] as const;
 
@@ -169,9 +172,9 @@ export function ooRmPerMileForDriver(
 }
 
 export function ooFuelMode(name: string | null | undefined): OoFuelMode {
+  if (nameMatchesList(name, OO_FUEL_RETAIL_PAID_NAMES)) return 'retail_paid';
   if (nameMatchesList(name, OO_FUEL_WAGNER_NAMES)) return 'wagner';
   if (nameMatchesList(name, OO_FUEL_ZERO_NAMES)) return 'zero';
-  // Day / D.Smith / all other OO: settlement diesel fee = gal × $0.12
   return 'per_gallon_fee';
 }
 

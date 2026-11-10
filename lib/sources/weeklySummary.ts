@@ -727,9 +727,10 @@ export async function getWeeklySummary(
     //     MPG from Samsara (fallback miles÷gallons from OR / .dat / Relay)
     //     → fuel $ = (miles / MPG) × PPG (fallback: card spend).
     //   Owner-operator (Mantas: settlement = truth):
-    //     Most OO (incl. Day / D.Smith) — diesel gal × $0.12 (Relay fee)
+    //     Day / D.Smith — Fuel Card on SS: retail − paid (Relay)
     //     Robert Wagner — left=retail, right=paid+(diesel_gal×$0.20)
     //     Chevarres Smith — Fuel = $0
+    //     Other OO — diesel gal × $0.12 (Relay fee, e.g. Singh)
     //     Prefer Relay week totals when synced.
     const relayTxns = Number(r.relayTxnCount ?? 0);
     const relayPaidAmt = Number(r.relayPaid);
