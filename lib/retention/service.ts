@@ -285,6 +285,8 @@ export async function getOverview() {
     (o) => o.responseState === "non_response"
   ).length;
 
+  const googleReviewSends = await retentionStore.countGoogleReviewSends();
+
   return {
     kpis: {
       satisfactionRate,
@@ -292,6 +294,7 @@ export async function getOverview() {
       pendingSurveys,
       // All responses list = submitted + pending + non_response.
       totalResponses: responses.length + pendingSurveys + nonResponseSurveys,
+      googleReviewSends,
     },
     charts: { ratingDistribution, issueBreakdown, surveyTrend },
     drivers: rows,
@@ -1030,6 +1033,72 @@ async function submitResolutionSurvey(
     googleReviewUrl: null,
     thankYou: "Thank you — your resolution feedback was received.",
   };
+}
+
+async function highDriverResponse(token: string) {
+  const occurrence = await retentionStore.findSurveyByToken(token);
+  if (!occurrence || occurrence.responseState !== "completed") {
+    const err = new Error("Survey is not completed");
+    (err as Error & { status?: number }).status = 409;
+    throw err;
+  }
+  const response = await retentionStore.latestResponseForOccurrence(
+    occurrence.id
+  );
+  if (!response || !isHighOverall(response.overallRating)) {
+    const err = new Error("Google review is for a 4 or 5 star survey");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+  return response;
+}
+
+/** Count a driver who is sent to the Google review page. One count per survey. */
+export async function recordGoogleReviewVisit(token: string) {
+  const response = await highDriverResponse(token);
+  if (response.submittedBy !== "admin") {
+    const counted = await retentionStore.recordGoogleReviewSend({
+      driverId: response.driverId,
+      surveyResponseId: response.id,
+    });
+    if (counted) await bustRetentionCaches(response.driverId);
+  }
+  return { googleReviewUrl: GOOGLE_REVIEW_URL };
+}
+
+export async function submitDriverReferral(
+  token: string,
+  input: { fullName?: string; phone?: string; relationship?: string }
+) {
+  const response = await highDriverResponse(token);
+  const fullName = String(input.fullName || "").trim();
+  const phone = String(input.phone || "").trim();
+  const relationship = String(input.relationship || "").trim();
+  const digits = phone.replace(/\D/g, "");
+  if (!fullName || fullName.length > 120) {
+    const err = new Error("Enter the driver's full name");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+  if (digits.length < 7 || phone.length > 32) {
+    const err = new Error("Enter a phone number");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+  if (!relationship || relationship.length > 80) {
+    const err = new Error("Enter how you know this driver");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+  if (response.submittedBy === "admin") return { saved: false };
+  await retentionStore.createDriverReferral({
+    driverId: response.driverId,
+    surveyResponseId: response.id,
+    fullName,
+    phone,
+    relationship,
+  });
+  return { saved: true };
 }
 
 export type ResponsesListFilter = "all" | "pending" | "completed" | "non_response";

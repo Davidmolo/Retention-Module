@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import type { RowDataPacket } from "mysql2";
+import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import { normalizePhoneE164 } from "./sms";
 import type {
@@ -787,6 +787,70 @@ export const retentionStore = {
       `DELETE FROM retention_message_templates WHERE id = ?`,
       [id]
     );
+  },
+
+  async latestResponseForOccurrence(
+    occurrenceId: string
+  ): Promise<SurveyResponse | null> {
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      `SELECT * FROM retention_survey_responses
+        WHERE survey_occurrence_id = ?
+        ORDER BY submitted_at DESC
+        LIMIT 1`,
+      [occurrenceId]
+    );
+    return rows[0] ? mapSurveyResponse(rows[0]) : null;
+  },
+
+  /** Insert once per survey. Returns false when this response was already sent. */
+  async recordGoogleReviewSend(data: {
+    driverId: string;
+    surveyResponseId: string;
+  }): Promise<boolean> {
+    const [result] = await getPool().query<ResultSetHeader>(
+      `INSERT IGNORE INTO retention_google_review_sends
+        (id, driver_id, survey_response_id, sent_at)
+       VALUES (?, ?, ?, ?)`,
+      [
+        nanoid(),
+        toDriverDbId(data.driverId),
+        data.surveyResponseId,
+        toDateTime(new Date().toISOString()),
+      ]
+    );
+    return result.affectedRows === 1;
+  },
+
+  async countGoogleReviewSends(): Promise<number> {
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS n FROM retention_google_review_sends`
+    );
+    return Number(rows[0]?.n || 0);
+  },
+
+  async createDriverReferral(data: {
+    driverId: string;
+    surveyResponseId: string;
+    fullName: string;
+    phone: string;
+    relationship: string;
+  }) {
+    const id = nanoid();
+    await getPool().query(
+      `INSERT INTO retention_driver_referrals
+        (id, driver_id, survey_response_id, full_name, phone, relationship, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        toDriverDbId(data.driverId),
+        data.surveyResponseId,
+        data.fullName,
+        data.phone,
+        data.relationship,
+        toDateTime(new Date().toISOString()),
+      ]
+    );
+    return { id };
   },
 };
 

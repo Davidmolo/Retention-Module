@@ -8,6 +8,7 @@ import {
   MessageCircle,
   Send,
   SmilePlus,
+  Star,
 } from "lucide-react";
 import {
   Bar,
@@ -37,6 +38,7 @@ export type OverviewData = {
     atRiskCount: number;
     pendingSurveys: number;
     totalResponses: number;
+    googleReviewSends: number;
   };
   charts: {
     ratingDistribution: { star: number; count: number }[];
@@ -107,6 +109,13 @@ export const OverviewPanels = memo(function OverviewPanels({
           tone="purple"
           icon={<MessageCircle size={18} />}
           onClick={onResponses}
+        />
+        <KpiCard
+          title="Sent to Google"
+          value={String(data.kpis.googleReviewSends ?? 0)}
+          hint="4 or 5 star drivers opened the Google review page"
+          tone="good"
+          icon={<Star size={18} />}
         />
       </div>
 

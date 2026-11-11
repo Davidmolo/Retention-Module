@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type FormEvent,
   type ReactNode,
 } from "react";
 import { useSearchParams } from "next/navigation";
@@ -438,7 +439,11 @@ export function SurveyClient({
 
                 {step === "thanks-high" && (
                   <StepFrame key="thanks-high" direction={direction}>
-                    <ThanksHigh googleUrl={googleUrl} />
+                    <ThanksHigh
+                      googleUrl={googleUrl}
+                      token={token}
+                      preview={preview}
+                    />
                   </StepFrame>
                 )}
 
@@ -866,9 +871,65 @@ const ResolutionStep = memo(function ResolutionStep({
 
 const ThanksHigh = memo(function ThanksHigh({
   googleUrl,
+  token,
+  preview,
 }: {
   googleUrl: string | null;
+  token: string;
+  preview: boolean;
 }) {
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [relationship, setRelationship] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const sent = useRef(false);
+
+  const goGoogle = useCallback(async () => {
+    if (sent.current) return;
+    setLeaving(true);
+    setFormError(null);
+    try {
+      let url = googleUrl;
+      if (!preview) {
+        const res = await fetch(`/api/survey/${token}/google-review`, {
+          method: "POST",
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "Could not open Google");
+        url = json.data.googleReviewUrl || url;
+      }
+      if (!url) throw new Error("Google review link is missing");
+      sent.current = true;
+      window.location.href = url;
+    } catch (e) {
+      setLeaving(false);
+      setFormError((e as Error).message);
+    }
+  }, [googleUrl, preview, token]);
+
+  const saveReferral = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      if (leaving) return;
+      setFormError(null);
+      if (!preview) {
+        const res = await fetch(`/api/survey/${token}/referral`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fullName, phone, relationship }),
+        });
+        const json = await res.json();
+        if (!json.ok) {
+          setFormError(json.error || "Could not save the referral");
+          return;
+        }
+      }
+      await goGoogle();
+    },
+    [fullName, goGoogle, leaving, phone, preview, relationship, token]
+  );
+
   return (
     <div className="space-y-4 py-6 text-center">
       <CheckCircle2 className="mx-auto text-[var(--xxii-good)]" size={48} />
@@ -876,19 +937,52 @@ const ThanksHigh = memo(function ThanksHigh({
         Thank you!
       </h2>
       <p className="text-sm text-[var(--xxii-muted)]">
-        We&apos;re glad things are going well. Would you leave us a public
-        review?
-              </p>
-              {googleUrl && (
-                <a
-                  href={googleUrl}
-                  target="_blank"
-                  rel="noreferrer"
-          className={`inline-flex items-center justify-center ${btnClass}`}
-                >
-                  Leave a Google Review
-                </a>
-              )}
+        Refer a driver, then we&apos;ll take you to our Google review.
+      </p>
+      <form onSubmit={saveReferral} className="space-y-3 text-left">
+        <p className="text-center text-sm font-bold text-[var(--xxii-text)]">
+          Get $500 when that driver is hired.
+        </p>
+        <input
+          required
+          value={fullName}
+          disabled={leaving}
+          onChange={(e) => setFullName(e.target.value)}
+          placeholder="Full name"
+          className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
+        />
+        <input
+          required
+          value={phone}
+          disabled={leaving}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Phone number"
+          inputMode="tel"
+          className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
+        />
+        <input
+          required
+          value={relationship}
+          disabled={leaving}
+          onChange={(e) => setRelationship(e.target.value)}
+          placeholder="Relationship"
+          className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
+        />
+        {formError ? (
+          <p className="text-sm font-medium text-rose-600">{formError}</p>
+        ) : null}
+        <button type="submit" disabled={leaving} className={btnClass}>
+          Send referral
+        </button>
+      </form>
+      <button
+        type="button"
+        disabled={leaving}
+        onClick={() => void goGoogle()}
+        className="text-sm font-semibold text-[var(--xxii-blue)] disabled:opacity-60"
+      >
+        Skip and go to Google review
+      </button>
     </div>
   );
 });

@@ -63,6 +63,7 @@ type Overview = {
     atRiskCount: number;
     pendingSurveys: number;
     totalResponses: number;
+    googleReviewSends: number;
   };
   charts: {
     ratingDistribution: { star: number; count: number }[];
