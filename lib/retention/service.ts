@@ -10,6 +10,7 @@ import {
   type SurveyResponse,
 } from "./types";
 import { retentionStore } from "./store";
+import { isRetentionTestDriverId } from "./rosterExclusions";
 import {
   driverTypeLabel,
   isHighOverall,
@@ -391,6 +392,7 @@ export async function getDriverDetail(driverId: string) {
       return occ?.surveyKind === "resolution";
     }),
     occurrences,
+    surveyLink: surveyLinkForTestDriver(driver.id, occurrences),
     retentionCase,
     notes,
     eligible: isSurveyEligible(driver),
@@ -403,6 +405,19 @@ export async function getDriverDetail(driverId: string) {
 import { sendSms } from "./sms";
 
 const OPEN_SURVEY_STATES = new Set(["pending", "sent", "reminded"]);
+
+function surveyLinkForTestDriver(
+  driverId: string,
+  occurrences: SurveyOccurrence[]
+): string | null {
+  if (!isRetentionTestDriverId(driverId)) return null;
+  const open = occurrences.find(
+    (o) =>
+      (o.surveyKind || "regular") === "regular" &&
+      ["pending", "sent", "reminded"].includes(o.responseState)
+  );
+  return open ? buildSurveyUrl(open.token) : null;
+}
 
 function buildSurveyUrl(token: string) {
   // Prefer explicit env. Otherwise: production → live host, everything else → localhost.

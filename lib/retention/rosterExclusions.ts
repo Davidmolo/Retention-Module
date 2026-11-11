@@ -9,9 +9,16 @@ export const RETENTION_EXCLUDED_DRIVER_IDS: ReadonlySet<number> = new Set([
   5223, // OSVALDAS IDAS — maintenance (not a driver)
   5309, // Paulius Kruzinauskas — maintenance/staff (not a driver)
   38378, // TEST — testing account
-  900000001, // Shahmeer Test — TEMP retention test driver
   900000002, // Milos Test Driver — TEMP retention test driver
 ]);
+
+/** Shahmeer — manual survey tests only. Shown in Retention; not auto-texted. */
+export const RETENTION_TEST_DRIVER_ID = 900000001;
+
+export function isRetentionTestDriverId(id: string | number): boolean {
+  const n = typeof id === "number" ? id : Number(String(id).trim());
+  return n === RETENTION_TEST_DRIVER_ID;
+}
 
 export function isRetentionExcludedDriverId(id: string | number): boolean {
   const n = typeof id === "number" ? id : Number(String(id).trim());

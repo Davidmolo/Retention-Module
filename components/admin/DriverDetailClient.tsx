@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MAX_SURVEY_REMINDERS } from "@/lib/retention/constants";
+import { isRetentionTestDriverId } from "@/lib/retention/rosterExclusions";
 import { StatusPill, Stars } from "./ui";
 import { DEPARTMENTS, type Department } from "@/lib/retention/types";
 import {
@@ -78,6 +79,7 @@ type Detail = {
   responses: SurveyResponse[];
   resolutionResponses?: SurveyResponse[];
   occurrences?: SurveyOccurrence[];
+  surveyLink?: string | null;
   retentionCase: {
     id: string;
     status: string;
@@ -251,6 +253,7 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
       const payload = json.data as {
         resent?: boolean;
         smsMocked?: boolean;
+        surveyUrl?: string;
         occurrence?: SurveyOccurrence;
       };
       const resent = Boolean(payload.resent);
@@ -268,6 +271,9 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
         const next: Detail = {
           ...data,
           occurrences: [occurrence, ...without],
+          surveyLink: isRetentionTestDriverId(data.driver.id)
+            ? payload.surveyUrl || data.surveyLink || null
+            : null,
         };
         setData(next);
         setCachedDriverDetail(driverId, next);
@@ -470,6 +476,20 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
             Link has been sent
           </div>
         )}
+
+        {data.surveyLink ? (
+          <div className="mt-4 rounded-xl bg-sky-50 px-3 py-2.5 text-sm ring-1 ring-sky-200">
+            <div className="font-semibold text-sky-900">Survey link</div>
+            <a
+              href={data.surveyLink}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 block break-all font-medium text-[var(--xxii-blue)] underline"
+            >
+              {data.surveyLink}
+            </a>
+          </div>
+        ) : null}
 
         {/* Tabs */}
         <div className="mt-5 max-w-full overflow-x-auto border-b border-[var(--xxii-line)]">
