@@ -80,6 +80,7 @@ type Overview = {
     departmentRatings?: { department: string; rating: number }[];
     status: string;
     comment: string;
+    googleReviewSent?: boolean | null;
   }[];
   drivers: DriverRow[];
 };

@@ -821,11 +821,11 @@ export const retentionStore = {
     return result.affectedRows === 1;
   },
 
-  async countGoogleReviewSends(): Promise<number> {
+  async listGoogleReviewResponseIds(): Promise<string[]> {
     const [rows] = await getPool().query<RowDataPacket[]>(
-      `SELECT COUNT(*) AS n FROM retention_google_review_sends`
+      `SELECT survey_response_id FROM retention_google_review_sends`
     );
-    return Number(rows[0]?.n || 0);
+    return rows.map((r) => String(r.survey_response_id));
   },
 
   async createDriverReferral(data: {

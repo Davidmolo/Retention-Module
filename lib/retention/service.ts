@@ -237,6 +237,10 @@ export async function getOverview() {
     rows.map((r) => [r.driverId, { status: r.caseStatus, atRisk: r.atRisk }])
   );
 
+  const googleSentIds = new Set(
+    await retentionStore.listGoogleReviewResponseIds()
+  );
+
   // responses already ORDER BY submitted_at DESC from store
   const recentResponses = responses.slice(0, 8).map((r) => {
     const open = caseByDriverId.get(r.driverId);
@@ -274,6 +278,11 @@ export async function getOverview() {
       status,
       comment: r.generalComment,
       submittedBy: r.submittedBy,
+      googleReviewSent: googleReviewSent(
+        r.overallRating,
+        r.submittedBy,
+        googleSentIds.has(r.id)
+      ),
     };
   });
 
@@ -285,8 +294,6 @@ export async function getOverview() {
     (o) => o.responseState === "non_response"
   ).length;
 
-  const googleReviewSends = await retentionStore.countGoogleReviewSends();
-
   return {
     kpis: {
       satisfactionRate,
@@ -294,7 +301,7 @@ export async function getOverview() {
       pendingSurveys,
       // All responses list = submitted + pending + non_response.
       totalResponses: responses.length + pendingSurveys + nonResponseSurveys,
-      googleReviewSends,
+      googleReviewSends: googleSentIds.size,
     },
     charts: { ratingDistribution, issueBreakdown, surveyTrend },
     drivers: rows,
@@ -1116,6 +1123,8 @@ export type ResponsesListItem = {
   comment: string;
   /** Who submitted a completed response (driver SMS vs admin test). */
   submittedBy?: "driver" | "admin";
+  /** 4–5 star driver survey: true if they opened Google, false if they did not. */
+  googleReviewSent?: boolean | null;
   /** Survey SMS reminders sent for this occurrence (pending / non_response rows). */
   reminderCount?: number;
 };
@@ -1158,10 +1167,20 @@ function mapNonResponseItem(
   };
 }
 
+function googleReviewSent(
+  rating: number,
+  submittedBy: "driver" | "admin",
+  sent: boolean
+): boolean | null {
+  if (submittedBy === "admin" || rating < 4) return null;
+  return sent;
+}
+
 function mapResponseItem(
   r: SurveyResponse,
   driverNameById: Map<string, string>,
-  casesByDriver: Map<string, { atRisk: boolean; status: CaseStatus; updatedAt: string }[]>
+  casesByDriver: Map<string, { atRisk: boolean; status: CaseStatus; updatedAt: string }[]>,
+  googleSentIds: Set<string>
 ): ResponsesListItem {
   const driverCases = casesByDriver.get(r.driverId) || [];
   const open =
@@ -1205,6 +1224,11 @@ function mapResponseItem(
     status,
     comment: r.generalComment,
     submittedBy: r.submittedBy,
+    googleReviewSent: googleReviewSent(
+      r.overallRating,
+      r.submittedBy,
+      googleSentIds.has(r.id)
+    ),
   };
 }
 
@@ -1239,12 +1263,15 @@ export async function getResponsesPage(opts: {
     .trim()
     .toLowerCase();
 
-  const [drivers, allResponses, allOccurrences, allCases] = await Promise.all([
+  const [drivers, allResponses, allOccurrences, allCases, googleSentIdList] =
+    await Promise.all([
     getGpAdapter().listDrivers({ includeInactive: false }),
     retentionStore.listSurveyResponses(),
     retentionStore.listSurveyOccurrences(),
     retentionStore.listRetentionCases(),
+    retentionStore.listGoogleReviewResponseIds(),
   ]);
+  const googleSentIds = new Set(googleSentIdList);
 
   const activeIds = new Set(drivers.map((d) => d.id));
   const resolutionOccIds = new Set(
@@ -1297,7 +1324,9 @@ export async function getResponsesPage(opts: {
     )
     .slice()
     .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
-    .map((r) => mapResponseItem(r, driverNameById, casesByDriver));
+    .map((r) =>
+      mapResponseItem(r, driverNameById, casesByDriver, googleSentIds)
+    );
 
   let list: ResponsesListItem[];
   if (filter === "pending") {

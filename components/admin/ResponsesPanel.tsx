@@ -58,6 +58,7 @@ type ResponseRow = {
   comment: string;
   submittedBy?: "driver" | "admin";
   reminderCount?: number;
+  googleReviewSent?: boolean | null;
 };
 
 type PageData = {
@@ -69,6 +70,12 @@ type PageData = {
   query?: string;
   items: ResponseRow[];
 };
+
+function GoogleSent({ sent }: { sent?: boolean | null }) {
+  if (sent == null) return <span className="text-xs text-slate-400">—</span>;
+  if (sent) return <span className="text-xs font-bold text-emerald-700">Sent</span>;
+  return <span className="text-xs font-bold text-slate-500">Not sent</span>;
+}
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
@@ -304,6 +311,11 @@ export function ResponsesPanel({
                         : "Awaiting reply"}
                     </span>
                   )}
+                  {row.kind === "response" ? (
+                    <div className="mt-2">
+                      <GoogleSent sent={row.googleReviewSent} />
+                    </div>
+                  ) : null}
                   {row.kind === "response" && (
                     <div className="mt-2">
                       <DepartmentRatingsCell ratings={row.departmentRatings} />
@@ -354,6 +366,7 @@ export function ResponsesPanel({
                     <th className="px-5 py-3 text-left font-bold">Rating</th>
                     <th className="px-5 py-3 text-left font-bold">Department</th>
                     <th className="px-5 py-3 text-left font-bold">Status</th>
+                    <th className="px-5 py-3 text-left font-bold">Google</th>
                     <th className="px-5 py-3 text-left font-bold">Comment</th>
                     <th className="px-5 py-3 text-right font-bold">Action</th>
                   </tr>
@@ -408,6 +421,9 @@ export function ResponsesPanel({
                             </span>
                           ) : null}
                         </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <GoogleSent sent={row.googleReviewSent} />
                       </td>
                       <td className="max-w-[260px] truncate px-5 py-3.5 text-slate-600">
                         {row.comment || "—"}

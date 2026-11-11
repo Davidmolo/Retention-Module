@@ -55,6 +55,7 @@ export type OverviewData = {
     departmentRatings?: { department: string; rating: number }[];
     status: string;
     comment: string;
+    googleReviewSent?: boolean | null;
   }[];
 };
 
@@ -113,7 +114,7 @@ export const OverviewPanels = memo(function OverviewPanels({
         <KpiCard
           title="Sent to Google"
           value={String(data.kpis.googleReviewSends ?? 0)}
-          hint="4 or 5 star drivers opened the Google review page"
+          hint="Who went is on each 4 or 5 star response"
           tone="good"
           icon={<Star size={18} />}
         />
@@ -268,6 +269,9 @@ const RecentResponses = memo(function RecentResponses({
             </div>
             <Stars value={row.overallRating} size="sm" />
             <div className="mt-2">
+              <GoogleSent sent={row.googleReviewSent} />
+            </div>
+            <div className="mt-2">
               <DepartmentRatingsCell ratings={row.departmentRatings} />
             </div>
             <p className="mt-2 line-clamp-2 text-sm text-slate-600">{row.comment || "—"}</p>
@@ -287,6 +291,7 @@ const RecentResponses = memo(function RecentResponses({
               <th className="px-5 py-3 text-left font-bold">Rating</th>
               <th className="px-5 py-3 text-left font-bold">Department</th>
               <th className="px-5 py-3 text-left font-bold">Status</th>
+              <th className="px-5 py-3 text-left font-bold">Google</th>
               <th className="px-5 py-3 text-left font-bold">Comment</th>
               <th className="px-5 py-3 text-right font-bold">Action</th>
             </tr>
@@ -314,6 +319,9 @@ const RecentResponses = memo(function RecentResponses({
                 </td>
                 <td className="px-5 py-3.5">
                   <StatusPill status={row.status} />
+                </td>
+                <td className="px-5 py-3.5">
+                  <GoogleSent sent={row.googleReviewSent} />
                 </td>
                 <td className="max-w-[260px] truncate px-5 py-3.5 text-slate-600">
                   {row.comment || "—"}
@@ -343,6 +351,12 @@ const RecentResponses = memo(function RecentResponses({
     </section>
   );
 });
+
+function GoogleSent({ sent }: { sent?: boolean | null }) {
+  if (sent == null) return <span className="text-xs text-slate-400">—</span>;
+  if (sent) return <span className="text-xs font-bold text-emerald-700">Sent</span>;
+  return <span className="text-xs font-bold text-slate-500">Not sent</span>;
+}
 
 function KpiCard({
   title,
