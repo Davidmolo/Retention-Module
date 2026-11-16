@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
-    "dev:turbo": "next dev --turbopack",
+    "dev": "node scripts/patch-next-windows-type-writes.mjs && next dev --webpack",
+    "dev:turbo": "node scripts/patch-next-windows-type-writes.mjs && next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
