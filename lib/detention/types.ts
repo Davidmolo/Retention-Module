@@ -92,10 +92,36 @@ export type DetentionPeriodSummary = {
   isCurrent?: boolean;
   submitted: number;
   submittedAmount: number;
+  /** Claims that are not Denied. */
+  approved: number;
+  /** Paid claims divided by approved. Denied is left out. */
+  collectionRate: number;
   paid: number;
   collectedAmount: number;
   open: number;
   openAmount: number;
+};
+
+export type DetentionPeriodClaim = {
+  id: string;
+  loadNumber: string | null;
+  customer: string | null;
+  driverName: string | null;
+  amount: number | null;
+  status: string;
+  paid: boolean;
+  loadLink: string | null;
+};
+
+export type DetentionRateBar = {
+  key: string;
+  label: string;
+  hint?: string;
+  rate: number;
+};
+
+export type DetentionDispatcherTrend = {
+  months: (DetentionRateBar & { weeks: DetentionRateBar[] })[];
 };
 
 /** Submitted vs paid track record per dispatcher (David’s reporting ask). */
@@ -221,6 +247,8 @@ export type DetentionPartyRow = {
   billed: number;
   received: number;
   rate: number;
+  /** One of the three largest billed-minus-received gaps. */
+  needsAttention?: boolean;
 };
 
 export type DetentionAnalytics = {

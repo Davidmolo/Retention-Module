@@ -13,7 +13,9 @@
 import type { RowDataPacket } from "mysql2";
 import { getPool } from "@/lib/db";
 import { sendAppEmail } from "@/lib/mail";
-import { isArMailbox, resolveArCompliance } from "@/lib/detention/compliance";
+import { isArMailbox, resolveArCompliance, DISPATCHER_UNANSWERED_FINE } from "@/lib/detention/compliance";
+import { mergeCustomerBilled } from "@/lib/detention/customerBilled";
+import { getDetentionComplianceByDispatcher } from "@/lib/detention/summary";
 import { canonicalDispatcherName } from "@/lib/detention/dispatcherNames";
 import { gmailSearchUrl } from "@/lib/detention/gmailLinks";
 import {
@@ -1120,6 +1122,24 @@ export async function runDetentionWeeklySummary(): Promise<{
   };
 }
 
+function attentionText(
+  customers: { name: string; billed: number; received: number; needsAttention?: boolean }[]
+): string {
+  const rows = customers.filter((c) => c.needsAttention);
+  const money = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  if (!rows.length) {
+    return "No customer has a gap between billed and received this week.";
+  }
+  return [
+    "These customers need attention because they have the biggest gap between billed and received detentions.",
+    ...rows.map(
+      (c) =>
+        `• ${c.name}: gap ${money(c.billed - c.received)} (billed ${money(c.billed)}, received ${money(c.received)})`
+    ),
+  ].join("\n");
+}
+
 type CustomerBilledRow = {
   name: string;
   detentions: number;
@@ -1127,6 +1147,7 @@ type CustomerBilledRow = {
   billed: number;
   received: number;
   rate: number;
+  needsAttention?: boolean;
 };
 
 /**
@@ -1177,18 +1198,15 @@ export async function runDetentionCustomerBilledWeekly(): Promise<{
       ORDER BY billed DESC`,
     [weekStart, weekEnd]
   );
-  const customers: CustomerBilledRow[] = rows.map((r) => {
-    const billed = Math.round(Number(r.billed || 0) * 100) / 100;
-    const received = Math.round(Number(r.received || 0) * 100) / 100;
-    return {
+  const customers: CustomerBilledRow[] = mergeCustomerBilled(
+    rows.map((r) => ({
       name: String(r.name || "Unknown"),
       detentions: Number(r.cnt || 0),
       hours: Math.round((Number(r.mins || 0) / 60) * 10) / 10,
-      billed,
-      received,
-      rate: billed > 0 ? Math.round((received / billed) * 1000) / 10 : 0,
-    };
-  });
+      billed: Math.round(Number(r.billed || 0) * 100) / 100,
+      received: Math.round(Number(r.received || 0) * 100) / 100,
+    }))
+  );
 
   const startLabel = formatPrettyDate(weekStart);
   const endLabel = formatPrettyDate(weekEnd);
@@ -1233,13 +1251,15 @@ export async function runDetentionCustomerBilledWeekly(): Promise<{
     "Customers by detention billed",
     ...(lines.length ? lines : ["No detentions billed this week."]),
     "",
+    attentionText(customers),
+    "",
     `Board: ${appUrl}/detention`,
   ].join("\n");
 
   const tableRows = customers
     .map(
       (c) => `<tr>
-        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">${escapeHtml(c.name)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">${escapeHtml(c.name)}${c.needsAttention ? " — Needs attention" : ""}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${c.detentions}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${c.hours}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${escapeHtml(money(c.billed))}</td>
@@ -1280,6 +1300,8 @@ export async function runDetentionCustomerBilledWeekly(): Promise<{
         </tr></thead><tbody>${weekRows}</tbody></table>`
           : `<p>No detention emails this week.</p>`
       }
+      <h3 style="margin:18px 0 6px">Needs attention</h3>
+      <p>${escapeHtml(attentionText(customers))}</p>
       <h3 style="margin:18px 0 6px">Customers by detention billed</h3>
       ${
         customers.length
@@ -1322,6 +1344,119 @@ export async function runDetentionCustomerBilledWeekly(): Promise<{
     emailed: 1,
     mocked: Boolean(send.mocked),
   };
+}
+
+function missedProofLines(
+  items: {
+    customer: string | null;
+    loadNumber: string | null;
+    emailDate: string | null;
+    amount: number | null;
+    threadUrl: string | null;
+    shipmentNumber: string | null;
+  }[]
+): string {
+  return items
+    .map((item) => {
+      const when = item.emailDate ? item.emailDate.slice(0, 10) : "no date";
+      const link =
+        item.threadUrl ||
+        gmailSearchUrl({
+          loadNumber: item.loadNumber,
+          shipmentNumber: item.shipmentNumber,
+        }) ||
+        "";
+      return `• ${when} · ${item.customer || "Unknown customer"} · load ${item.loadNumber || "—"} · $${Number(item.amount || 0).toFixed(2)}${link ? ` · ${link}` : ""}`;
+    })
+    .join("\n");
+}
+
+/** 1st of the month. Unanswered detention emails go to Andrew in accounting. */
+export async function runDispatcherComplianceMonthly(): Promise<{
+  ok: boolean;
+  skipped: boolean;
+  emailed: number;
+  error?: string;
+}> {
+  const day = Number(ymdInTz(new Date()).slice(8, 10));
+  const force = env("DETENTION_COMPLIANCE_MONTHLY_FORCE") === "1";
+  if (!force && day !== 1) return { ok: true, skipped: true, emailed: 0 };
+
+  const to = parseEmails(env("ACCOUNTING_EMAIL", "accounting@goxxii.com"));
+  if (!to.length) return { ok: false, skipped: false, emailed: 0, error: "No accounting recipient" };
+
+  const groups = await getDetentionComplianceByDispatcher();
+  const blocks = groups
+    .map((g) => {
+      const missed = g.items.filter((item) => item.dispatcherCompliance === "missed");
+      if (!missed.length) return "";
+      const fine = missed.length * DISPATCHER_UNANSWERED_FINE;
+      return `${g.dispatcher} — ${missed.length} unanswered · potential charges $${fine}\n${missedProofLines(missed)}`;
+    })
+    .filter(Boolean);
+  const totalFine = groups.reduce(
+    (n, g) =>
+      n +
+      g.items.filter((item) => item.dispatcherCompliance === "missed").length *
+        DISPATCHER_UNANSWERED_FINE,
+    0
+  );
+  const month = ymdInTz(new Date()).slice(0, 7);
+  const text = [
+    "Monthly dispatcher compliance report.",
+    "",
+    `Unanswered detention emails are the proof. Each one is a $${DISPATCHER_UNANSWERED_FINE} fine.`,
+    `Total fine: $${totalFine}`,
+    "",
+    blocks.length ? blocks.join("\n\n") : "No unanswered detention emails.",
+  ].join("\n");
+  const send = await sendAppEmail({
+    to,
+    subject: `[XXII Detention] Monthly compliance report ${month}`,
+    text,
+  });
+  if (!send.ok) {
+    return { ok: false, skipped: false, emailed: 0, error: send.error || "send failed" };
+  }
+  return { ok: true, skipped: false, emailed: 1 };
+}
+
+/** Monday. Each dispatcher gets only their unanswered detention emails and the fine total. */
+export async function runDispatcherUnansweredWeekly(): Promise<{
+  ok: boolean;
+  skipped: boolean;
+  emailed: number;
+  error?: string;
+}> {
+  const force = env("DETENTION_WEEKLY_SUMMARY_FORCE") === "1";
+  if (!force && weekdayInTz(new Date()) !== "Monday") {
+    return { ok: true, skipped: true, emailed: 0 };
+  }
+  const groups = await getDetentionComplianceByDispatcher();
+  let emailed = 0;
+  let error: string | undefined;
+  for (const g of groups) {
+    const missed = g.items.filter((item) => item.dispatcherCompliance === "missed");
+    const to = withoutArt(parseEmails(g.dispatcherEmail || ""));
+    if (!missed.length || !to.length) continue;
+    const fine = missed.length * DISPATCHER_UNANSWERED_FINE;
+    const text = [
+      `Hi ${g.dispatcher},`,
+      "",
+      "These are your unanswered detention emails.",
+      `Potential charges: $${fine} ($${DISPATCHER_UNANSWERED_FINE} each).`,
+      "",
+      missedProofLines(missed),
+    ].join("\n");
+    const send = await sendAppEmail({
+      to,
+      subject: `[XXII Detention] Your unanswered detention emails — $${fine}`,
+      text,
+    });
+    if (!send.ok) error = send.error || "send failed";
+    else emailed += 1;
+  }
+  return { ok: !error, skipped: false, emailed, error };
 }
 
 /** @deprecated Prefer runDetentionComplianceDigests — kept for existing cron imports. */

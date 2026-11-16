@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -13,6 +14,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  ChevronDown,
   Filter,
   Search,
 } from "lucide-react";
@@ -20,8 +22,11 @@ import clsx from "clsx";
 import {
   DETENTION_STATUSES,
   type DetentionDispatcherSummary,
+  type DetentionDispatcherTrend,
   type DetentionPartyRow,
+  type DetentionPeriodClaim,
   type DetentionPeriodSummary,
+  type DetentionRateBar,
 } from "@/lib/detention/types";
 import { SkeletonSummaryCards } from "@/components/ui/skeleton";
 
@@ -80,7 +85,7 @@ function SortTh<K extends string>({
         type="button"
         onClick={() => onSort(col)}
         className={clsx(
-          "inline-flex max-w-full items-center gap-1 whitespace-nowrap uppercase tracking-wide transition-colors hover:text-slate-800",
+          "inline-flex max-w-full items-center gap-1 whitespace-normal text-left uppercase leading-tight tracking-wide transition-colors hover:text-slate-800",
           active ? "text-slate-800" : "text-slate-500"
         )}
       >
@@ -102,9 +107,11 @@ function SortTh<K extends string>({
 type PeriodSortKey =
   | "label"
   | "submitted"
+  | "approved"
   | "submittedAmount"
   | "paid"
   | "collectedAmount"
+  | "collectionRate"
   | "open"
   | "openAmount";
 
@@ -121,6 +128,50 @@ function comparePeriod(
   return mul * ((a[key] as number) - (b[key] as number));
 }
 
+function RateBar({
+  bar,
+  onClick,
+  open,
+}: {
+  bar: DetentionRateBar;
+  onClick?: () => void;
+  open?: boolean;
+}) {
+  const width = Math.max(0, Math.min(bar.rate, 100));
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className="flex w-full items-center gap-2 text-left"
+    >
+      <span className="w-24 shrink-0 text-xs font-medium text-slate-700 sm:w-36">
+        {bar.label}
+        {bar.hint ? (
+          <span className="mt-0.5 block font-normal text-[10px] text-slate-400">
+            {bar.hint}
+          </span>
+        ) : null}
+      </span>
+      <span className="relative h-6 min-w-0 flex-1 overflow-hidden rounded bg-slate-100">
+        <span
+          className="block h-6 rounded bg-emerald-500"
+          style={{ width: `${width}%` }}
+        />
+        <span className="absolute inset-0 flex items-center px-2 text-[11px] font-semibold text-slate-900">
+          {bar.rate}%
+        </span>
+      </span>
+      {onClick ? (
+        <ChevronDown
+          size={14}
+          className={clsx("shrink-0 text-slate-400", open && "rotate-180")}
+        />
+      ) : null}
+    </Tag>
+  );
+}
+
 function SummaryTable({
   title,
   rows,
@@ -128,6 +179,8 @@ function SummaryTable({
   collectedHint,
   weekLimitNote,
   currentBadge,
+  kind,
+  filterQuery,
 }: {
   title: string;
   rows: DetentionPeriodSummary[];
@@ -135,12 +188,48 @@ function SummaryTable({
   collectedHint: string;
   weekLimitNote?: string;
   currentBadge: string;
+  kind: "week" | "month";
+  filterQuery: string;
 }) {
   const [sortKey, setSortKey] = useState<PeriodSortKey>("label");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   // Default: keep API order (newest period first). First click on a column sorts.
   const [userSorted, setUserSorted] = useState(false);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [claimsByKey, setClaimsByKey] = useState<
+    Record<string, DetentionPeriodClaim[]>
+  >({});
+  const [claimError, setClaimError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOpenKey(null);
+    setClaimsByKey({});
+    setClaimError(null);
+  }, [filterQuery]);
+
+  const togglePeriod = async (key: string) => {
+    setClaimError(null);
+    if (openKey === key) {
+      setOpenKey(null);
+      return;
+    }
+    setOpenKey(key);
+    if (claimsByKey[key]) return;
+    const res = await fetch(
+      `/api/detention/summary/detail?kind=${kind}&key=${encodeURIComponent(key)}&${filterQuery}`,
+      { credentials: "include" }
+    );
+    const json = await res.json();
+    if (!res.ok || !json.ok) {
+      setClaimError(json.error || "Could not load detentions");
+      return;
+    }
+    setClaimsByKey((current) => ({
+      ...current,
+      [key]: json.data.claims || [],
+    }));
+  };
 
   const onSort = (col: PeriodSortKey) => {
     setUserSorted(true);
@@ -168,23 +257,93 @@ function SummaryTable({
           <p className="mt-1 text-xs text-muted-foreground">{weekLimitNote}</p>
         ) : null}
         <p className="mt-1 text-xs text-muted-foreground">
-          Click a column header to sort. The in-progress period is marked{" "}
+          Submitted includes denied. Approved leaves denied out. % collected is
+          paid claims divided by approved. Click a {kind} to see its approved
+          detentions. The in-progress period is marked{" "}
           <span className="font-semibold text-sky-800">{currentBadge}</span>.
         </p>
       </div>
       {!rows.length ? (
         <div className="p-6 text-sm text-muted-foreground">No data yet.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] table-fixed text-left text-sm">
+        <div className="max-h-[55dvh] space-y-2 overflow-y-auto p-3 xl:hidden">
+          {sorted.map((r) => {
+            const open = openKey === r.key;
+            const claims = claimsByKey[r.key];
+            return (
+              <div
+                key={r.key}
+                className={clsx(
+                  "rounded-xl border border-border p-3",
+                  r.isCurrent && "bg-sky-50"
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => void togglePeriod(r.key)}
+                  className="flex w-full items-center gap-2 text-left text-sm font-semibold text-[var(--xxii-brand,#1e4d9c)]"
+                >
+                  <ChevronDown
+                    size={14}
+                    className={clsx("shrink-0 text-slate-400", open && "rotate-180")}
+                  />
+                  <span className="min-w-0 flex-1">{r.label}</span>
+                  <span className="shrink-0 tabular-nums">{r.collectionRate}%</span>
+                </button>
+                {r.hint ? (
+                  <p className="mt-1 pl-5 text-[11px] text-slate-400">{r.hint}</p>
+                ) : null}
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3">
+                  <div><dt className="text-slate-500">Submitted</dt><dd className="tabular-nums">{r.submitted}</dd></div>
+                  <div><dt className="text-slate-500">Approved</dt><dd className="tabular-nums">{r.approved}</dd></div>
+                  <div><dt className="text-slate-500">Submitted $</dt><dd className="tabular-nums">{money(r.submittedAmount)}</dd></div>
+                  <div><dt className="text-slate-500">Paid</dt><dd className="tabular-nums">{r.paid}</dd></div>
+                  <div><dt className="text-slate-500">Collected $</dt><dd className="font-semibold tabular-nums text-emerald-700">{money(r.collectedAmount)}</dd></div>
+                  <div><dt className="text-slate-500">Still open</dt><dd className="tabular-nums">{r.open} · {money(r.openAmount)}</dd></div>
+                </dl>
+                {open ? (
+                  <div className="mt-2 space-y-2 border-t border-border pt-2">
+                    {claimError ? (
+                      <p className="text-sm text-rose-600">{claimError}</p>
+                    ) : !claims ? (
+                      <p className="text-sm text-slate-500">Loading…</p>
+                    ) : claims.length === 0 ? (
+                      <p className="text-sm text-slate-500">No approved detentions.</p>
+                    ) : (
+                      claims.map((claim) => (
+                        <div key={claim.id} className="grid grid-cols-2 gap-1 text-xs">
+                          <div className="col-span-2 font-medium">
+                            {claim.paid && claim.loadLink ? (
+                              <a href={claim.loadLink} target="_blank" rel="noreferrer" className="text-[var(--xxii-brand,#1e4d9c)] underline">
+                                {claim.loadNumber || "OpenRoad load"}
+                              </a>
+                            ) : (
+                              claim.loadNumber || "—"
+                            )}
+                          </div>
+                          <span>{claim.customer || "—"}</span>
+                          <span className="text-right">{claim.paid ? "Paid" : "Not paid"} · {claim.amount == null ? "—" : money(claim.amount)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        <div className="hidden max-h-[min(50dvh,36rem)] overflow-auto xl:block">
+          <table className="w-full table-fixed text-left text-xs">
             <colgroup>
-              <col className="w-[22%]" />
-              <col className="w-[13%]" />
-              <col className="w-[13%]" />
+              <col className="w-[16%]" />
               <col className="w-[10%]" />
-              <col className="w-[14%]" />
-              <col className="w-[13%]" />
-              <col className="w-[15%]" />
+              <col className="w-[10%]" />
+              <col className="w-[12%]" />
+              <col className="w-[8%]" />
+              <col className="w-[12%]" />
+              <col className="w-[10%]" />
+              <col className="w-[11%]" />
+              <col className="w-[11%]" />
             </colgroup>
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -201,7 +360,15 @@ function SummaryTable({
                   sortKey={sortKey}
                   sortDir={sortDir}
                   onSort={onSort}
-                  title={submittedHint}
+                  title="Every claim received, including denied"
+                />
+                <SortTh
+                  label="Approved"
+                  col="approved"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                  title="Approved detentions. Denied is left out. % collected uses this count."
                 />
                 <SortTh
                   label="Submitted $"
@@ -227,6 +394,14 @@ function SummaryTable({
                   title={collectedHint}
                 />
                 <SortTh
+                  label="% collected"
+                  col="collectionRate"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onSort}
+                  title="Paid claims divided by approved detentions"
+                />
+                <SortTh
                   label="Still open"
                   col="open"
                   sortKey={sortKey}
@@ -243,30 +418,42 @@ function SummaryTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {sorted.map((r) => (
+              {sorted.map((r) => {
+                const open = openKey === r.key;
+                const claims = claimsByKey[r.key];
+                return (
+                <Fragment key={r.key}>
                 <tr
-                  key={r.key}
                   className={clsx(
                     "hover:bg-slate-50/80",
                     r.isCurrent && "bg-sky-50/90 ring-1 ring-inset ring-sky-200"
                   )}
                 >
                   <td className="px-4 py-3 font-medium text-slate-900">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void togglePeriod(r.key)}
+                      className="flex flex-wrap items-center gap-2 text-left text-[var(--xxii-brand,#1e4d9c)] hover:underline"
+                    >
+                      <ChevronDown
+                        size={14}
+                        className={clsx("text-slate-400", open && "rotate-180")}
+                      />
                       <span>{r.label}</span>
                       {r.isCurrent ? (
                         <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-800 ring-1 ring-sky-200">
                           {currentBadge}
                         </span>
                       ) : null}
-                    </div>
+                    </button>
                     {r.hint ? (
-                      <div className="text-[11px] font-normal text-slate-400">
+                      <div className="pl-5 text-[11px] font-normal text-slate-400">
                         {r.hint}
                       </div>
                     ) : null}
                   </td>
                   <td className="px-4 py-3 tabular-nums">{r.submitted}</td>
+                  <td className="px-4 py-3 tabular-nums">{r.approved}</td>
                   <td className="px-4 py-3 tabular-nums">
                     {money(r.submittedAmount)}
                   </td>
@@ -274,10 +461,72 @@ function SummaryTable({
                   <td className="px-4 py-3 font-semibold tabular-nums text-emerald-700">
                     {money(r.collectedAmount)}
                   </td>
+                  <td className="px-4 py-3 tabular-nums">{r.collectionRate}%</td>
                   <td className="px-4 py-3 tabular-nums">{r.open}</td>
                   <td className="px-4 py-3 tabular-nums">{money(r.openAmount)}</td>
                 </tr>
-              ))}
+                {open ? (
+                  <tr className="bg-slate-50/80">
+                    <td colSpan={9} className="px-4 py-3">
+                      {claimError ? (
+                        <p className="text-sm text-rose-600">{claimError}</p>
+                      ) : !claims ? (
+                        <p className="text-sm text-slate-500">Loading…</p>
+                      ) : claims.length === 0 ? (
+                        <p className="text-sm text-slate-500">
+                          No approved detentions.
+                        </p>
+                      ) : (
+                        <table className="w-full text-left text-xs">
+                          <thead className="text-slate-500">
+                            <tr>
+                              <th className="py-1 pr-3 font-medium">Load</th>
+                              <th className="py-1 pr-3 font-medium">Customer</th>
+                              <th className="py-1 pr-3 font-medium">Driver</th>
+                              <th className="py-1 pr-3 font-medium">Amount</th>
+                              <th className="py-1 font-medium">Paid</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {claims.map((claim) => (
+                              <tr key={claim.id} className="border-t border-slate-200">
+                                <td className="py-1.5 pr-3">
+                                  {claim.paid && claim.loadLink ? (
+                                    <a
+                                      href={claim.loadLink}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
+                                    >
+                                      {claim.loadNumber || "OpenRoad load"}
+                                    </a>
+                                  ) : (
+                                    claim.loadNumber || "—"
+                                  )}
+                                </td>
+                                <td className="py-1.5 pr-3">{claim.customer || "—"}</td>
+                                <td className="py-1.5 pr-3">{claim.driverName || "—"}</td>
+                                <td className="py-1.5 pr-3 tabular-nums">
+                                  {claim.amount == null ? "—" : money(claim.amount)}
+                                </td>
+                                <td className="py-1.5">
+                                  {claim.paid ? (
+                                    <span className="font-semibold text-emerald-700">Paid</span>
+                                  ) : (
+                                    "Not paid"
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -310,10 +559,50 @@ function compareDispatcher(
   return mul * ((a[key] as number) - (b[key] as number));
 }
 
-function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
+function DispatcherTable({
+  rows,
+  filterQuery,
+}: {
+  rows: DetentionDispatcherSummary[];
+  filterQuery: string;
+}) {
   const [q, setQ] = useState("");
   const [sortKey, setSortKey] = useState<DispatcherSortKey>("collectedAmount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [openName, setOpenName] = useState<string | null>(null);
+  const [openMonth, setOpenMonth] = useState<string | null>(null);
+  const [trends, setTrends] = useState<Record<string, DetentionDispatcherTrend>>(
+    {}
+  );
+  const [trendError, setTrendError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOpenName(null);
+    setOpenMonth(null);
+    setTrends({});
+    setTrendError(null);
+  }, [filterQuery]);
+
+  const toggleDispatcher = async (name: string) => {
+    setTrendError(null);
+    setOpenMonth(null);
+    if (openName === name) {
+      setOpenName(null);
+      return;
+    }
+    setOpenName(name);
+    if (trends[name]) return;
+    const res = await fetch(
+      `/api/detention/summary/detail?kind=dispatcher&key=${encodeURIComponent(name)}&${filterQuery}`,
+      { credentials: "include" }
+    );
+    const json = await res.json();
+    if (!res.ok || !json.ok) {
+      setTrendError(json.error || "Could not load the trend");
+      return;
+    }
+    setTrends((current) => ({ ...current, [name]: json.data }));
+  };
 
   const onSort = (col: DispatcherSortKey) => {
     if (sortKey === col) {
@@ -344,7 +633,8 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
           <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
             Submitted is every claim received. Detention Approved leaves out
             Denied — those are not real detentions. Rate % is paid claims
-            divided by detention approved.
+            divided by detention approved. Click a name for the monthly rate,
+            then a month for that month&apos;s weeks.
           </p>
         </div>
         {rows.length ? (
@@ -369,8 +659,44 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
           No dispatcher matches “{q.trim()}”.
         </div>
       ) : (
-        <div className="max-h-[min(60vh,560px)] overflow-auto">
-          <table className="w-full min-w-[980px] table-fixed text-left text-sm">
+        <div className="max-h-[55dvh] space-y-2 overflow-y-auto p-3 xl:hidden">
+          {filtered.map((r) => {
+            const open = openName === r.dispatcher;
+            const trend = trends[r.dispatcher];
+            return (
+              <div key={r.dispatcher} className="rounded-xl border border-border p-3">
+                <button
+                  type="button"
+                  onClick={() => void toggleDispatcher(r.dispatcher)}
+                  className="flex w-full items-center gap-2 text-left text-sm font-semibold text-[var(--xxii-brand,#1e4d9c)]"
+                >
+                  <ChevronDown size={14} className={clsx("shrink-0", open && "rotate-180")} />
+                  <span className="min-w-0 flex-1 truncate">{r.dispatcher}</span>
+                  <span className="shrink-0 tabular-nums">{r.collectionRate}%</span>
+                </button>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3">
+                  <div><dt className="text-slate-500">Submitted</dt><dd>{r.submitted}</dd></div>
+                  <div><dt className="text-slate-500">Approved</dt><dd>{r.approved}</dd></div>
+                  <div><dt className="text-slate-500">Paid</dt><dd>{r.paid}</dd></div>
+                  <div><dt className="text-slate-500">Collected</dt><dd className="font-semibold text-emerald-700">{money(r.collectedAmount)}</dd></div>
+                  <div><dt className="text-slate-500">Open</dt><dd>{r.open} · {money(r.openAmount)}</dd></div>
+                </dl>
+                {open ? (
+                  <div className="mt-2 space-y-2 border-t border-border pt-2">
+                    {trendError ? <p className="text-sm text-rose-600">{trendError}</p> : !trend ? <p className="text-sm text-slate-500">Loading…</p> : trend.months.length === 0 ? <p className="text-sm text-slate-500">No approved detentions in this range.</p> : trend.months.map((month) => (
+                      <div key={month.key}>
+                        <RateBar bar={month} open={openMonth === month.key} onClick={() => setOpenMonth((current) => current === month.key ? null : month.key)} />
+                        {openMonth === month.key ? <div className="mt-1 space-y-1 pl-2">{month.weeks.map((week) => <RateBar key={week.key} bar={week} />)}</div> : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        <div className="hidden max-h-[min(50dvh,36rem)] overflow-auto xl:block">
+          <table className="w-full table-fixed text-left text-xs">
             <colgroup>
               <col className="w-[16%]" />
               <col className="w-[10%]" />
@@ -454,13 +780,30 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((r) => (
-                <tr key={r.dispatcher} className="hover:bg-slate-50/80">
+              {filtered.map((r) => {
+                const open = openName === r.dispatcher;
+                const trend = trends[r.dispatcher];
+                return (
+                <Fragment key={r.dispatcher}>
+                <tr className="hover:bg-slate-50/80">
                   <td
-                    className="truncate px-3 py-3 font-medium text-slate-900 sm:px-4"
+                    className="truncate px-3 py-3 font-medium sm:px-4"
                     title={r.dispatcher}
                   >
-                    {r.dispatcher}
+                    <button
+                      type="button"
+                      onClick={() => void toggleDispatcher(r.dispatcher)}
+                      className="inline-flex max-w-full items-center gap-1 text-left text-[var(--xxii-brand,#1e4d9c)] hover:underline"
+                    >
+                      <ChevronDown
+                        size={14}
+                        className={clsx(
+                          "shrink-0 text-slate-400",
+                          open && "rotate-180"
+                        )}
+                      />
+                      <span className="truncate">{r.dispatcher}</span>
+                    </button>
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
                     {r.submitted}
@@ -487,7 +830,47 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
                     {money(r.openAmount)}
                   </td>
                 </tr>
-              ))}
+                {open ? (
+                  <tr className="bg-slate-50/80">
+                    <td colSpan={9} className="px-4 py-3">
+                      {trendError ? (
+                        <p className="text-sm text-rose-600">{trendError}</p>
+                      ) : !trend ? (
+                        <p className="text-sm text-slate-500">Loading…</p>
+                      ) : trend.months.length === 0 ? (
+                        <p className="text-sm text-slate-500">
+                          No approved detentions in this range.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {trend.months.map((month) => (
+                            <div key={month.key} className="space-y-2">
+                              <RateBar
+                                bar={month}
+                                open={openMonth === month.key}
+                                onClick={() =>
+                                  setOpenMonth((current) =>
+                                    current === month.key ? null : month.key
+                                  )
+                                }
+                              />
+                              {openMonth === month.key ? (
+                                <div className="space-y-1.5 pl-6">
+                                  {month.weeks.map((week) => (
+                                    <RateBar key={week.key} bar={week} />
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -496,37 +879,110 @@ function DispatcherTable({ rows }: { rows: DetentionDispatcherSummary[] }) {
   );
 }
 
+type CustomerSortKey = "name" | "detentions" | "hours" | "billed" | "received" | "rate";
+
 function CustomersBilledTable({ rows }: { rows: DetentionPartyRow[] }) {
+  const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<CustomerSortKey>("billed");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const onSort = (col: CustomerSortKey) => {
+    if (sortKey === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(col);
+      setSortDir(col === "name" ? "asc" : "desc");
+    }
+  };
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const base = !needle
+      ? rows
+      : rows.filter((r) => r.name.toLowerCase().includes(needle));
+    const mul = sortDir === "asc" ? 1 : -1;
+    return [...base].sort((a, b) =>
+      sortKey === "name"
+        ? mul * a.name.localeCompare(b.name)
+        : mul * (a[sortKey] - b[sortKey])
+    );
+  }, [rows, q, sortKey, sortDir]);
+
   return (
     <div className="xxii-card overflow-hidden">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-base font-semibold text-foreground">
-          Customers by detention billed
-        </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Name, detentions, hours, billed, received, and rate. Denied claims
-          are left out, same as Detention Approved.
-        </p>
+      <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">
+            Customers by detention billed
+          </h2>
+          <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
+            {rows.length} customers. The same customer is combined when the
+            name only differs by Inc, LLC, or an extra word such as Logistics.
+            Needs attention marks the three largest gaps between billed and
+            received. Click a column header to sort.
+          </p>
+        </div>
+        {rows.length ? (
+          <div className="relative w-full shrink-0 sm:w-56">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Find customer…"
+              className="w-full rounded-lg border border-border bg-background py-1.5 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-[var(--xxii-brand,#1e4d9c)]"
+            />
+          </div>
+        ) : null}
       </div>
       {!rows.length ? (
         <div className="p-6 text-sm text-muted-foreground">No data yet.</div>
       ) : (
-        <div className="max-h-[360px] overflow-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500">
+        <div className="max-h-[55dvh] space-y-2 overflow-y-auto p-3 xl:hidden">
+          {filtered.map((r) => (
+            <div key={r.name} className="rounded-xl border border-border p-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                <span className="min-w-0">{r.name}</span>
+                {r.needsAttention ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">Needs attention</span>
+                ) : null}
+              </div>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3">
+                <div><dt className="text-slate-500">Detentions</dt><dd>{r.detentions}</dd></div>
+                <div><dt className="text-slate-500">Hours</dt><dd>{r.hours}</dd></div>
+                <div><dt className="text-slate-500">Billed</dt><dd>{money(r.billed)}</dd></div>
+                <div><dt className="text-slate-500">Received</dt><dd>{money(r.received)}</dd></div>
+                <div><dt className="text-slate-500">Rate</dt><dd>{r.rate}%</dd></div>
+              </dl>
+            </div>
+          ))}
+        </div>
+        <div className="hidden max-h-[min(50dvh,36rem)] overflow-auto xl:block">
+          <table className="w-full table-fixed text-left text-xs">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-4 py-2 font-medium">Name</th>
-                <th className="px-4 py-2 font-medium">Detentions</th>
-                <th className="px-4 py-2 font-medium">Hours</th>
-                <th className="px-4 py-2 font-medium">Billed</th>
-                <th className="px-4 py-2 font-medium">Received</th>
-                <th className="px-4 py-2 font-medium">Rate</th>
+                <SortTh label="Name" col="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                <SortTh label="Detentions" col="detentions" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                <SortTh label="Hours" col="hours" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                <SortTh label="Billed" col="billed" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                <SortTh label="Received" col="received" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+                <SortTh label="Rate" col="rate" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map((r) => (
+              {filtered.map((r) => (
                 <tr key={r.name} className="hover:bg-slate-50/80">
-                  <td className="px-4 py-2 font-medium">{r.name}</td>
+                  <td className="px-4 py-2 font-medium">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{r.name}</span>
+                      {r.needsAttention ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                          Needs attention
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
                   <td className="px-4 py-2 tabular-nums">{r.detentions}</td>
                   <td className="px-4 py-2 tabular-nums">{r.hours}</td>
                   <td className="px-4 py-2 tabular-nums">{money(r.billed)}</td>
@@ -602,11 +1058,20 @@ export function DetentionSummaryView() {
   const filtersActive =
     days !== 90 || status !== "all" || dispatcher !== "all" || Boolean(emailDate);
 
+  const filterQuery = useMemo(() => {
+    const sp = new URLSearchParams();
+    sp.set("days", String(days));
+    if (status !== "all") sp.set("status", status);
+    if (dispatcher !== "all") sp.set("dispatcher", dispatcher);
+    if (emailDate) sp.set("emailDate", emailDate);
+    return sp.toString();
+  }, [days, status, dispatcher, emailDate]);
+
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">
             Detention reporting
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -638,7 +1103,7 @@ export function DetentionSummaryView() {
               </button>
             ) : null}
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-4">
             <FilterControl label="Window">
               <select
                 value={days}
@@ -719,7 +1184,9 @@ export function DetentionSummaryView() {
           <SummaryTable
             title="By week"
             rows={weeks}
-            submittedHint="Total claims received during each period listed below."
+            kind="week"
+            filterQuery={filterQuery}
+            submittedHint="Total claims received during each period listed below, including denied."
             collectedHint="Total amount collected for those claims."
             weekLimitNote="Shows the latest 26 Tuesday–Monday weeks (W##, same as Gross Profit) inside the selected filters. When a newer week appears, the oldest drops off the list."
             currentBadge="Current week"
@@ -727,11 +1194,13 @@ export function DetentionSummaryView() {
           <SummaryTable
             title="By month"
             rows={months}
-            submittedHint="Total claims received during each month listed below."
+            kind="month"
+            filterQuery={filterQuery}
+            submittedHint="Total claims received during each month listed below, including denied."
             collectedHint="Total amount collected for those claims."
             currentBadge="Current month"
           />
-          <DispatcherTable rows={dispatchers} />
+          <DispatcherTable rows={dispatchers} filterQuery={filterQuery} />
           <CustomersBilledTable rows={customers} />
         </>
       )}

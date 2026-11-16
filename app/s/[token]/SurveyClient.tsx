@@ -16,6 +16,10 @@ import {
 import { useSearchParams } from "next/navigation";
 import type { Department } from "@/lib/retention/types";
 import { RESOLUTION_ASPECTS } from "@/lib/retention/constants";
+import {
+  REFERRAL_BONUS_MESSAGE,
+  REFERRAL_DISCLAIMER,
+} from "@/lib/retention/referral";
 
 type Session = {
   driver: { id: string; name: string; firstName: string } | null;
@@ -878,7 +882,8 @@ const ThanksHigh = memo(function ThanksHigh({
   token: string;
   preview: boolean;
 }) {
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [relationship, setRelationship] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -917,7 +922,7 @@ const ThanksHigh = memo(function ThanksHigh({
         const res = await fetch(`/api/survey/${token}/referral`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fullName, phone, relationship }),
+          body: JSON.stringify({ firstName, lastName, phone, relationship }),
         });
         const json = await res.json();
         if (!json.ok) {
@@ -927,7 +932,7 @@ const ThanksHigh = memo(function ThanksHigh({
       }
       await goGoogle();
     },
-    [fullName, goGoogle, leaving, phone, preview, relationship, token]
+    [firstName, goGoogle, lastName, leaving, phone, preview, relationship, token]
   );
 
   return (
@@ -936,19 +941,24 @@ const ThanksHigh = memo(function ThanksHigh({
       <h2 className="text-xl font-extrabold text-[var(--xxii-text)]">
         Thank you!
       </h2>
-      <p className="text-sm text-[var(--xxii-muted)]">
-        Refer a driver, then we&apos;ll take you to our Google review.
-      </p>
       <form onSubmit={saveReferral} className="space-y-3 text-left">
         <p className="text-center text-sm font-bold text-[var(--xxii-text)]">
-          Get $500 when that driver is hired.
+          {REFERRAL_BONUS_MESSAGE}
         </p>
         <input
           required
-          value={fullName}
+          value={firstName}
           disabled={leaving}
-          onChange={(e) => setFullName(e.target.value)}
-          placeholder="Full name"
+          onChange={(e) => setFirstName(e.target.value)}
+          placeholder="First name"
+          className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
+        />
+        <input
+          required
+          value={lastName}
+          disabled={leaving}
+          onChange={(e) => setLastName(e.target.value)}
+          placeholder="Last name"
           className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
         />
         <input
@@ -965,9 +975,10 @@ const ThanksHigh = memo(function ThanksHigh({
           value={relationship}
           disabled={leaving}
           onChange={(e) => setRelationship(e.target.value)}
-          placeholder="Relationship"
+          placeholder="Relationship to the referred driver"
           className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
         />
+        <p className="text-xs text-[var(--xxii-muted)]">{REFERRAL_DISCLAIMER}</p>
         {formError ? (
           <p className="text-sm font-medium text-rose-600">{formError}</p>
         ) : null}

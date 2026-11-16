@@ -148,8 +148,9 @@ function mileageExpenses(
   let liabilityInsurance = mileage * rates.liability + rates.liabilityFlat;
   if (opts?.ownerOperator) {
     const credit = Number(opts.liabilityCredit ?? 0);
+    // Credit may exceed the charge (Mantas sheet shows a negative liability line).
     if (Number.isFinite(credit) && credit > 0) {
-      liabilityInsurance = Math.max(0, liabilityInsurance - credit);
+      liabilityInsurance = liabilityInsurance - credit;
     }
   }
   return {
@@ -295,7 +296,12 @@ interface AggRow extends RowDataPacket {
   orDieselGallons: string | number;
   orDieselNet: string | number;
   orFuelTxnCount: string | number;
-  samsaraMpg: string | number | null;
+  driverMpg: string | number | null;
+  driverMeters: string | number | null;
+  driverNameMpg: string | number | null;
+  driverNameMeters: string | number | null;
+  truckMpg: string | number | null;
+  truckMeters: string | number | null;
   trips: string | number;
   miles: string | number;
   loadedMiles: string | number;
@@ -303,6 +309,49 @@ interface AggRow extends RowDataPacket {
   /** OpenRoad load accessorial = total − linehaul (added to Driver's pay). */
   accessorial: string | number;
   prepass: string | number;
+}
+
+/** Same cap as FMS mpgMismatchResolution: truck miles may replace driver miles only up to 4×. */
+const COACHING_TRUCK_PREFER_RATIO = 4;
+
+function positiveMpg(value: string | number | null | undefined): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function positiveMeters(value: string | number | null | undefined): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Eff. MPG shown on the FMS coaching sheet.
+ * Two drivers on the same truck keep their own fuel-energy MPG.
+ * One driver whose truck ran farther (up to 4×) uses the truck's fuel-energy MPG.
+ */
+function coachingSheetMpg(
+  row: AggRow,
+  sharedTruck: boolean
+): number | null {
+  const driverMpg = positiveMpg(row.driverMpg) ?? positiveMpg(row.driverNameMpg);
+  const driverMeters =
+    positiveMeters(row.driverMeters) ?? positiveMeters(row.driverNameMeters);
+  const truckMpg = positiveMpg(row.truckMpg);
+  const truckMeters = positiveMeters(row.truckMeters);
+
+  if (sharedTruck) return driverMpg ?? truckMpg;
+  if (
+    truckMpg != null &&
+    truckMeters != null &&
+    driverMeters != null &&
+    truckMeters > driverMeters &&
+    truckMeters / driverMeters <= COACHING_TRUCK_PREFER_RATIO
+  ) {
+    return truckMpg;
+  }
+  return driverMpg ?? truckMpg;
 }
 
 export async function getWeeklySummary(
@@ -339,35 +388,60 @@ export async function getWeeklySummary(
             COALESCE(orf.diesel_gallons, 0) AS orDieselGallons,
             COALESCE(orf.diesel_net, 0) AS orDieselNet,
             COALESCE(orf.txn_count, 0) AS orFuelTxnCount,
-            -- MPG: driver_id → last-name match on samsara_driver_mpg → vehicle unit
-            COALESCE(
-              (SELECT sm.efficiency_mpge
-                 FROM samsara_driver_mpg sm
-                WHERE sm.year = ? AND sm.week = ?
-                  AND sm.driver_id = d.id
-                LIMIT 1),
-              (SELECT sm.efficiency_mpge
-                 FROM samsara_driver_mpg sm
-                WHERE sm.year = ? AND sm.week = ?
-                  AND d.last_name IS NOT NULL
-                  AND TRIM(d.last_name) <> ''
-                  AND sm.driver_name LIKE CONCAT('%', TRIM(d.last_name), '%')
-                  AND (
-                    d.first_name IS NULL
-                    OR TRIM(d.first_name) = ''
-                    OR sm.driver_name LIKE CONCAT(TRIM(d.first_name), '%')
-                  )
-                ORDER BY sm.id
-                LIMIT 1),
-              (SELECT vm.efficiency_mpge
-                 FROM samsara_vehicle_mpg vm
-                WHERE vm.year = ? AND vm.week = ?
-                  AND u.unit IS NOT NULL
-                  AND TRIM(CAST(u.unit AS CHAR)) <> ''
-                  AND vm.vehicle_name COLLATE utf8mb4_unicode_ci
-                      = CAST(u.unit AS CHAR) COLLATE utf8mb4_unicode_ci
-                LIMIT 1)
-            ) AS samsaraMpg,
+            -- Fuel-energy MPG, same inputs as the FMS coaching sheet:
+            -- driver row, then last-name row, plus the assigned truck row.
+            (SELECT sm.efficiency_mpge
+               FROM samsara_driver_mpg sm
+              WHERE sm.year = ? AND sm.week = ?
+                AND sm.driver_id = d.id
+              LIMIT 1) AS driverMpg,
+            (SELECT sm.distance_meters
+               FROM samsara_driver_mpg sm
+              WHERE sm.year = ? AND sm.week = ?
+                AND sm.driver_id = d.id
+              LIMIT 1) AS driverMeters,
+            (SELECT sm.efficiency_mpge
+               FROM samsara_driver_mpg sm
+              WHERE sm.year = ? AND sm.week = ?
+                AND d.last_name IS NOT NULL
+                AND TRIM(d.last_name) <> ''
+                AND sm.driver_name LIKE CONCAT('%', TRIM(d.last_name), '%')
+                AND (
+                  d.first_name IS NULL
+                  OR TRIM(d.first_name) = ''
+                  OR sm.driver_name LIKE CONCAT(TRIM(d.first_name), '%')
+                )
+              ORDER BY sm.id
+              LIMIT 1) AS driverNameMpg,
+            (SELECT sm.distance_meters
+               FROM samsara_driver_mpg sm
+              WHERE sm.year = ? AND sm.week = ?
+                AND d.last_name IS NOT NULL
+                AND TRIM(d.last_name) <> ''
+                AND sm.driver_name LIKE CONCAT('%', TRIM(d.last_name), '%')
+                AND (
+                  d.first_name IS NULL
+                  OR TRIM(d.first_name) = ''
+                  OR sm.driver_name LIKE CONCAT(TRIM(d.first_name), '%')
+                )
+              ORDER BY sm.id
+              LIMIT 1) AS driverNameMeters,
+            (SELECT vm.efficiency_mpge
+               FROM samsara_vehicle_mpg vm
+              WHERE vm.year = ? AND vm.week = ?
+                AND u.unit IS NOT NULL
+                AND TRIM(CAST(u.unit AS CHAR)) <> ''
+                AND vm.vehicle_name COLLATE utf8mb4_unicode_ci
+                    = CAST(u.unit AS CHAR) COLLATE utf8mb4_unicode_ci
+              LIMIT 1) AS truckMpg,
+            (SELECT vm.distance_meters
+               FROM samsara_vehicle_mpg vm
+              WHERE vm.year = ? AND vm.week = ?
+                AND u.unit IS NOT NULL
+                AND TRIM(CAST(u.unit AS CHAR)) <> ''
+                AND vm.vehicle_name COLLATE utf8mb4_unicode_ci
+                    = CAST(u.unit AS CHAR) COLLATE utf8mb4_unicode_ci
+              LIMIT 1) AS truckMeters,
             COALESCE(t.trips, 0)   AS trips,
             COALESCE(t.miles, 0)   AS miles,
             COALESCE(t.loadedMiles, 0) AS loadedMiles,
@@ -630,6 +704,12 @@ export async function getWeeklySummary(
       week,
       year,
       week,
+      year,
+      week,
+      year,
+      week,
+      year,
+      week,
       end,
       start,
       start,
@@ -665,6 +745,13 @@ export async function getWeeklySummary(
       ).params,
     ]
   );
+
+  const unitCounts = new Map<string, number>();
+  for (const row of rows) {
+    const unit = String(row.unit ?? '').trim();
+    if (!unit) continue;
+    unitCounts.set(unit, (unitCounts.get(unit) ?? 0) + 1);
+  }
 
   const drivers: SummaryDriver[] = rows.map((r) => {
     const gallons = Number(r.gallons);
@@ -754,10 +841,10 @@ export async function getWeeklySummary(
           : relayPpg != null && Number.isFinite(relayPpg) && relayPpg >= 0
             ? relayPpg
             : null;
-    const samsaraMpg =
-      r.samsaraMpg == null || r.samsaraMpg === ''
-        ? null
-        : Number(r.samsaraMpg);
+    const samsaraMpg = coachingSheetMpg(
+      r,
+      (unitCounts.get(String(r.unit ?? '').trim()) ?? 0) >= 2
+    );
     const galForMpg =
       orGalAmt > 0
         ? orGalAmt

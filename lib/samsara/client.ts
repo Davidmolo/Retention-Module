@@ -12,7 +12,7 @@ export interface FuelEnergyReport {
 }
 
 function authHeader(): string {
-  const token = process.env.SAMSARA_API_TOKEN;
+  const token = process.env.SAMSARA_API_TOKEN || process.env.SAMSARA_TOKEN;
   if (!token) throw new Error('SAMSARA_API_TOKEN must be set');
   return `Bearer ${token}`;
 }
@@ -34,6 +34,8 @@ export async function fetchFuelEnergy(
     const url = new URL(`${BASE}/fleet/reports/${kind}/fuel-energy`);
     url.searchParams.set('startDate', startDate);
     url.searchParams.set('endDate', endDate);
+    // Same filter as the FMS MPG coaching sheet (Samsara Fuel dashboard).
+    url.searchParams.set('energyType', 'fuel');
     if (after) url.searchParams.set('after', after);
 
     const res = await fetch(url, {

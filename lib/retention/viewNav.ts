@@ -5,6 +5,7 @@ export type RetentionView =
   | "exit"
   | "reasons"
   | "responses"
+  | "referrals"
   | "configure";
 
 export type ResponsesFilter = "all" | "pending" | "completed" | "non_response";
@@ -18,6 +19,7 @@ const VIEWS = new Set<string>([
   "exit",
   "reasons",
   "responses",
+  "referrals",
   "configure",
 ]);
 

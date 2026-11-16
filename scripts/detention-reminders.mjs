@@ -10,9 +10,13 @@ import nextEnv from "@next/env";
 
 nextEnv.loadEnvConfig(process.cwd());
 
-const { runDetentionComplianceDigests, runDetentionWeeklySummary, runDetentionCustomerBilledWeekly } = await import(
-  "../lib/detention/reminders.ts"
-);
+const {
+  runDetentionComplianceDigests,
+  runDetentionWeeklySummary,
+  runDetentionCustomerBilledWeekly,
+  runDispatcherComplianceMonthly,
+  runDispatcherUnansweredWeekly,
+} = await import("../lib/detention/reminders.ts");
 const { runDetentionFollowUpDigests } = await import(
   "../lib/detention/followUpDigests.ts"
 );
@@ -29,5 +33,17 @@ console.log("[weekly]", JSON.stringify(weekly, null, 2));
 const customers = await runDetentionCustomerBilledWeekly();
 console.log("[customers]", JSON.stringify(customers, null, 2));
 
-const ok = compliance.ok && followUps.ok && weekly.ok && customers.ok;
+const monthlyCompliance = await runDispatcherComplianceMonthly();
+console.log("[monthly-compliance]", JSON.stringify(monthlyCompliance, null, 2));
+
+const dispatcherUnanswered = await runDispatcherUnansweredWeekly();
+console.log("[dispatcher-unanswered]", JSON.stringify(dispatcherUnanswered, null, 2));
+
+const ok =
+  compliance.ok &&
+  followUps.ok &&
+  weekly.ok &&
+  customers.ok &&
+  monthlyCompliance.ok &&
+  dispatcherUnanswered.ok;
 process.exit(ok ? 0 : 1);

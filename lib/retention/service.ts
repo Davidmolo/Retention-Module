@@ -1068,7 +1068,7 @@ async function highDriverResponse(token: string) {
     occurrence.id
   );
   if (!response || !isHighOverall(response.overallRating)) {
-    const err = new Error("Google review is for a 4 or 5 star survey");
+    const err = new Error("This is only for a 4 or 5 star survey");
     (err as Error & { status?: number }).status = 400;
     throw err;
   }
@@ -1088,17 +1088,32 @@ export async function recordGoogleReviewVisit(token: string) {
   return { googleReviewUrl: GOOGLE_REVIEW_URL };
 }
 
+function referralDisplayName(row: {
+  firstName: string;
+  lastName: string;
+  fullName: string;
+}) {
+  const named = `${row.firstName} ${row.lastName}`.trim();
+  return named || row.fullName;
+}
+
 export async function submitDriverReferral(
   token: string,
-  input: { fullName?: string; phone?: string; relationship?: string }
+  input: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    relationship?: string;
+  }
 ) {
   const response = await highDriverResponse(token);
-  const fullName = String(input.fullName || "").trim();
+  const firstName = String(input.firstName || "").trim();
+  const lastName = String(input.lastName || "").trim();
   const phone = String(input.phone || "").trim();
   const relationship = String(input.relationship || "").trim();
   const digits = phone.replace(/\D/g, "");
-  if (!fullName || fullName.length > 120) {
-    const err = new Error("Enter the driver's full name");
+  if (!firstName || firstName.length > 80 || !lastName || lastName.length > 80) {
+    const err = new Error("Enter the driver's first and last name");
     (err as Error & { status?: number }).status = 400;
     throw err;
   }
@@ -1113,14 +1128,95 @@ export async function submitDriverReferral(
     throw err;
   }
   if (response.submittedBy === "admin") return { saved: false };
-  await retentionStore.createDriverReferral({
+  const created = await retentionStore.createDriverReferral({
     driverId: response.driverId,
     surveyResponseId: response.id,
-    fullName,
+    firstName,
+    lastName,
     phone,
     relationship,
   });
+  const referrer = await getGpAdapter().getDriver(response.driverId);
+  const { sendRetentionEmail } = await import("./email");
+  const { referralMiloEmail } = await import("./referral");
+  const referredName = created.fullName;
+  const referrerName = referrer?.name || `Driver ${response.driverId}`;
+  const text = [
+    "A driver submitted a referral.",
+    "",
+    `Referred driver: ${referredName}`,
+    `Phone: ${phone}`,
+    `Relationship: ${relationship}`,
+    `Referral from: ${referrerName}`,
+  ].join("\n");
+  await sendRetentionEmail({
+    to: referralMiloEmail(),
+    subject: `Driver referral from ${referrerName}`,
+    text,
+  });
   return { saved: true };
+}
+
+export async function listReferrals() {
+  const rows = await retentionStore.listDriverReferrals();
+  const names = new Map<string, string>();
+  const adapter = getGpAdapter();
+  for (const id of [...new Set(rows.map((r) => r.driverId))]) {
+    const driver = await adapter.getDriver(id);
+    names.set(id, driver?.name || `Driver ${id}`);
+  }
+  return {
+    referrals: rows.map((row) => {
+      const named = referralDisplayName(row);
+      const parts = named.split(/\s+/);
+      return {
+        id: row.id,
+        firstName: row.firstName || parts[0] || "",
+        lastName: row.lastName || parts.slice(1).join(" "),
+        phone: row.phone,
+        relationship: row.relationship,
+        referrerName: names.get(row.driverId) || `Driver ${row.driverId}`,
+        referrerId: row.driverId,
+        status: row.status,
+        createdAt: row.createdAt,
+      };
+    }),
+  };
+}
+
+export async function setReferralStatus(id: string, status: string) {
+  const { isReferralStatus } = await import("./referral");
+  if (!isReferralStatus(status)) {
+    const err = new Error("Status must be Open, Hired, or Not Hired");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+  const row = await retentionStore.updateDriverReferralStatus(id, status);
+  if (!row) {
+    const err = new Error("Referral not found");
+    (err as Error & { status?: number }).status = 404;
+    throw err;
+  }
+  if (status === "Hired" && row.previousStatus !== "Hired") {
+    const referrer = await getGpAdapter().getDriver(row.driverId);
+    const { sendRetentionEmail } = await import("./email");
+    const hiredName = referralDisplayName(row);
+    const referrerName = referrer?.name || `Driver ${row.driverId}`;
+    const text = [
+      "A referred driver was hired.",
+      "",
+      `Hired driver: ${hiredName}`,
+      `Phone: ${row.phone}`,
+      `Relationship: ${row.relationship}`,
+      `Referral from: ${referrerName}`,
+    ].join("\n");
+    await sendRetentionEmail({
+      to: EMAILS.accounting,
+      subject: `Referred driver hired: ${hiredName}`,
+      text,
+    });
+  }
+  return { id: row.id, status };
 }
 
 export type ResponsesListFilter = "all" | "pending" | "completed" | "non_response";

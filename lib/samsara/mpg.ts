@@ -3,6 +3,40 @@ import { getPool } from '../db';
 import { weekRange } from '../week';
 import { fetchFuelEnergy } from './client';
 
+/** Offset like "-06:00" for noon on that calendar day in the org timezone. */
+function zoneOffset(ymd: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    timeZoneName: 'longOffset',
+  }).formatToParts(new Date(`${ymd}T12:00:00Z`));
+  const name = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
+  const match = name.match(/GMT([+-]\d{2}:\d{2})/);
+  return match?.[1] ?? '-06:00';
+}
+
+/**
+ * Same fuel-energy window as the FMS MPG coaching sheet
+ * (admin-dashboard-backend/utils/samsaraWeek.js): Tuesday 00:00 through
+ * Monday 00:00 in the org timezone. Samsara treats endDate as an inclusive
+ * calendar date, so Monday midnight includes Monday and does not add Tuesday.
+ */
+/** Coaching sheet shows a dash when efficiency is missing or 0. */
+function usableMpg(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value) || value <= 0) return null;
+  return Math.round(value * 100) / 100;
+}
+
+function coachingFuelWindow(start: string, end: string): {
+  startDate: string;
+  endDate: string;
+} {
+  const timeZone = process.env.SAMSARA_ORG_TIMEZONE?.trim() || 'America/Chicago';
+  return {
+    startDate: `${start}T00:00:00${zoneOffset(start, timeZone)}`,
+    endDate: `${end}T00:00:00${zoneOffset(end, timeZone)}`,
+  };
+}
+
 // Pull weekly MPG (fuel efficiency) from Samsara for a given week and upsert one
 // row per vehicle and per driver. Then link vehicles → trucks (by unit = name)
 // and drivers → drivers roster (by name).
@@ -43,8 +77,9 @@ export async function syncSamsaraMpg(
   week: number
 ): Promise<SamsaraMpgSyncResult> {
   const { start, end } = weekRange(year, week);
-  const startDate = `${start}T00:00:00Z`;
-  const endDate = `${end}T23:59:59Z`;
+  // FMS coaching sheet: inclusive Chicago calendar dates, Monday at
+  // 00:00 (not the next Tuesday, and not a UTC 23:59 window).
+  const { startDate, endDate } = coachingFuelWindow(start, end);
   const pool = getPool();
 
   // Vehicles
@@ -53,7 +88,7 @@ export async function syncSamsaraMpg(
     .filter((r) => r.vehicle?.id)
     .map((r) => [
       r.vehicle!.id, r.vehicle!.name ?? null, year, week, start, end,
-      r.efficiencyMpge ?? null, r.fuelConsumedMl ?? null,
+      usableMpg(r.efficiencyMpge), r.fuelConsumedMl ?? null,
       r.distanceTraveledMeters ?? null, r.vehicle!.energyType ?? null,
     ]);
   if (vRows.length) await pool.query(VEH_SQL, [vRows]);
@@ -69,7 +104,7 @@ export async function syncSamsaraMpg(
     .filter((r) => r.driver?.id)
     .map((r) => [
       r.driver!.id, r.driver!.name ?? null, year, week, start, end,
-      r.efficiencyMpge ?? null, r.fuelConsumedMl ?? null,
+      usableMpg(r.efficiencyMpge), r.fuelConsumedMl ?? null,
       r.distanceTraveledMeters ?? null,
     ]);
   if (dRows.length) await pool.query(DRV_SQL, [dRows]);

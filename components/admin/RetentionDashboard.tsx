@@ -19,6 +19,7 @@ import { OverviewPanels } from "./OverviewPanels";
 import { ResponsesPanel } from "./ResponsesPanel";
 import { ConfigureMessagesPanel } from "./ConfigureMessagesPanel";
 import { ReasonsSummaryPanel } from "./ReasonsSummaryPanel";
+import { ReferralsPanel } from "./ReferralsPanel";
 import {
   ListPagination,
   LIST_PAGE_SIZE,
@@ -200,6 +201,10 @@ export function RetentionDashboard({
 
   if (view === "reasons") {
     return <ReasonsSummaryPanel onBack={goOverview} />;
+  }
+
+  if (view === "referrals") {
+    return <ReferralsPanel onBack={goOverview} />;
   }
 
   if (view === "follow-ups" || view === "exit") {

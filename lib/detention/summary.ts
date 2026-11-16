@@ -10,14 +10,19 @@ import {
   dispatcherMatchKeys,
   uniqueCanonicalDispatchers,
 } from "@/lib/detention/dispatcherNames";
+import { mergeCustomerBilled } from "@/lib/detention/customerBilled";
+import { openRoadLoadHref } from "@/lib/detention/parseOpenRoadEmail";
 import { weekOf, weekRange } from "@/lib/week";
 import type {
   DetentionComplianceGroup,
   DetentionComplianceItem,
   DetentionComplianceWeek,
   DetentionDispatcherSummary,
+  DetentionDispatcherTrend,
   DetentionPartyRow,
+  DetentionPeriodClaim,
   DetentionPeriodSummary,
+  DetentionRateBar,
 } from "@/lib/detention/types";
 
 const EMAIL_DAY = "DATE(COALESCE(email_date, created_at))";
@@ -34,6 +39,11 @@ export type DetentionSummaryFilters = {
 function money(n: unknown): number {
   const v = Number(n || 0);
   return Number.isFinite(v) ? v : 0;
+}
+
+/** Paid claims divided by approved claims. */
+function collectionRate(paid: number, approved: number): number {
+  return approved > 0 ? Math.round((paid / approved) * 1000) / 10 : 0;
 }
 
 function isYmd(value: string | undefined): value is string {
@@ -113,6 +123,7 @@ export async function getDetentionWeeklySummary(
     week: number;
     submitted: number;
     submittedAmount: number;
+    approved: number;
     paid: number;
     collectedAmount: number;
     open: number;
@@ -132,6 +143,7 @@ export async function getDetentionWeeklySummary(
         week,
         submitted: 0,
         submittedAmount: 0,
+        approved: 0,
         paid: 0,
         collectedAmount: 0,
         open: 0,
@@ -143,6 +155,7 @@ export async function getDetentionWeeklySummary(
     acc.submitted += 1;
     acc.submittedAmount += amt;
     const status = String(r.status || "");
+    if (status !== "Denied") acc.approved += 1;
     if (status === "Paid") {
       acc.paid += 1;
       acc.collectedAmount += money(r.settled);
@@ -168,6 +181,8 @@ export async function getDetentionWeeklySummary(
         isCurrent: key === currentKey,
         submitted: a.submitted,
         submittedAmount: Math.round(a.submittedAmount * 100) / 100,
+        approved: a.approved,
+        collectionRate: collectionRate(a.paid, a.approved),
         paid: a.paid,
         collectedAmount: Math.round(a.collectedAmount * 100) / 100,
         open: a.open,
@@ -187,6 +202,7 @@ export async function getDetentionMonthlySummary(
        DATE_FORMAT(${EMAIL_DAY}, '%Y-%m') AS ym,
        COUNT(*) AS submitted,
        COALESCE(SUM(COALESCE(amount, 0)), 0) AS submitted_amount,
+       SUM(CASE WHEN COALESCE(status, '') <> 'Denied' THEN 1 ELSE 0 END) AS approved,
        SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count,
        COALESCE(SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, amount, 0) ELSE 0 END), 0) AS collected_amount,
        SUM(CASE WHEN status IN ('Submitted','Approved') THEN 1 ELSE 0 END) AS open_count,
@@ -224,6 +240,11 @@ export async function getDetentionMonthlySummary(
       isCurrent: ym === currentYm,
       submitted: Number(r.submitted || 0),
       submittedAmount: money(r.submitted_amount),
+      approved: Number(r.approved || 0),
+      collectionRate: collectionRate(
+        Number(r.paid_count || 0),
+        Number(r.approved || 0)
+      ),
       paid: Number(r.paid_count || 0),
       collectedAmount: money(r.collected_amount),
       open: Number(r.open_count || 0),
@@ -296,10 +317,7 @@ export async function getDetentionDispatcherSummary(
       ...row,
       // Paid claims / detention approved. Cash received can be higher than
       // the billed amount, so a dollar ratio goes over 100% with claims still open.
-      collectionRate:
-        row.approved > 0
-          ? Math.round((row.paid / row.approved) * 1000) / 10
-          : 0,
+      collectionRate: collectionRate(row.paid, row.approved),
     }))
     .sort(
       (a, b) =>
@@ -307,6 +325,150 @@ export async function getDetentionDispatcherSummary(
         b.submittedAmount - a.submittedAmount ||
         a.dispatcher.localeCompare(b.dispatcher)
     );
+}
+
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return ym;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Approved detentions in one week or month. Paid rows include an OpenRoad load link. */
+export async function listDetentionPeriodClaims(
+  kind: "week" | "month",
+  key: string,
+  filters: DetentionSummaryFilters = {}
+): Promise<DetentionPeriodClaim[]> {
+  const pool = getPool();
+  const { whereSql, params } = buildSummaryWhere(filters);
+  const monthSql =
+    kind === "month" ? ` AND DATE_FORMAT(${EMAIL_DAY}, '%Y-%m') = ?` : "";
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, load_number, customer, driver_name, amount, status, load_link,
+            COALESCE(email_date, created_at) AS when_at,
+            (SELECT l.id FROM loads l
+              WHERE l.gp_load IS NOT NULL
+                AND REPLACE(REPLACE(TRIM(l.gp_load), '#', ''), ' ', '') =
+                    REPLACE(REPLACE(TRIM(detentions.load_number), '#', ''), ' ', '')
+              ORDER BY l.id DESC
+              LIMIT 1) AS openroad_load_id
+       FROM detentions
+      WHERE ${whereSql}
+        AND COALESCE(status, '') <> 'Denied'${monthSql}`,
+    kind === "month" ? [...params, key] : params
+  );
+
+  const matched =
+    kind === "month"
+      ? rows
+      : rows.filter((r) => {
+          const d = new Date(r.when_at);
+          if (Number.isNaN(d.getTime())) return false;
+          const w = weekOf(d);
+          return `${w.year}-W${w.week}` === key;
+        });
+
+  return matched.map((r) => {
+    const status = String(r.status || "");
+    const paid = status === "Paid";
+    const loadLink = openRoadLoadHref(
+      r.load_link ? String(r.load_link) : null,
+      r.openroad_load_id == null ? null : Number(r.openroad_load_id)
+    );
+    return {
+      id: String(r.id),
+      loadNumber: r.load_number ? String(r.load_number) : null,
+      customer: r.customer ? String(r.customer) : null,
+      driverName: r.driver_name ? String(r.driver_name) : null,
+      amount: r.amount == null ? null : money(r.amount),
+      status,
+      paid,
+      loadLink: paid ? loadLink : null,
+    };
+  });
+}
+
+/** Monthly rate bars for one dispatcher, each with that month's weekly rates. */
+export async function getDispatcherRateTrend(
+  dispatcher: string,
+  filters: DetentionSummaryFilters = {}
+): Promise<DetentionDispatcherTrend> {
+  const pool = getPool();
+  const { whereSql, params } = buildSummaryWhere({
+    ...filters,
+    dispatcher,
+  });
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT DATE_FORMAT(${EMAIL_DAY}, '%Y-%m') AS ym,
+            COALESCE(email_date, created_at) AS when_at,
+            status
+       FROM detentions
+      WHERE ${whereSql}
+        AND COALESCE(status, '') <> 'Denied'`,
+    params
+  );
+
+  const months = new Map<
+    string,
+    { approved: number; paid: number; weeks: Map<string, { approved: number; paid: number }> }
+  >();
+
+  for (const r of rows) {
+    const ym = String(r.ym || "");
+    if (!ym) continue;
+    const d = new Date(r.when_at);
+    if (Number.isNaN(d.getTime())) continue;
+    const w = weekOf(d);
+    const weekKey = `${w.year}-W${w.week}`;
+    let month = months.get(ym);
+    if (!month) {
+      month = { approved: 0, paid: 0, weeks: new Map() };
+      months.set(ym, month);
+    }
+    let week = month.weeks.get(weekKey);
+    if (!week) {
+      week = { approved: 0, paid: 0 };
+      month.weeks.set(weekKey, week);
+    }
+    const paid = String(r.status || "") === "Paid";
+    month.approved += 1;
+    week.approved += 1;
+    if (paid) {
+      month.paid += 1;
+      week.paid += 1;
+    }
+  }
+
+  const monthBars = [...months.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([ym, month]) => {
+      const weeks: DetentionRateBar[] = [...month.weeks.entries()]
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([weekKey, week]) => {
+          const match = /^(\d{4})-W(\d+)$/.exec(weekKey);
+          const range = match
+            ? weekRange(Number(match[1]), Number(match[2]))
+            : null;
+          return {
+            key: weekKey,
+            label: match ? `W${Number(match[2])}` : weekKey,
+            hint: range ? `${range.start} → ${range.end}` : undefined,
+            rate: collectionRate(week.paid, week.approved),
+          };
+        });
+      return {
+        key: ym,
+        label: monthLabel(ym),
+        rate: collectionRate(month.paid, month.approved),
+        weeks,
+      };
+    });
+
+  return { months: monthBars };
 }
 
 /** Same columns as the old Insights “Customers by detention billed” table. */
@@ -328,18 +490,15 @@ export async function getDetentionCustomersBilled(
       ORDER BY billed DESC`,
     params
   );
-  return rows.map((r) => {
-    const billed = Math.round(money(r.billed) * 100) / 100;
-    const received = Math.round(money(r.received) * 100) / 100;
-    return {
+  return mergeCustomerBilled(
+    rows.map((r) => ({
       name: String(r.name || "Unknown"),
       detentions: Number(r.cnt || 0),
       hours: Math.round((Number(r.mins || 0) / 60) * 10) / 10,
-      billed,
-      received,
-      rate: billed > 0 ? Math.round((received / billed) * 1000) / 10 : 0,
-    };
-  });
+      billed: Math.round(money(r.billed) * 100) / 100,
+      received: Math.round(money(r.received) * 100) / 100,
+    }))
+  );
 }
 
 export async function getDetentionComplianceByDispatcher(): Promise<

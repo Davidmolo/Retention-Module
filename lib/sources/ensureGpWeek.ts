@@ -1,7 +1,35 @@
 import type { RowDataPacket } from 'mysql2';
 import { getPool } from '../db';
 import { prepareReportWeek } from '../jobs/prepareReportWeek';
+import { weekRange } from '../week';
 import { storeWeeklySummary } from './weeklySummary';
+
+/**
+ * A week can be stored before OpenRoad linehaul lands. loads.linehaul_rate
+ * and loads.revenue stay empty; linehaul is on load_financials. If that
+ * snapshot is kept, Total Gross In stays $0 for every driver.
+ */
+async function storedGrossIsEmptyWhileLinehaulExists(
+  year: number,
+  week: number
+): Promise<boolean> {
+  const { start, end } = weekRange(year, week);
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT
+        (SELECT COALESCE(SUM(gross_income), 0)
+           FROM gross_profit_reports
+          WHERE year = ? AND week = ?) AS stored_gross,
+        (SELECT COUNT(*)
+           FROM loads l
+           JOIN load_financials lf ON lf.load_id = l.id
+          WHERE DATE(l.delivery_at) BETWEEN ? AND ?
+            AND COALESCE(lf.linehaul_rate, 0) > 0) AS loads_with_linehaul`,
+    [year, week, start, end]
+  );
+  const stored = Number(rows[0]?.stored_gross ?? 0);
+  const loads = Number(rows[0]?.loads_with_linehaul ?? 0);
+  return stored <= 0 && loads > 0;
+}
 
 export type EnsureGpWeekResult = {
   year: number;
@@ -32,7 +60,7 @@ export async function ensureGpWeek(
   week: number
 ): Promise<EnsureGpWeekResult> {
   const existing = await countStoredGpDrivers(year, week);
-  if (existing > 0) {
+  if (existing > 0 && !(await storedGrossIsEmptyWhileLinehaulExists(year, week))) {
     return {
       year,
       week,
@@ -42,7 +70,7 @@ export async function ensureGpWeek(
   }
 
   console.log(
-    `[ensureGpWeek] W${week} ${year} missing in DB — going live (prepare + store)`
+    `[ensureGpWeek] W${week} ${year} missing or Total Gross In is $0 — going live (prepare + store)`
   );
   await prepareReportWeek(year, week);
   const stored = await storeWeeklySummary(year, week);

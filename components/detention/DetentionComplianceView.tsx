@@ -14,6 +14,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { DISPATCHER_UNANSWERED_FINE } from "@/lib/detention/compliance";
 import type {
   DetentionComplianceGroup,
   DetentionComplianceWeek,
@@ -28,6 +29,60 @@ function money(n: number | null | undefined) {
 }
 
 
+
+function monthKey(iso: string | null | undefined) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(key: string) {
+  const [y, m] = key.split("-").map(Number);
+  if (!y || !m) return key;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function exportUnanswered(groups: DetentionComplianceGroup[]) {
+  const lines = [
+    ["Dispatcher", "Email date", "Customer", "Load", "Driver", "Amount", "Fine", "Thread"],
+  ];
+  for (const group of groups) {
+    for (const item of group.items) {
+      if (item.dispatcherCompliance !== "missed") continue;
+      lines.push([
+        group.dispatcher,
+        item.emailDate ? item.emailDate.slice(0, 10) : "",
+        item.customer || "",
+        item.loadNumber || "",
+        item.driverName || "",
+        item.amount == null ? "" : String(item.amount),
+        String(DISPATCHER_UNANSWERED_FINE),
+        item.threadUrl ||
+          gmailSearchUrl({
+            loadNumber: item.loadNumber,
+            shipmentNumber: item.shipmentNumber,
+          }) ||
+          "",
+      ]);
+    }
+  }
+  const csv = lines
+    .map((row) =>
+      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+    )
+    .join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "unanswered-detentions.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return "—";
@@ -116,6 +171,7 @@ export function DetentionComplianceView() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [month, setMonth] = useState("all");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
 
@@ -186,6 +242,10 @@ export function DetentionComplianceView() {
     }
   }, [filtered, selectedKey]);
 
+  useEffect(() => {
+    setMonth("all");
+  }, [selectedKey]);
+
 
 
   const selected = filtered.find(
@@ -196,12 +256,26 @@ export function DetentionComplianceView() {
 
   const visibleItems = useMemo(() => {
     if (!selected) return [];
-    if (statusFilter === "all") return selected.items;
     return selected.items.filter((item) => {
+      if (month !== "all" && monthKey(item.emailDate) !== month) return false;
+      if (statusFilter === "all") return true;
       const c = (item.dispatcherCompliance || "n/a").toLowerCase();
       return c === statusFilter;
     });
-  }, [selected, statusFilter]);
+  }, [selected, statusFilter, month]);
+
+  const monthOptions = useMemo(() => {
+    const keys = new Set<string>();
+    for (const item of selected?.items || []) {
+      const key = monthKey(item.emailDate);
+      if (key) keys.add(key);
+    }
+    return [...keys].sort((a, b) => b.localeCompare(a));
+  }, [selected]);
+
+  const fineTotal = visibleItems.filter(
+    (item) => item.dispatcherCompliance === "missed"
+  ).length * DISPATCHER_UNANSWERED_FINE;
 
 
 
@@ -222,10 +296,10 @@ export function DetentionComplianceView() {
 
 
   return (
-    <div className="space-y-4">
+    <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">
             Dispatcher compliance
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -234,12 +308,21 @@ export function DetentionComplianceView() {
             of these totals.
           </p>
         </div>
-        <Link
-          href="/detention"
-          className="text-sm font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
-        >
-          ← Back to board
-        </Link>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => exportUnanswered(groups)}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Export unanswered
+          </button>
+          <Link
+            href="/detention"
+            className="text-sm font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
+          >
+            ← Back to board
+          </Link>
+        </div>
       </div>
 
       {!loading && weeks.length ? (
@@ -253,8 +336,8 @@ export function DetentionComplianceView() {
             dispatcher or Art replied. Denied claims are left out.
             </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
+          <div className="max-h-[40dvh] overflow-auto">
+            <table className="w-full table-fixed text-left text-xs sm:text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-2 font-medium">Week</th>
@@ -302,7 +385,7 @@ export function DetentionComplianceView() {
       ) : null}
 
       {!loading && groups.length ? (
-        <div className="grid gap-2 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
           {[
             { label: "Detentions", value: totals.total },
             { label: "Compliant", value: totals.ok, tone: "good" },
@@ -413,8 +496,8 @@ export function DetentionComplianceView() {
 
 
       {!loading && filtered.length ? (
-        <div className="grid gap-3 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start">
-          <aside className="xxii-card max-h-[min(70vh,720px)] overflow-y-auto lg:sticky lg:top-4">
+        <div className="grid min-w-0 gap-3 xl:grid-cols-[240px_minmax(0,1fr)] xl:items-start">
+          <aside className="xxii-card max-h-[40dvh] min-w-0 overflow-y-auto xl:sticky xl:top-4 xl:max-h-[min(70dvh,720px)]">
             <div className="sticky top-0 z-10 border-b border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Dispatchers ({filtered.length})
             </div>
@@ -448,6 +531,27 @@ export function DetentionComplianceView() {
                       <div className="truncate text-[11px] text-slate-500">
                         {g.dispatcherEmail || "No email on file"}
                       </div>
+                      <div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-emerald-500"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                g.total
+                                  ? Math.round((g.ok / g.total) * 1000) / 10
+                                  : 0
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="mt-0.5 text-[10px] font-semibold text-emerald-700">
+                          {g.total
+                            ? Math.round((g.ok / g.total) * 1000) / 10
+                            : 0}
+                          % compliance
+                        </div>
+                      </div>
                       <div className="flex flex-wrap gap-1 text-[10px] font-semibold">
                         <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">
                           ✓ {g.ok}
@@ -471,7 +575,7 @@ export function DetentionComplianceView() {
 
 
 
-          <section className="xxii-card min-w-0 overflow-hidden">
+          <section className="xxii-card min-w-0 max-w-full overflow-hidden">
             {selected ? (
               <>
                 <button
@@ -504,8 +608,44 @@ export function DetentionComplianceView() {
 
 
                 {expanded ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[860px] text-left text-sm">
+                  <div className="max-h-[55dvh] min-w-0 overflow-auto">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+                      <label className="flex items-center gap-2 text-xs text-slate-600">
+                        Month
+                        <select
+                          value={month}
+                          onChange={(e) => setMonth(e.target.value)}
+                          className="rounded-lg border border-border bg-background px-2 py-1 text-sm"
+                        >
+                          <option value="all">All months</option>
+                          {monthOptions.map((key) => (
+                            <option key={key} value={key}>
+                              {monthLabel(key)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="text-sm font-semibold text-slate-800">
+                        Total fine {money(fineTotal)}
+                      </div>
+                    </div>
+                    <div className="space-y-2 p-3 xl:hidden">
+                      {visibleItems.map((item) => (
+                        <div key={item.id} className="rounded-xl border border-border p-3 text-xs">
+                          <div className="font-semibold">{item.customer || "—"}</div>
+                          <div className="text-slate-500">Load {item.loadNumber || "—"} · {formatWhen(item.emailDate)}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <ComplianceMark value={item.dispatcherCompliance} />
+                            <span>{item.dispatcherCompliance === "missed" ? money(DISPATCHER_UNANSWERED_FINE) : "No fine"}</span>
+                            <span>{money(item.amount)}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {!visibleItems.length ? (
+                        <p className="py-6 text-center text-sm text-slate-500">No detentions for this filter.</p>
+                      ) : null}
+                    </div>
+                    <table className="hidden w-full table-fixed text-left text-xs xl:table">
                       <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                         <tr>
                           <th className="px-4 py-3 font-medium">Email date</th>
@@ -515,6 +655,7 @@ export function DetentionComplianceView() {
                           <th className="px-4 py-3 font-medium">Driver</th>
                           <th className="px-4 py-3 font-medium">Amount</th>
                           <th className="px-4 py-3 font-medium">Compliance</th>
+                          <th className="px-4 py-3 font-medium">Fine</th>
                           <th className="px-4 py-3 font-medium">Reply at</th>
                           <th className="px-4 py-3 font-medium">Thread</th>
                         </tr>
@@ -547,6 +688,11 @@ export function DetentionComplianceView() {
                                 value={item.dispatcherCompliance}
                               />
                             </td>
+                            <td className="px-4 py-3 tabular-nums">
+                              {item.dispatcherCompliance === "missed"
+                                ? money(DISPATCHER_UNANSWERED_FINE)
+                                : "—"}
+                            </td>
                             <td className="px-4 py-3 tabular-nums text-slate-600">
                               {formatWhen(item.dispatcherRepliedAt)}
                             </td>
@@ -578,7 +724,7 @@ export function DetentionComplianceView() {
                         {!visibleItems.length ? (
                           <tr>
                             <td
-                              colSpan={7}
+                              colSpan={8}
                               className="px-4 py-8 text-center text-sm text-slate-500"
                             >
                               No detentions for this filter.
@@ -631,7 +777,7 @@ function ArComplianceSection({
           hours to email on the thread. A missing follow-up is AR, and the
           dispatcher who answered stays compliant.
         </p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
           {[
             { label: "On AR", value: group.total },
             { label: "AR replied ≤48h", value: group.ok, tone: "good" },
@@ -679,8 +825,8 @@ function ArComplianceSection({
           ))}
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[860px] text-left text-sm">
+      <div className="max-h-[45dvh] min-w-0 overflow-auto">
+        <table className="w-full table-fixed text-left text-xs sm:text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3 font-medium">Email date</th>

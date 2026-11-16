@@ -40,6 +40,9 @@ export function arReplyEmails(): string[] {
   );
 }
 
+/** Charged on each detention email the dispatcher did not answer. */
+export const DISPATCHER_UNANSWERED_FINE = 25;
+
 /** Art mailboxes that count as an answer for dispatcher compliance. */
 export function artReplyEmails(): string[] {
   const ar = new Set(arReplyEmails());

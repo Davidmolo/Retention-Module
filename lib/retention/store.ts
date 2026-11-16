@@ -831,26 +831,80 @@ export const retentionStore = {
   async createDriverReferral(data: {
     driverId: string;
     surveyResponseId: string;
-    fullName: string;
+    firstName: string;
+    lastName: string;
     phone: string;
     relationship: string;
   }) {
     const id = nanoid();
+    const fullName = `${data.firstName} ${data.lastName}`.trim();
     await getPool().query(
       `INSERT INTO retention_driver_referrals
-        (id, driver_id, survey_response_id, full_name, phone, relationship, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (id, driver_id, survey_response_id, first_name, last_name, full_name, phone, relationship, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Open', ?)`,
       [
         id,
         toDriverDbId(data.driverId),
         data.surveyResponseId,
-        data.fullName,
+        data.firstName,
+        data.lastName,
+        fullName,
         data.phone,
         data.relationship,
         toDateTime(new Date().toISOString()),
       ]
     );
-    return { id };
+    return { id, fullName };
+  },
+
+  async listDriverReferrals() {
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      `SELECT id, driver_id, survey_response_id, first_name, last_name, full_name,
+              phone, relationship, status, created_at
+         FROM retention_driver_referrals
+        ORDER BY created_at DESC`
+    );
+    return rows.map((r) => ({
+      id: String(r.id),
+      driverId: fromDriverDbId(r.driver_id),
+      surveyResponseId: r.survey_response_id
+        ? String(r.survey_response_id)
+        : null,
+      firstName: r.first_name ? String(r.first_name) : "",
+      lastName: r.last_name ? String(r.last_name) : "",
+      fullName: String(r.full_name || ""),
+      phone: String(r.phone || ""),
+      relationship: String(r.relationship || ""),
+      status: String(r.status || "Open"),
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : "",
+    }));
+  },
+
+  async updateDriverReferralStatus(id: string, status: string) {
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      `SELECT id, driver_id, first_name, last_name, full_name, phone, relationship, status
+         FROM retention_driver_referrals
+        WHERE id = ?
+        LIMIT 1`,
+      [id]
+    );
+    const row = rows[0];
+    if (!row) return null;
+    await getPool().query(
+      `UPDATE retention_driver_referrals SET status = ? WHERE id = ?`,
+      [status, id]
+    );
+    return {
+      id: String(row.id),
+      driverId: fromDriverDbId(row.driver_id),
+      firstName: row.first_name ? String(row.first_name) : "",
+      lastName: row.last_name ? String(row.last_name) : "",
+      fullName: String(row.full_name || ""),
+      phone: String(row.phone || ""),
+      relationship: String(row.relationship || ""),
+      previousStatus: String(row.status || "Open"),
+      status,
+    };
   },
 };
 
