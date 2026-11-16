@@ -13,6 +13,7 @@ import {
   type AppModule,
   type UserRole,
 } from '@/lib/roles';
+import { text } from '@/src/constants/text';
 
 type PageKey =
   | 'dashboard'
@@ -22,6 +23,7 @@ type PageKey =
   | 'trips'
   | 'summary'
   | 'gross-profit'
+  | 'running-balance'
   | 'tolls'
   | 'configurations'
   | 'retention'
@@ -36,6 +38,11 @@ interface NavigationProps {
 /** Gross Profit dropdown — labels match the product menu mockup. */
 const GP_CHILDREN: { href: string; label: string; key: PageKey }[] = [
   { href: '/gross-profit', label: 'Gross Profit table', key: 'gross-profit' },
+  {
+    href: '/gross-profit/running-balance',
+    label: text.runningBalance.nav,
+    key: 'running-balance',
+  },
   { href: '/admin/tolls', label: 'Toll Transactions', key: 'tolls' },
   { href: '/admin/summary', label: 'Summary', key: 'summary' },
   { href: '/admin/configurations', label: 'Configurations', key: 'configurations' },

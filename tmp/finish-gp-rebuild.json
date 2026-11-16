@@ -1,0 +1,187 @@
+{
+  "startedAt": "2026-11-02T22:53:01.595Z",
+  "prepass": {
+    "error": "Prepass transactions failed: 400 {\"statusCode\":400,\"statusMessage\":\"BadRequest\",\"validationErrors\":[{\"message\":\"The difference between StartPostDate and EndPostDate must be no more than 31 days.\",\"members\":[\"EndPostDate\",\"StartPostDate\"]}]}"
+  },
+  "storeOnly": [
+    {
+      "week": 37,
+      "drivers": 58
+    },
+    {
+      "week": 39,
+      "drivers": 62
+    },
+    {
+      "week": 40,
+      "drivers": 62
+    },
+    {
+      "week": 42,
+      "drivers": 69
+    },
+    {
+      "week": 38,
+      "drivers": 59,
+      "note": "refresh"
+    },
+    {
+      "week": 41,
+      "drivers": 65,
+      "note": "refresh"
+    }
+  ],
+  "full": [],
+  "verify": {
+    "reportWeeks": [
+      {
+        "week": 36,
+        "n": 58,
+        "generated_at": "2026-11-02T15:18:41.000Z"
+      },
+      {
+        "week": 37,
+        "n": 58,
+        "generated_at": "2026-11-02T17:53:31.000Z"
+      },
+      {
+        "week": 38,
+        "n": 59,
+        "generated_at": "2026-11-02T18:01:07.000Z"
+      },
+      {
+        "week": 39,
+        "n": 62,
+        "generated_at": "2026-11-02T17:53:33.000Z"
+      },
+      {
+        "week": 40,
+        "n": 62,
+        "generated_at": "2026-11-02T17:53:36.000Z"
+      },
+      {
+        "week": 41,
+        "n": 65,
+        "generated_at": "2026-11-02T18:01:09.000Z"
+      },
+      {
+        "week": 42,
+        "n": 69,
+        "generated_at": "2026-11-02T17:53:38.000Z"
+      },
+      {
+        "week": 43,
+        "n": 71,
+        "generated_at": "2026-11-02T15:42:47.000Z"
+      },
+      {
+        "week": 44,
+        "n": 75,
+        "generated_at": "2026-11-02T15:46:04.000Z"
+      }
+    ],
+    "openroadFuelWeeks": [
+      {
+        "week": 36,
+        "drivers": 78
+      },
+      {
+        "week": 37,
+        "drivers": 69
+      },
+      {
+        "week": 38,
+        "drivers": 73
+      },
+      {
+        "week": 39,
+        "drivers": 74
+      },
+      {
+        "week": 40,
+        "drivers": 71
+      },
+      {
+        "week": 41,
+        "drivers": 71
+      },
+      {
+        "week": 42,
+        "drivers": 72
+      },
+      {
+        "week": 43,
+        "drivers": 71
+      },
+      {
+        "week": 44,
+        "drivers": 72
+      }
+    ],
+    "relayFuelWeeks": [
+      {
+        "week": 36,
+        "drivers": 78
+      },
+      {
+        "week": 37,
+        "drivers": 69
+      },
+      {
+        "week": 38,
+        "drivers": 73
+      },
+      {
+        "week": 39,
+        "drivers": 72
+      },
+      {
+        "week": 40,
+        "drivers": 71
+      },
+      {
+        "week": 41,
+        "drivers": 71
+      },
+      {
+        "week": 42,
+        "drivers": 71
+      },
+      {
+        "week": 43,
+        "drivers": 71
+      },
+      {
+        "week": 44,
+        "drivers": 74
+      }
+    ],
+    "chambersW43": {
+      "gp": {
+        "ppg": 5.6878,
+        "gross": 8411.41,
+        "pay": 2042.1,
+        "prepass": 207.99,
+        "mi": 3141.69
+      },
+      "orFuel": {
+        "gal": 452.7,
+        "ppg": 5.687828584051249,
+        "synced_at": "2026-11-02T15:39:47.000Z"
+      },
+      "relay": {
+        "gal": 452.697,
+        "paid": 2689.71,
+        "synced_at": "2026-11-02T15:42:45.000Z"
+      },
+      "gpMatchesOrPpg": true
+    }
+  },
+  "errors": [
+    "prepass: Prepass transactions failed: 400 {\"statusCode\":400,\"statusMessage\":\"BadRequest\",\"validationErrors\":[{\"message\":\"The difference between StartPostDate and EndPostDate must be no more than 31 days.\",\"members\":[\"EndPostDate\",\"StartPostDate\"]}]}",
+    "full W43: read ECONNRESET",
+    "full W44: read ECONNRESET",
+    "re-store W36: connect ETIMEDOUT"
+  ],
+  "finishedAt": "2026-11-02T23:01:11.925Z"
+}

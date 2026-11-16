@@ -126,6 +126,7 @@ export function pathAllowedForModules(
     path.startsWith("/gross-profit") ||
     path.startsWith("/admin") ||
     path.startsWith("/api/gross-profit") ||
+    path.startsWith("/api/running-balance") ||
     path.startsWith("/api/drivers") ||
     path.startsWith("/api/data") ||
     path.startsWith("/api/configurations") ||

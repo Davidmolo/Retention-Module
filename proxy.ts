@@ -41,6 +41,7 @@ export async function proxy(request: NextRequest) {
     path.startsWith('/api/feedback') ||
     path.startsWith('/api/company-updates') ||
     path.startsWith('/api/gross-profit') ||
+    path.startsWith('/api/running-balance') ||
     path.startsWith('/api/drivers') ||
     path.startsWith('/api/data') ||
     path.startsWith('/api/configurations') ||

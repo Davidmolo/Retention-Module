@@ -1,0 +1,104 @@
+{
+  "startedAt": "2026-11-02T20:06:35.848Z",
+  "weeks": [
+    {
+      "week": 36,
+      "drivers": 58,
+      "attempt": 2
+    },
+    {
+      "week": 37,
+      "drivers": 58,
+      "attempt": 1
+    },
+    {
+      "week": 38,
+      "drivers": 59,
+      "attempt": 1
+    },
+    {
+      "week": 39,
+      "drivers": 62,
+      "attempt": 1
+    },
+    {
+      "week": 40,
+      "drivers": 62,
+      "attempt": 1
+    },
+    {
+      "week": 41,
+      "drivers": 65,
+      "attempt": 1
+    },
+    {
+      "week": 42,
+      "drivers": 69,
+      "attempt": 1
+    },
+    {
+      "week": 43,
+      "drivers": 71,
+      "attempt": 1
+    },
+    {
+      "week": 44,
+      "drivers": 75,
+      "attempt": 1
+    }
+  ],
+  "errors": [],
+  "verify": {
+    "chambersGpPpg": 5.6878,
+    "orPpg": 5.687828584051249,
+    "match": true,
+    "generated": [
+      {
+        "week": 36,
+        "n": 58,
+        "generated_at": "2026-11-02T15:06:55.000Z"
+      },
+      {
+        "week": 37,
+        "n": 58,
+        "generated_at": "2026-11-02T15:07:01.000Z"
+      },
+      {
+        "week": 38,
+        "n": 59,
+        "generated_at": "2026-11-02T15:07:06.000Z"
+      },
+      {
+        "week": 39,
+        "n": 62,
+        "generated_at": "2026-11-02T15:07:10.000Z"
+      },
+      {
+        "week": 40,
+        "n": 62,
+        "generated_at": "2026-11-02T15:07:14.000Z"
+      },
+      {
+        "week": 41,
+        "n": 65,
+        "generated_at": "2026-11-02T15:07:17.000Z"
+      },
+      {
+        "week": 42,
+        "n": 69,
+        "generated_at": "2026-11-02T15:07:22.000Z"
+      },
+      {
+        "week": 43,
+        "n": 71,
+        "generated_at": "2026-11-02T15:07:29.000Z"
+      },
+      {
+        "week": 44,
+        "n": 75,
+        "generated_at": "2026-11-02T15:07:34.000Z"
+      }
+    ]
+  },
+  "finishedAt": "2026-11-02T20:07:36.472Z"
+}
