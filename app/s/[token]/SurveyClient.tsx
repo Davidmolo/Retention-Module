@@ -887,6 +887,7 @@ const ThanksHigh = memo(function ThanksHigh({
   const [phone, setPhone] = useState("");
   const [relationship, setRelationship] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const sent = useRef(false);
 
@@ -916,23 +917,30 @@ const ThanksHigh = memo(function ThanksHigh({
   const saveReferral = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      if (leaving) return;
+      if (leaving || saving) return;
+      setSaving(true);
       setFormError(null);
-      if (!preview) {
-        const res = await fetch(`/api/survey/${token}/referral`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ firstName, lastName, phone, relationship }),
-        });
-        const json = await res.json();
-        if (!json.ok) {
-          setFormError(json.error || "Could not save the referral");
-          return;
+      try {
+        if (!preview) {
+          const res = await fetch(`/api/survey/${token}/referral`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ firstName, lastName, phone, relationship }),
+          });
+          const json = await res.json();
+          if (!json.ok) {
+            setSaving(false);
+            setFormError(json.error || "Could not save the referral");
+            return;
+          }
         }
+        await goGoogle();
+      } catch (err) {
+        setSaving(false);
+        setFormError((err as Error).message);
       }
-      await goGoogle();
     },
-    [firstName, goGoogle, lastName, leaving, phone, preview, relationship, token]
+    [firstName, goGoogle, lastName, leaving, phone, preview, relationship, saving, token]
   );
 
   return (
@@ -948,7 +956,7 @@ const ThanksHigh = memo(function ThanksHigh({
         <input
           required
           value={firstName}
-          disabled={leaving}
+          disabled={saving || leaving}
           onChange={(e) => setFirstName(e.target.value)}
           placeholder="First name"
           className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
@@ -956,7 +964,7 @@ const ThanksHigh = memo(function ThanksHigh({
         <input
           required
           value={lastName}
-          disabled={leaving}
+          disabled={saving || leaving}
           onChange={(e) => setLastName(e.target.value)}
           placeholder="Last name"
           className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
@@ -964,7 +972,7 @@ const ThanksHigh = memo(function ThanksHigh({
         <input
           required
           value={phone}
-          disabled={leaving}
+          disabled={saving || leaving}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="Phone number"
           inputMode="tel"
@@ -973,7 +981,7 @@ const ThanksHigh = memo(function ThanksHigh({
         <input
           required
           value={relationship}
-          disabled={leaving}
+          disabled={saving || leaving}
           onChange={(e) => setRelationship(e.target.value)}
           placeholder="Relationship to the referred driver"
           className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
@@ -982,8 +990,15 @@ const ThanksHigh = memo(function ThanksHigh({
         {formError ? (
           <p className="text-sm font-medium text-rose-600">{formError}</p>
         ) : null}
-        <button type="submit" disabled={leaving} className={btnClass}>
-          Send referral
+        <button type="submit" disabled={saving || leaving} className={btnClass}>
+          {saving || leaving ? (
+            <span className="inline-flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Sending…
+            </span>
+          ) : (
+            "Send referral"
+          )}
         </button>
       </form>
       <button

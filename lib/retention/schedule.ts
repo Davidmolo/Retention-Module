@@ -17,10 +17,7 @@ import {
   SURVEY_REMINDER_AFTER_DAYS,
 } from "./constants";
 import { isSurveyEligible, surveyFrequencyLabel } from "./rules";
-import {
-  isRetentionExcludedDriverId,
-  isRetentionTestDriverId,
-} from "./rosterExclusions";
+import { isRetentionExcludedDriverId } from "./rosterExclusions";
 import { retentionStore } from "./store";
 import { resendSurveyOccurrence, sendSurvey } from "./service";
 
@@ -80,16 +77,6 @@ export async function runScheduledSurveys(): Promise<{
   let firstSend = true;
 
   for (const driver of drivers) {
-    if (isRetentionTestDriverId(driver.id)) {
-      results.push({
-        driverId: driver.id,
-        name: driver.name,
-        action: "skipped",
-        reason: "test_driver_manual_only",
-      });
-      skipped += 1;
-      continue;
-    }
     if (!isSurveyEligible(driver)) {
       results.push({
         driverId: driver.id,
@@ -203,10 +190,6 @@ export async function runSurveyReminders(opts?: {
   let firstTouch = true;
 
   for (const occ of all) {
-    if (isRetentionTestDriverId(occ.driverId)) {
-      skipped += 1;
-      continue;
-    }
     // Already submitted or closed — never send automatic reminders.
     if (
       occ.responseState === "completed" ||

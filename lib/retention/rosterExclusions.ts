@@ -12,7 +12,7 @@ export const RETENTION_EXCLUDED_DRIVER_IDS: ReadonlySet<number> = new Set([
   900000002, // Milos Test Driver — TEMP retention test driver
 ]);
 
-/** Shahmeer — manual survey tests only. Shown in Retention; not auto-texted. */
+/** Shahmeer test driver. Same survey schedule as other drivers. Emails about him go to the test inbox. */
 export const RETENTION_TEST_DRIVER_ID = 900000001;
 
 export function isRetentionTestDriverId(id: string | number): boolean {

@@ -52,6 +52,7 @@ type RetentionNavItem = {
 const RETENTION_CHILDREN: RetentionNavItem[] = [
   { href: '/retention', label: 'Overview', view: null },
   { href: '/retention?view=responses', label: 'Responses', view: 'responses' },
+  { href: '/retention?view=referrals', label: 'Referrals', view: 'referrals' },
   { href: '/retention?view=at-risk', label: 'At Risk', view: 'at-risk' },
   { href: '/retention?view=follow-ups', label: 'Follow-ups', view: 'follow-ups' },
   { href: '/retention?view=exit', label: 'Resolved', view: 'exit' },

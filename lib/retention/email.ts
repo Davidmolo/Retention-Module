@@ -5,13 +5,14 @@
  *
  * Needs SMTP_* env. Without SMTP → logs mock and still writes notification_logs.
  *
- * RETENTION_EMAIL_TESTING=true → all retention mail goes to RETENTION_EMAIL_TEST_TO
- * (production To/Cc are listed in the body). Set false for real James/dept routing.
+ * Emails about the Shahmeer test driver (900000001) go to RETENTION_EMAIL_TEST_TO.
+ * Every other retention email goes to the real recipient.
  */
 
 import fs from "fs";
 import path from "path";
 import nodemailer from "nodemailer";
+import { isRetentionTestDriverId } from "./rosterExclusions";
 
 export type EmailSendResult = {
   ok: boolean;
@@ -259,12 +260,6 @@ export function isSmtpConfigured(): boolean {
   return Boolean(env("SMTP_HOST") && env("SMTP_USER") && env("SMTP_PASS"));
 }
 
-/** When true, do not email James / departments — send only to the test inbox. */
-export function isRetentionEmailTesting(): boolean {
-  const v = env("RETENTION_EMAIL_TESTING", "false").toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
-}
-
 export function retentionEmailTestTo(): string {
   return env("RETENTION_EMAIL_TEST_TO", "shahmeer@azfsllc.com");
 }
@@ -305,7 +300,8 @@ function escapeHtml(s: string): string {
 
 function applyTestingRedirect(
   to: string[],
-  cc: string[]
+  cc: string[],
+  forTestDriver: boolean
 ): {
   to: string[];
   cc: string[];
@@ -316,7 +312,7 @@ function applyTestingRedirect(
   textPrefix: string;
   htmlBanner: string;
 } {
-  if (!isRetentionEmailTesting()) {
+  if (!forTestDriver) {
     return {
       to,
       cc,
@@ -359,6 +355,7 @@ export async function sendRetentionEmail(opts: {
   subject: string;
   text: string;
   html?: string;
+  driverId?: string;
 }): Promise<EmailSendResult> {
   const intendedTo = uniqueEmails(
     Array.isArray(opts.to) ? opts.to : [opts.to]
@@ -370,7 +367,11 @@ export async function sendRetentionEmail(opts: {
     return { ok: false, mocked: false, error: "No email recipients" };
   }
 
-  const redirected = applyTestingRedirect(intendedTo, intendedCc);
+  const redirected = applyTestingRedirect(
+    intendedTo,
+    intendedCc,
+    opts.driverId != null && isRetentionTestDriverId(opts.driverId)
+  );
   const to = redirected.to;
   const cc = redirected.cc;
   const subject = `${redirected.subjectPrefix}${opts.subject}`;

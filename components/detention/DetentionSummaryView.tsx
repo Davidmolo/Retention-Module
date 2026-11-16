@@ -266,6 +266,7 @@ function SummaryTable({
       {!rows.length ? (
         <div className="p-6 text-sm text-muted-foreground">No data yet.</div>
       ) : (
+        <>
         <div className="max-h-[55dvh] space-y-2 overflow-y-auto p-3 xl:hidden">
           {sorted.map((r) => {
             const open = openKey === r.key;
@@ -530,6 +531,7 @@ function SummaryTable({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );
@@ -659,6 +661,7 @@ function DispatcherTable({
           No dispatcher matches “{q.trim()}”.
         </div>
       ) : (
+        <>
         <div className="max-h-[55dvh] space-y-2 overflow-y-auto p-3 xl:hidden">
           {filtered.map((r) => {
             const open = openName === r.dispatcher;
@@ -874,6 +877,7 @@ function DispatcherTable({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );
@@ -939,6 +943,7 @@ function CustomersBilledTable({ rows }: { rows: DetentionPartyRow[] }) {
       {!rows.length ? (
         <div className="p-6 text-sm text-muted-foreground">No data yet.</div>
       ) : (
+        <>
         <div className="max-h-[55dvh] space-y-2 overflow-y-auto p-3 xl:hidden">
           {filtered.map((r) => (
             <div key={r.name} className="rounded-xl border border-border p-3">
@@ -993,6 +998,7 @@ function CustomersBilledTable({ rows }: { rows: DetentionPartyRow[] }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

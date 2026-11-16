@@ -173,6 +173,7 @@ async function sendBirthdayWish(opts: {
       subject: mail.subject,
       text: mail.text,
       html: mail.html,
+      driverId: opts.driverId,
     });
     await retentionStore.addNotificationLog({
       trigger: "driver_birthday",

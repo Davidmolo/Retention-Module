@@ -884,6 +884,7 @@ export async function submitSurvey(
       subject: overallMail.subject,
       text: overallMail.text,
       html: overallMail.html,
+      driverId: driver.id,
     });
     await retentionStore.addNotificationLog({
       trigger: "overall_low",
@@ -929,6 +930,7 @@ export async function submitSurvey(
         subject: deptMail.subject,
         text: deptMail.text,
         html: deptMail.html,
+        driverId: driver.id,
       });
       const loggedRecipients = deptSend.deliveredTo?.length
         ? deptSend.deliveredTo
@@ -1147,12 +1149,13 @@ export async function submitDriverReferral(
     `Referred driver: ${referredName}`,
     `Phone: ${phone}`,
     `Relationship: ${relationship}`,
-    `Referral from: ${referrerName}`,
+    `Referral from: ${referrerName} (driver id: ${response.driverId})`,
   ].join("\n");
   await sendRetentionEmail({
     to: referralMiloEmail(),
     subject: `Driver referral from ${referrerName}`,
     text,
+    driverId: response.driverId,
   });
   return { saved: true };
 }
@@ -1208,12 +1211,13 @@ export async function setReferralStatus(id: string, status: string) {
       `Hired driver: ${hiredName}`,
       `Phone: ${row.phone}`,
       `Relationship: ${row.relationship}`,
-      `Referral from: ${referrerName}`,
+      `Referral from: ${referrerName} (driver id: ${row.driverId})`,
     ].join("\n");
     await sendRetentionEmail({
       to: EMAILS.accounting,
       subject: `Referred driver hired: ${hiredName}`,
       text,
+      driverId: row.driverId,
     });
   }
   return { id: row.id, status };
