@@ -17,6 +17,7 @@ import { useSearchParams } from "next/navigation";
 import type { Department } from "@/lib/retention/types";
 import { RESOLUTION_ASPECTS } from "@/lib/retention/constants";
 import {
+  GOOGLE_REVIEW_LUNCH_MESSAGE,
   REFERRAL_BONUS_MESSAGE,
   REFERRAL_DISCLAIMER,
 } from "@/lib/retention/referral";
@@ -987,6 +988,9 @@ const ThanksHigh = memo(function ThanksHigh({
           className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
         />
         <p className="text-xs text-[var(--xxii-muted)]">{REFERRAL_DISCLAIMER}</p>
+        <p className="text-center text-sm font-bold text-[var(--xxii-text)]">
+          {GOOGLE_REVIEW_LUNCH_MESSAGE}
+        </p>
         {formError ? (
           <p className="text-sm font-medium text-rose-600">{formError}</p>
         ) : null}

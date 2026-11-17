@@ -363,7 +363,7 @@ export async function getDriverDetail(driverId: string) {
     );
 
   const adapter = getGpAdapter();
-  const [driver, averages, responses, occurrences, retentionCase, notes] =
+  const [driver, averages, responses, occurrences, retentionCase, notes, googleSends] =
     await Promise.all([
       adapter.getDriver(driverId),
       adapter.getSixWeekAverages(driverId),
@@ -371,6 +371,7 @@ export async function getDriverDetail(driverId: string) {
       retentionStore.listSurveyOccurrences(driverId),
       retentionStore.getOpenOrLatestCase(driverId),
       retentionStore.listInternalNotes(driverId),
+      retentionStore.listGoogleReviewSendsForDriver(driverId),
     ]);
   if (!driver) {
     const err = new Error("Driver not found");
@@ -393,6 +394,7 @@ export async function getDriverDetail(driverId: string) {
     }),
     occurrences,
     surveyLink: surveyLinkForTestDriver(driver.id, occurrences),
+    googleVisits: googleVisitsForDriver(responses, occurrences, googleSends),
     retentionCase,
     notes,
     eligible: isSurveyEligible(driver),
@@ -417,6 +419,31 @@ function surveyLinkForTestDriver(
       ["pending", "sent", "reminded"].includes(o.responseState)
   );
   return open ? buildSurveyUrl(open.token) : null;
+}
+
+function googleVisitsForDriver(
+  responses: SurveyResponse[],
+  occurrences: SurveyOccurrence[],
+  sends: { surveyResponseId: string; sentAt: string }[]
+) {
+  const sentAt = new Map(sends.map((s) => [s.surveyResponseId, s.sentAt]));
+  const resolution = new Set(
+    occurrences.filter((o) => o.surveyKind === "resolution").map((o) => o.id)
+  );
+  return responses
+    .filter(
+      (r) =>
+        r.submittedBy !== "admin" &&
+        isHighOverall(r.overallRating) &&
+        !resolution.has(r.surveyOccurrenceId)
+    )
+    .map((r) => ({
+      id: r.id,
+      submittedAt: r.submittedAt,
+      overallRating: r.overallRating,
+      sentAt: sentAt.get(r.id) || null,
+    }))
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
 }
 
 function buildSurveyUrl(token: string) {
