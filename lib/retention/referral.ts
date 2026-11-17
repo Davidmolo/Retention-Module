@@ -1,5 +1,8 @@
 export const REFERRAL_BONUS_MESSAGE = "Refer a driver and get paid $500";
 
+export const GOOGLE_REVIEW_LUNCH_MESSAGE =
+  "Share your experience working with XXII on Google and get a lunch on us, valued at $25.";
+
 export const REFERRAL_DISCLAIMER =
   "*Disclaimer: The referral bonus is payable only if the referred candidate is successfully hired by the company.";
 

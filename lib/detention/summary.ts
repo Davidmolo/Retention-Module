@@ -508,8 +508,9 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT
        id, customer, load_number, shipment_number, driver_name, amount, status,
-       email_date, thread_url, dispatcher, dispatcher_email,
-       dispatcher_replied_at, dispatcher_compliance, source
+       email_date, thread_url, thread_id, message_id, source,
+       dispatcher, dispatcher_email,
+       dispatcher_replied_at, dispatcher_compliance
      FROM detentions
      WHERE dispatcher IS NOT NULL AND TRIM(dispatcher) <> ''
      ORDER BY dispatcher ASC, COALESCE(email_date, created_at) DESC`
@@ -539,7 +540,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   const groups = new Map<string, DetentionComplianceGroup>();
   const emailBackfill: { id: string; email: string }[] = [];
   const clearNa: { id: string; compliance: string }[] = [];
-  const manualNa: string[] = [];
+  const clearFine: string[] = [];
 
   for (const { r, dispatcher, key } of raws) {
     if (String(r.status || "") === "Denied") continue;
@@ -570,40 +571,45 @@ export async function getDetentionComplianceByDispatcher(): Promise<
       (rowEmail.includes("@") ? rowEmail : null) || inherited;
     const hadEmailOnRow = rowEmail.includes("@");
     const hasDispatcherEmail = Boolean(dispatcherEmail);
-    const manual = String(r.source || "") === "manual";
 
     // Stuck n/a only because email was missing — recompute once we have one.
-    // A typed-in detention has no email to answer, so it stays n/a.
     const storedRaw = r.dispatcher_compliance
       ? String(r.dispatcher_compliance)
       : null;
-    const stored = manual
-      ? "n/a"
-      : storedRaw === "n/a" && hasDispatcherEmail && !repliedAt
+    const stored =
+      storedRaw === "n/a" && hasDispatcherEmail && !repliedAt
         ? null
         : storedRaw;
 
-    const compliance = manual
-      ? "n/a"
-      : resolveDispatcherCompliance({
-          status: String(r.status || ""),
-          emailDate,
-          repliedAt,
-          stored,
-          hasDispatcherEmail,
-        });
+    const source = String(r.source || "");
+    const hasThread = Boolean(
+      String(r.thread_id || "").trim() ||
+        String(r.message_id || "").trim() ||
+        String(r.thread_url || "").trim()
+    );
+    const hasDetentionEmail = source !== "manual" && hasThread;
+    const compliance = resolveDispatcherCompliance({
+      status: String(r.status || ""),
+      emailDate,
+      repliedAt,
+      stored,
+      hasDispatcherEmail,
+      hasDetentionEmail,
+    });
 
-    if (manual) {
-      if (storedRaw !== "n/a") manualNa.push(String(r.id));
-    } else if (!hadEmailOnRow && dispatcherEmail) {
+    if (hasDetentionEmail && !hadEmailOnRow && dispatcherEmail) {
       emailBackfill.push({ id: String(r.id), email: dispatcherEmail });
     }
     if (
-      !manual &&
+      hasDetentionEmail &&
+      String(r.status || "") !== "Paid" &&
       (storedRaw === "n/a" || storedRaw === "no_follow_up") &&
       compliance !== storedRaw
     ) {
       clearNa.push({ id: String(r.id), compliance });
+    }
+    if (compliance === "n/a" && storedRaw && storedRaw !== "n/a") {
+      clearFine.push(String(r.id));
     }
 
     const item: DetentionComplianceItem = {
@@ -631,7 +637,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   }
 
   // Persist sibling email + clear stuck n/a so the next Gmail scan can score replies.
-  if (emailBackfill.length || clearNa.length || manualNa.length) {
+  if (emailBackfill.length || clearNa.length || clearFine.length) {
     try {
       for (const b of emailBackfill) {
         await pool.query(
@@ -650,12 +656,12 @@ export async function getDetentionComplianceByDispatcher(): Promise<
           [c.compliance, c.id]
         );
       }
-      for (const id of manualNa) {
+      for (const id of clearFine) {
         await pool.query(
           `UPDATE detentions
               SET dispatcher_compliance = 'n/a',
                   dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)
-            WHERE id = ? AND source = 'manual'
+            WHERE id = ?
               AND COALESCE(dispatcher_compliance, '') <> 'n/a'`,
           [id]
         );

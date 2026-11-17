@@ -80,6 +80,12 @@ type Detail = {
   resolutionResponses?: SurveyResponse[];
   occurrences?: SurveyOccurrence[];
   surveyLink?: string | null;
+  googleVisits?: {
+    id: string;
+    submittedAt: string;
+    overallRating: number;
+    sentAt: string | null;
+  }[];
   retentionCase: {
     id: string;
     status: string;
@@ -97,6 +103,7 @@ const tabs = [
   "Notes",
   "Follow-ups",
   "Resolution",
+  "Google",
 ] as const;
 const CAROUSEL_PREVIEW = 6;
 const DRIVER_LIST_PAGE_SIZE = 5;
@@ -654,6 +661,10 @@ export function DriverDetailClient({ driverId }: { driverId: string }) {
               <div className="mt-5 max-w-3xl">
                 <FollowUpsPanel occurrences={data.occurrences || []} />
               </div>
+            )}
+
+            {tab === "Google" && (
+              <GoogleVisits visits={data.googleVisits || []} />
             )}
 
             {tab === "Resolution" && (
@@ -1223,6 +1234,55 @@ function ListPagination({
           <ChevronRight size={14} />
         </button>
       </div>
+    </div>
+  );
+}
+
+function GoogleVisits({
+  visits,
+}: {
+  visits: NonNullable<Detail["googleVisits"]>;
+}) {
+  return (
+    <div className="mt-5 max-w-3xl">
+      <h3 className="text-sm font-bold">Google review page</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Sent means this driver opened the Google page from a 4 or 5 star survey.
+        Not sent means they left the referral page without opening it. This does
+        not show whether they posted the review.
+      </p>
+      {!visits.length ? (
+        <p className="mt-4 text-sm text-slate-500">No 4 or 5 star surveys yet.</p>
+      ) : (
+        <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--xxii-line)]">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Survey</th>
+                <th className="px-4 py-3 font-medium">Stars</th>
+                <th className="px-4 py-3 font-medium">Google page</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--xxii-line)]">
+              {visits.map((visit) => (
+                <tr key={visit.id}>
+                  <td className="px-4 py-3">{formatShortDate(visit.submittedAt)}</td>
+                  <td className="px-4 py-3">{visit.overallRating}</td>
+                  <td className="px-4 py-3">
+                    {visit.sentAt ? (
+                      <span className="font-bold text-emerald-700">
+                        Sent · {formatShortDate(visit.sentAt)}
+                      </span>
+                    ) : (
+                      <span className="font-bold text-slate-500">Not sent</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

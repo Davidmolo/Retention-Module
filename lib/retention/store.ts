@@ -828,6 +828,21 @@ export const retentionStore = {
     return rows.map((r) => String(r.survey_response_id));
   },
 
+  async listGoogleReviewSendsForDriver(
+    driverId: string
+  ): Promise<{ surveyResponseId: string; sentAt: string }[]> {
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      `SELECT survey_response_id, sent_at
+         FROM retention_google_review_sends
+        WHERE driver_id = ?`,
+      [toDriverDbId(driverId)]
+    );
+    return rows.map((r) => ({
+      surveyResponseId: String(r.survey_response_id),
+      sentAt: fromDateTimeRequired(r.sent_at),
+    }));
+  },
+
   async createDriverReferral(data: {
     driverId: string;
     surveyResponseId: string;

@@ -69,6 +69,8 @@ export function resolveDispatcherCompliance(opts: {
   stored?: string | null;
   /** When false, we cannot scan Gmail for this dispatcher on this row. */
   hasDispatcherEmail?: boolean;
+  /** When false, this row has no detention email to answer. */
+  hasDetentionEmail?: boolean;
   nowMs?: number;
 }): ComplianceValue {
   if (opts.hasDispatcherEmail === false && !opts.repliedAt) return "n/a";
@@ -83,7 +85,13 @@ export function resolveDispatcherCompliance(opts: {
   const now = opts.nowMs ?? Date.now();
   const emailMs = toMs(opts.emailDate);
   const replyMs = toMs(opts.repliedAt);
-  const open = !CLOSED.has(String(opts.status || ""));
+  const status = String(opts.status || "");
+
+  // No detention email, or the claim is already paid: nothing to fine.
+  if (opts.hasDetentionEmail === false && !Number.isFinite(replyMs)) return "n/a";
+  if (status === "Paid") return Number.isFinite(replyMs) ? "ok" : "n/a";
+
+  const open = !CLOSED.has(status);
 
   if (!open) {
     if (Number.isFinite(replyMs)) return "ok";
