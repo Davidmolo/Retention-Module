@@ -723,7 +723,12 @@ export async function getDetentionComplianceTrajectory(
      FROM detentions
      WHERE COALESCE(email_date, created_at) IS NOT NULL
        AND COALESCE(status, '') <> 'Denied'
-       AND COALESCE(source, '') <> 'manual'`
+       AND COALESCE(source, '') <> 'manual'
+       AND (
+         NULLIF(TRIM(thread_id), '') IS NOT NULL
+         OR NULLIF(TRIM(message_id), '') IS NOT NULL
+         OR NULLIF(TRIM(thread_url), '') IS NOT NULL
+       )`
   );
 
   const map = new Map<

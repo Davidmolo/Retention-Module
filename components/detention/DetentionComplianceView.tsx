@@ -95,6 +95,12 @@ function formatWhen(iso: string | null | undefined) {
 
 
 
+function compliancePct(ok: number, total: number, na: number) {
+  const scored = total - na;
+  if (scored <= 0) return null;
+  return Math.round((ok / scored) * 1000) / 10;
+}
+
 function ComplianceMark({
   value,
   audience = "dispatcher",
@@ -149,7 +155,7 @@ function ComplianceMark({
   return (
     <span
       className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200"
-      title="This detention has no dispatcher email saved, so we can't check Gmail for their reply on this thread (the name above may still show an email from other detentions)."
+      title="Detention added manually, no email. Not counted in the compliance percent."
     >
       N/A
     </span>
@@ -332,8 +338,10 @@ export function DetentionComplianceView() {
               Weekly trajectory
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-            Detention emails each Monday–Sunday week. Answered means the
-            dispatcher or Art replied. Denied claims are left out.
+              Detention emails each Monday–Sunday week. Answered means the
+              dispatcher or Art replied. Denied claims and detentions added by
+              hand are left out. A hand-added row is not an email, so it is not
+              counted as not answered.
             </p>
           </div>
           <div className="max-h-[40dvh] overflow-auto">
@@ -385,36 +393,43 @@ export function DetentionComplianceView() {
       ) : null}
 
       {!loading && groups.length ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-          {[
-            { label: "Detentions", value: totals.total },
-            { label: "Compliant", value: totals.ok, tone: "good" },
-            { label: "Missed", value: totals.missed, tone: "risk" },
-            { label: "Pending", value: totals.pending, tone: "warn" },
-            { label: "N/A", value: totals.na },
-          ].map((c) => (
-            <div key={c.label} className="xxii-card px-3 py-2">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                {c.label}
-              </div>
-              <div
-                className={clsx(
-                  "text-xl font-bold tabular-nums",
-                  c.tone === "good" && "text-emerald-700",
-                  c.tone === "risk" && "text-rose-700",
-                  c.tone === "warn" && "text-amber-700"
-                )}
-              >
-                {c.value}
-              </div>
+        <section className="xxii-card overflow-hidden">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-base font-semibold text-foreground">
+              Dispatcher compliance
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              These counts are for the dispatchers below. N/A is a detention
+              added by hand with no email. It is not part of the compliance
+              percent and it is not an unanswered email.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+              {[
+                { label: "Detentions", value: totals.total },
+                { label: "Compliant", value: totals.ok, tone: "good" },
+                { label: "Missed", value: totals.missed, tone: "risk" },
+                { label: "Pending", value: totals.pending, tone: "warn" },
+                { label: "N/A", value: totals.na },
+              ].map((c) => (
+                <div key={c.label} className="rounded-lg bg-slate-50 px-3 py-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    {c.label}
+                  </div>
+                  <div
+                    className={clsx(
+                      "text-xl font-bold tabular-nums",
+                      c.tone === "good" && "text-emerald-700",
+                      c.tone === "risk" && "text-rose-700",
+                      c.tone === "warn" && "text-amber-700"
+                    )}
+                  >
+                    {c.value}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      ) : null}
-
-
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          </div>
+          <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center">
         <div className="relative min-w-0 flex-1">
           <Search
             size={16}
@@ -453,8 +468,6 @@ export function DetentionComplianceView() {
           ))}
         </div>
       </div>
-
-
 
       {error ? (
         <div className="flex items-center gap-2 text-sm text-rose-600">
@@ -538,17 +551,13 @@ export function DetentionComplianceView() {
                             style={{
                               width: `${Math.min(
                                 100,
-                                g.total
-                                  ? Math.round((g.ok / g.total) * 1000) / 10
-                                  : 0
+                                compliancePct(g.ok, g.total, g.na) ?? 0
                               )}%`,
                             }}
                           />
                         </div>
                         <div className="mt-0.5 text-[10px] font-semibold text-emerald-700">
-                          {g.total
-                            ? Math.round((g.ok / g.total) * 1000) / 10
-                            : 0}
+                          {compliancePct(g.ok, g.total, g.na) ?? "—"}
                           % compliance
                         </div>
                       </div>
@@ -596,6 +605,12 @@ export function DetentionComplianceView() {
                         : ""}{" "}
                       · totals ✓{selected.ok} ✗{selected.missed} pending{" "}
                       {selected.pending} N/A {selected.na}
+                      {selected.na > 0 ? (
+                        <span className="text-rose-600">
+                          {" "}
+                          (detention added manually, no email)
+                        </span>
+                      ) : null}
                     </p>
                   </div>
                   {expanded ? (
@@ -744,6 +759,8 @@ export function DetentionComplianceView() {
             ) : null}
           </section>
         </div>
+      ) : null}
+        </section>
       ) : null}
 
       {!loading && ar ? (
