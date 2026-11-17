@@ -472,6 +472,13 @@ export async function updateDetention(
         emailDate: current.emailDate,
         repliedAt: current.dispatcherRepliedAt,
         hasDispatcherEmail: Boolean(current.dispatcherEmail?.includes("@")),
+        hasDetentionEmail:
+          current.source !== "manual" &&
+          Boolean(
+            current.threadId?.trim() ||
+              current.messageId?.trim() ||
+              current.threadUrl?.trim()
+          ),
       });
       if (nextCompliance !== current.dispatcherCompliance) {
         sets.push("dispatcher_compliance = ?");

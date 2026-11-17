@@ -508,7 +508,8 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT
        id, customer, load_number, shipment_number, driver_name, amount, status,
-       email_date, thread_url, dispatcher, dispatcher_email,
+       email_date, thread_url, thread_id, message_id, source,
+       dispatcher, dispatcher_email,
        dispatcher_replied_at, dispatcher_compliance
      FROM detentions
      WHERE dispatcher IS NOT NULL AND TRIM(dispatcher) <> ''
@@ -539,6 +540,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   const groups = new Map<string, DetentionComplianceGroup>();
   const emailBackfill: { id: string; email: string }[] = [];
   const clearNa: { id: string; compliance: string }[] = [];
+  const clearFine: string[] = [];
 
   for (const { r, dispatcher, key } of raws) {
     if (String(r.status || "") === "Denied") continue;
@@ -579,22 +581,35 @@ export async function getDetentionComplianceByDispatcher(): Promise<
         ? null
         : storedRaw;
 
+    const source = String(r.source || "");
+    const hasThread = Boolean(
+      String(r.thread_id || "").trim() ||
+        String(r.message_id || "").trim() ||
+        String(r.thread_url || "").trim()
+    );
+    const hasDetentionEmail = source !== "manual" && hasThread;
     const compliance = resolveDispatcherCompliance({
       status: String(r.status || ""),
       emailDate,
       repliedAt,
       stored,
       hasDispatcherEmail,
+      hasDetentionEmail,
     });
 
-    if (!hadEmailOnRow && dispatcherEmail) {
+    if (hasDetentionEmail && !hadEmailOnRow && dispatcherEmail) {
       emailBackfill.push({ id: String(r.id), email: dispatcherEmail });
     }
     if (
+      hasDetentionEmail &&
+      String(r.status || "") !== "Paid" &&
       (storedRaw === "n/a" || storedRaw === "no_follow_up") &&
       compliance !== storedRaw
     ) {
       clearNa.push({ id: String(r.id), compliance });
+    }
+    if (compliance === "n/a" && storedRaw && storedRaw !== "n/a") {
+      clearFine.push(String(r.id));
     }
 
     const item: DetentionComplianceItem = {
@@ -622,7 +637,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   }
 
   // Persist sibling email + clear stuck n/a so the next Gmail scan can score replies.
-  if (emailBackfill.length || clearNa.length) {
+  if (emailBackfill.length || clearNa.length || clearFine.length) {
     try {
       for (const b of emailBackfill) {
         await pool.query(
@@ -639,6 +654,16 @@ export async function getDetentionComplianceByDispatcher(): Promise<
                   dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)
             WHERE id = ? AND dispatcher_compliance IN ('n/a', 'no_follow_up')`,
           [c.compliance, c.id]
+        );
+      }
+      for (const id of clearFine) {
+        await pool.query(
+          `UPDATE detentions
+              SET dispatcher_compliance = 'n/a',
+                  dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)
+            WHERE id = ?
+              AND COALESCE(dispatcher_compliance, '') <> 'n/a'`,
+          [id]
         );
       }
     } catch (err) {
