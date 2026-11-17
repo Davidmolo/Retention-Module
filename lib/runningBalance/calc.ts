@@ -1,12 +1,7 @@
 import { compareWeeks, weekId, type YearWeek } from '@/lib/runningBalance/weeks';
 
-/**
- * Open with Mantas.
- * Average uses the last 7 weeks on screen.
- * A driver's first week is left out of the average entirely.
- */
+/** Average uses the last 7 weeks on screen. */
 export const AVERAGE_SCOPE: 'visible' | 'all' = 'visible';
-export const EXCLUDE_FIRST_WEEK = true;
 
 export const GREEN_MIN = 600;
 
@@ -40,6 +35,7 @@ function roundMoney(n: number): number {
 
 export function summarizeWeek(
   values: number[],
+  owners: number,
   adjustment: WeekAdjustment,
   stored: boolean
 ): WeekSummary {
@@ -81,7 +77,7 @@ export function summarizeWeek(
     total - (adjustment.forSale ?? 0) - (adjustment.readyAbandonedShop ?? 0)
   );
   return {
-    owners: values.length,
+    owners,
     total,
     negativeCount,
     negativeAmount,
@@ -96,21 +92,24 @@ export function summarizeWeek(
 
 export type HistoryCell = YearWeek & { grossProfit: number };
 
-/** Blank weeks are skipped. They are not treated as zero. */
+/**
+ * Blank weeks are skipped. They are not treated as zero.
+ * A new driver's first week is left out only when that week is negative.
+ */
 export function driverAverage(
   history: HistoryCell[],
   visibleWeeks: YearWeek[]
 ): number | null {
   if (!history.length) return null;
   const sorted = [...history].sort(compareWeeks);
-  const firstId = weekId(sorted[0]);
+  const first = sorted[0];
   const visibleIds = new Set(visibleWeeks.map(weekId));
   let pool =
     AVERAGE_SCOPE === 'visible'
       ? sorted.filter((cell) => visibleIds.has(weekId(cell)))
       : sorted;
-  if (EXCLUDE_FIRST_WEEK) {
-    pool = pool.filter((cell) => weekId(cell) !== firstId);
+  if (first.grossProfit < 0) {
+    pool = pool.filter((cell) => weekId(cell) !== weekId(first));
   }
   if (!pool.length) return null;
   const sum = pool.reduce((acc, cell) => acc + cell.grossProfit, 0);

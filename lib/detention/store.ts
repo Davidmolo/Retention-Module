@@ -466,13 +466,17 @@ export async function updateDetention(
     });
 
     // Paid / Denied → drop “No follow up” (follow-up no longer required).
+    // A typed-in detention has no email, so it stays n/a.
     if (patch.status === "Paid" || patch.status === "Denied") {
-      const nextCompliance = resolveDispatcherCompliance({
-        status: patch.status,
-        emailDate: current.emailDate,
-        repliedAt: current.dispatcherRepliedAt,
-        hasDispatcherEmail: Boolean(current.dispatcherEmail?.includes("@")),
-      });
+      const nextCompliance =
+        current.source === "manual"
+          ? "n/a"
+          : resolveDispatcherCompliance({
+              status: patch.status,
+              emailDate: current.emailDate,
+              repliedAt: current.dispatcherRepliedAt,
+              hasDispatcherEmail: Boolean(current.dispatcherEmail?.includes("@")),
+            });
       if (nextCompliance !== current.dispatcherCompliance) {
         sets.push("dispatcher_compliance = ?");
         params.push(nextCompliance);

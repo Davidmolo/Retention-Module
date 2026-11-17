@@ -509,7 +509,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
     `SELECT
        id, customer, load_number, shipment_number, driver_name, amount, status,
        email_date, thread_url, dispatcher, dispatcher_email,
-       dispatcher_replied_at, dispatcher_compliance
+       dispatcher_replied_at, dispatcher_compliance, source
      FROM detentions
      WHERE dispatcher IS NOT NULL AND TRIM(dispatcher) <> ''
      ORDER BY dispatcher ASC, COALESCE(email_date, created_at) DESC`
@@ -539,6 +539,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   const groups = new Map<string, DetentionComplianceGroup>();
   const emailBackfill: { id: string; email: string }[] = [];
   const clearNa: { id: string; compliance: string }[] = [];
+  const manualNa: string[] = [];
 
   for (const { r, dispatcher, key } of raws) {
     if (String(r.status || "") === "Denied") continue;
@@ -569,28 +570,36 @@ export async function getDetentionComplianceByDispatcher(): Promise<
       (rowEmail.includes("@") ? rowEmail : null) || inherited;
     const hadEmailOnRow = rowEmail.includes("@");
     const hasDispatcherEmail = Boolean(dispatcherEmail);
+    const manual = String(r.source || "") === "manual";
 
     // Stuck n/a only because email was missing — recompute once we have one.
+    // A typed-in detention has no email to answer, so it stays n/a.
     const storedRaw = r.dispatcher_compliance
       ? String(r.dispatcher_compliance)
       : null;
-    const stored =
-      storedRaw === "n/a" && hasDispatcherEmail && !repliedAt
+    const stored = manual
+      ? "n/a"
+      : storedRaw === "n/a" && hasDispatcherEmail && !repliedAt
         ? null
         : storedRaw;
 
-    const compliance = resolveDispatcherCompliance({
-      status: String(r.status || ""),
-      emailDate,
-      repliedAt,
-      stored,
-      hasDispatcherEmail,
-    });
+    const compliance = manual
+      ? "n/a"
+      : resolveDispatcherCompliance({
+          status: String(r.status || ""),
+          emailDate,
+          repliedAt,
+          stored,
+          hasDispatcherEmail,
+        });
 
-    if (!hadEmailOnRow && dispatcherEmail) {
+    if (manual) {
+      if (storedRaw !== "n/a") manualNa.push(String(r.id));
+    } else if (!hadEmailOnRow && dispatcherEmail) {
       emailBackfill.push({ id: String(r.id), email: dispatcherEmail });
     }
     if (
+      !manual &&
       (storedRaw === "n/a" || storedRaw === "no_follow_up") &&
       compliance !== storedRaw
     ) {
@@ -622,7 +631,7 @@ export async function getDetentionComplianceByDispatcher(): Promise<
   }
 
   // Persist sibling email + clear stuck n/a so the next Gmail scan can score replies.
-  if (emailBackfill.length || clearNa.length) {
+  if (emailBackfill.length || clearNa.length || manualNa.length) {
     try {
       for (const b of emailBackfill) {
         await pool.query(
@@ -639,6 +648,16 @@ export async function getDetentionComplianceByDispatcher(): Promise<
                   dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)
             WHERE id = ? AND dispatcher_compliance IN ('n/a', 'no_follow_up')`,
           [c.compliance, c.id]
+        );
+      }
+      for (const id of manualNa) {
+        await pool.query(
+          `UPDATE detentions
+              SET dispatcher_compliance = 'n/a',
+                  dispatcher_compliance_checked_at = CURRENT_TIMESTAMP(3)
+            WHERE id = ? AND source = 'manual'
+              AND COALESCE(dispatcher_compliance, '') <> 'n/a'`,
+          [id]
         );
       }
     } catch (err) {
@@ -697,7 +716,8 @@ export async function getDetentionComplianceTrajectory(
        dispatcher_replied_at
      FROM detentions
      WHERE COALESCE(email_date, created_at) IS NOT NULL
-       AND COALESCE(status, '') <> 'Denied'`
+       AND COALESCE(status, '') <> 'Denied'
+       AND COALESCE(source, '') <> 'manual'`
   );
 
   const map = new Map<

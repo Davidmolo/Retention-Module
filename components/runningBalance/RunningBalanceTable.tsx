@@ -274,9 +274,11 @@ export function RunningBalanceTable({
           <tbody>
           {data.drivers.map((driver) => {
             const averageNegative = driver.average != null && driver.average < 0;
+            const shade = driver.ownerOperator ? 'bg-muted/70' : 'bg-card';
+            const cellShade = driver.ownerOperator ? 'bg-muted/40' : 'bg-card';
             const nameClass = [
               stickyLabel,
-              'bg-muted/70 font-normal whitespace-nowrap',
+              `${shade} font-normal whitespace-nowrap`,
               driver.terminated ? 'line-through' : '',
               averageNegative ? 'text-red-600' : '',
             ]
@@ -291,7 +293,7 @@ export function RunningBalanceTable({
                   return (
                     <td
                       key={weekId(week)}
-                      className={`${numCell} bg-muted/40 ${
+                      className={`${numCell} ${cellShade} ${
                         !missing && value < 0 ? 'text-red-600' : ''
                       }`}
                     >
@@ -300,7 +302,7 @@ export function RunningBalanceTable({
                   );
                 })}
                 <td
-                  className={`${numCell} bg-muted/40 ${
+                  className={`${numCell} ${cellShade} ${
                     averageNegative ? 'text-red-600' : ''
                   }`}
                 >

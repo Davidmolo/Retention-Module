@@ -663,35 +663,37 @@ export async function getWeeklySummary(
           GROUP BY a.driver_id
        ) p ON p.driver_id = d.id
       WHERE (
-          (
-            -- Active only (OpenRoad "terminated" → suspended; Mantas: hide them).
-            LOWER(COALESCE(d.status, '')) = 'active'
-            AND (
+          -- A settlement this week keeps the driver on the sheet. OpenRoad
+          -- terminated does not drop him when fuel, trips, prepass, or
+          -- accessorials exist for the week.
           f.driver_id IS NOT NULL
           OR t.driver_id IS NOT NULL
           OR p.driver_id IS NOT NULL
           OR acc.driver_id IS NOT NULL
           OR (
-            LOWER(REPLACE(TRIM(COALESCE(d.driver_type, '')), ' ', '_'))
-              IN (${OWNER_OPERATOR_TYPES.map(() => '?').join(', ')})
-            AND u.unit IS NOT NULL
-            AND TRIM(CAST(u.unit AS CHAR)) <> ''
-            AND LOWER(TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name)))
-              NOT IN ('test')
-            AND LOWER(TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name)))
-              NOT LIKE '%example%'
-            AND LOWER(TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name)))
-              NOT LIKE 'accounting%'
-          )
-          OR ${OWNER_OPERATOR_EXCEPTION_NAMES.map(
-            () => `(
-              LOWER(TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name))) = ?
-              OR (
-                LOWER(TRIM(d.first_name)) = ?
-                AND LOWER(TRIM(d.last_name)) = ?
+            LOWER(COALESCE(d.status, '')) = 'active'
+            AND (
+              (
+                LOWER(REPLACE(TRIM(COALESCE(d.driver_type, '')), ' ', '_'))
+                  IN (${OWNER_OPERATOR_TYPES.map(() => '?').join(', ')})
+                AND u.unit IS NOT NULL
+                AND TRIM(CAST(u.unit AS CHAR)) <> ''
+                AND LOWER(TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name)))
+                  NOT IN ('test')
+                AND LOWER(TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name)))
+                  NOT LIKE '%example%'
+                AND LOWER(TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name)))
+                  NOT LIKE 'accounting%'
               )
-            )`
-          ).join(' OR ')}
+              OR ${OWNER_OPERATOR_EXCEPTION_NAMES.map(
+                () => `(
+                  LOWER(TRIM(CONCAT_WS(' ', d.first_name, d.middle_name, d.last_name))) = ?
+                  OR (
+                    LOWER(TRIM(d.first_name)) = ?
+                    AND LOWER(TRIM(d.last_name)) = ?
+                  )
+                )`
+              ).join(' OR ')}
             )
           )
         )

@@ -104,8 +104,15 @@ export async function getRunningBalance(
   const storedIds = new Set<string>();
   const byDriver = new Map<
     number,
-    { name: string; latestKey: number; status: string | null; history: HistoryCell[] }
+    {
+      name: string;
+      latestKey: number;
+      status: string | null;
+      ownerOperator: boolean;
+      history: HistoryCell[];
+    }
   >();
+  const ownersByWeek = new Map<string, number>();
 
   for (const row of reportRows) {
     const year = Number(row.year);
@@ -114,9 +121,10 @@ export async function getRunningBalance(
     storedIds.add(id);
     const name = (row.driver_name ?? '').trim();
     if (!name || isGpExcludedDriverName(name)) continue;
-    if (!isOwnerOperator({ driverType: row.driver_type, name })) continue;
     const grossProfit = moneyOrNull(row.gross_profit);
     if (grossProfit == null) continue;
+    const ownerOperator = isOwnerOperator({ driverType: row.driver_type, name });
+    if (ownerOperator) ownersByWeek.set(id, (ownersByWeek.get(id) ?? 0) + 1);
     const driverId = Number(row.driver_id);
     const key = weekKey({ year, week });
     const existing = byDriver.get(driverId);
@@ -125,6 +133,7 @@ export async function getRunningBalance(
         name,
         latestKey: key,
         status: row.driver_status,
+        ownerOperator,
         history: [{ year, week, grossProfit }],
       });
     } else {
@@ -133,6 +142,7 @@ export async function getRunningBalance(
         existing.latestKey = key;
         existing.name = name || existing.name;
         existing.status = row.driver_status;
+        existing.ownerOperator = ownerOperator;
       }
     }
   }
@@ -183,6 +193,7 @@ export async function getRunningBalance(
     drivers.push({
       driverId,
       name: driver.name,
+      ownerOperator: driver.ownerOperator,
       terminated,
       average: driverAverage(driver.history, visibleWeeks),
       cells,
@@ -205,6 +216,7 @@ export async function getRunningBalance(
     const id = weekId(yearWeek);
     const summary = summarizeWeek(
       valuesByWeek.get(id) ?? [],
+      ownersByWeek.get(id) ?? 0,
       adjustments.get(id) ?? emptyAdjustment(),
       storedIds.has(id)
     );
@@ -215,6 +227,7 @@ export async function getRunningBalance(
     const id = weekId(yearWeek);
     const summary = summarizeWeek(
       valuesByWeek.get(id) ?? [],
+      ownersByWeek.get(id) ?? 0,
       adjustments.get(id) ?? emptyAdjustment(),
       true
     );

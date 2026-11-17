@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   try {
     await ensureGpWeek(year, week);
     const summary = await getStoredWeeklySummary(year, week, {
-      status: 'active',
+      status: 'all',
       driverType,
     });
     const buffer = await buildSummaryWorkbook(summary);
