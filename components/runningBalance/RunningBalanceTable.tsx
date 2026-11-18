@@ -38,6 +38,15 @@ export function RunningBalanceTable({
   const dash = text.runningBalance.emptyCell;
 
   const shown = (week: YearWeek) => byId.get(weekId(week));
+  const visibleTotals = data.visibleWeeks
+    .map((week) => shown(week)?.total)
+    .filter((n): n is number => n != null);
+  const totalAverage = visibleTotals.length
+    ? Math.round(
+        (visibleTotals.reduce((sum, n) => sum + n, 0) / visibleTotals.length) * 100
+      ) / 100
+    : null;
+  const blankAverage = () => <td className={numCell} />;
 
   const saveDraft = async (
     week: YearWeek,
@@ -142,7 +151,7 @@ export function RunningBalanceTable({
     <div className="space-y-8">
       <section className="overflow-x-auto">
         <table className="border-collapse min-w-max w-full">
-          <thead>{weekHeads(text.runningBalance.summary, false)}</thead>
+          <thead>{weekHeads(text.runningBalance.summary, true)}</thead>
           <tbody>
           <tr>
             <th className={labelCell}>{text.runningBalance.owners}</th>
@@ -154,6 +163,7 @@ export function RunningBalanceTable({
                 </td>
               );
             })}
+            {blankAverage()}
           </tr>
           <tr>
             <th className={labelCell}>{text.runningBalance.total}</th>
@@ -165,6 +175,9 @@ export function RunningBalanceTable({
                 </td>
               );
             })}
+            <td className={`${numCell} font-semibold`}>
+              {totalAverage == null ? dash : money(totalAverage)}
+            </td>
           </tr>
           <tr>
             <th className={labelCell}>{text.runningBalance.negative}</th>
@@ -182,6 +195,7 @@ export function RunningBalanceTable({
                 </td>
               );
             })}
+            {blankAverage()}
           </tr>
           <tr>
             <th className={labelCell}>{text.runningBalance.white}</th>
@@ -193,6 +207,7 @@ export function RunningBalanceTable({
                 </td>
               );
             })}
+            {blankAverage()}
           </tr>
           <tr>
             <th className={labelCell}>{text.runningBalance.green}</th>
@@ -207,6 +222,7 @@ export function RunningBalanceTable({
                 </td>
               );
             })}
+            {blankAverage()}
           </tr>
           <tr>
             <th className={labelCell}>{text.runningBalance.forSale}</th>
@@ -228,6 +244,7 @@ export function RunningBalanceTable({
                 />
               </td>
             ))}
+            {blankAverage()}
           </tr>
           <tr>
             <th className={labelCell}>{text.runningBalance.readyAbandonedShop}</th>
@@ -249,6 +266,7 @@ export function RunningBalanceTable({
                 />
               </td>
             ))}
+            {blankAverage()}
           </tr>
           <tr>
             <th className={labelCell}>{text.runningBalance.grandTotal}</th>
@@ -264,6 +282,7 @@ export function RunningBalanceTable({
                 </td>
               );
             })}
+            {blankAverage()}
           </tr>
           </tbody>
         </table>
@@ -274,13 +293,22 @@ export function RunningBalanceTable({
           <tbody>
           {data.drivers.map((driver) => {
             const averageNegative = driver.average != null && driver.average < 0;
-            const shade = driver.ownerOperator ? 'bg-muted/70' : 'bg-card';
-            const cellShade = driver.ownerOperator ? 'bg-muted/40' : 'bg-card';
+            const shade = averageNegative
+              ? 'bg-red-50'
+              : driver.ownerOperator
+                ? 'bg-muted/70'
+                : 'bg-card';
+            const cellShade = averageNegative
+              ? 'bg-red-50'
+              : driver.ownerOperator
+                ? 'bg-muted/40'
+                : 'bg-card';
+            const rowText = averageNegative ? 'text-red-600' : '';
             const nameClass = [
               stickyLabel,
               `${shade} font-normal whitespace-nowrap`,
               driver.terminated ? 'line-through' : '',
-              averageNegative ? 'text-red-600' : '',
+              rowText,
             ]
               .filter(Boolean)
               .join(' ');
@@ -288,24 +316,23 @@ export function RunningBalanceTable({
               <tr key={driver.driverId}>
                 <th className={nameClass}>{driver.name}</th>
                 {columns.map((week) => {
-                  const value = driver.cells[weekId(week)];
+                  const id = weekId(week);
+                  const value = driver.cells[id];
                   const missing = value == null;
+                  const firstWeek =
+                    !averageNegative && driver.negativeFirstWeekId === id;
                   return (
                     <td
-                      key={weekId(week)}
-                      className={`${numCell} ${cellShade} ${
-                        !missing && value < 0 ? 'text-red-600' : ''
+                      key={id}
+                      className={`${numCell} ${cellShade} ${rowText} ${
+                        firstWeek ? 'text-red-600' : ''
                       }`}
                     >
                       {missing ? '' : money(value)}
                     </td>
                   );
                 })}
-                <td
-                  className={`${numCell} ${cellShade} ${
-                    averageNegative ? 'text-red-600' : ''
-                  }`}
-                >
+                <td className={`${numCell} ${cellShade} ${rowText}`}>
                   {driver.average == null ? '' : money(driver.average)}
                 </td>
               </tr>

@@ -14,13 +14,13 @@ import {
 import type { RunningBalancePayload } from '@/lib/runningBalance/types';
 import {
   compareWeeks,
+  latestReleasedWeek,
   VISIBLE_WEEK_COUNT,
   weekId,
   weekKey,
   weeksEndingAt,
   type YearWeek,
 } from '@/lib/runningBalance/weeks';
-import { weekOf } from '@/lib/week';
 
 type ReportRow = RowDataPacket & {
   year: number;
@@ -44,12 +44,6 @@ type StatusRow = RowDataPacket & {
   status: string | null;
   date_removed: Date | string | null;
 };
-
-function previousCompletedWeek(): YearWeek {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - 7);
-  return weekOf(d);
-}
 
 function emptyAdjustment(): WeekAdjustment {
   return { forSale: null, readyAbandonedShop: null };
@@ -76,18 +70,9 @@ export async function getRunningBalance(
   requested?: YearWeek
 ): Promise<RunningBalancePayload> {
   const pool = getPool();
-  let anchor = requested;
-  if (!anchor) {
-    const [latest] = await pool.query<RowDataPacket[]>(
-      `SELECT year, week
-         FROM gross_profit_reports
-        ORDER BY year DESC, week DESC
-        LIMIT 1`
-    );
-    anchor = latest.length
-      ? { year: Number(latest[0].year), week: Number(latest[0].week) }
-      : previousCompletedWeek();
-  }
+  const released = latestReleasedWeek();
+  const anchor =
+    requested && compareWeeks(requested, released) <= 0 ? requested : released;
 
   const visibleWeeks = weeksEndingAt(anchor, VISIBLE_WEEK_COUNT);
   const oldestVisible = weekKey(visibleWeeks[0]);
@@ -190,17 +175,24 @@ export async function getRunningBalance(
     const terminated = live
       ? isTerminated(live.status, live.dateRemoved)
       : isTerminated(driver.status);
+    const first = [...driver.history].sort(compareWeeks)[0];
     drivers.push({
       driverId,
       name: driver.name,
       ownerOperator: driver.ownerOperator,
       terminated,
+      negativeFirstWeekId: first && first.grossProfit < 0 ? weekId(first) : null,
       average: driverAverage(driver.history, visibleWeeks),
       cells,
     });
   }
 
-  drivers.sort((a, b) => a.name.localeCompare(b.name));
+  drivers.sort((a, b) => {
+    if (a.average == null && b.average == null) return a.name.localeCompare(b.name);
+    if (a.average == null) return 1;
+    if (b.average == null) return -1;
+    return a.average - b.average || a.name.localeCompare(b.name);
+  });
 
   const olderWeekMap = new Map<string, YearWeek>();
   for (const id of storedIds) {
@@ -234,7 +226,7 @@ export async function getRunningBalance(
     weeks.push({ ...yearWeek, ...summary });
   }
 
-  return { anchor, visibleWeeks, olderWeeks, weeks, drivers };
+  return { anchor, released, visibleWeeks, olderWeeks, weeks, drivers };
 }
 
 export async function saveWeekAdjustment(

@@ -55,7 +55,11 @@ export function RunningBalanceView() {
           <Button variant="outline" onClick={() => stepWeek(-1)} disabled={!data}>
             {text.runningBalance.prevWeek}
           </Button>
-          <Button variant="outline" onClick={() => stepWeek(1)} disabled={!data}>
+          <Button
+            variant="outline"
+            onClick={() => stepWeek(1)}
+            disabled={!data || compareWeeks(data.anchor, data.released) >= 0}
+          >
             {text.runningBalance.nextWeek}
           </Button>
         </div>

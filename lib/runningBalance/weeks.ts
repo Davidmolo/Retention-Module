@@ -33,6 +33,23 @@ export function addWeeks(anchor: YearWeek, delta: number): YearWeek {
   return weekOf(d);
 }
 
+/**
+ * A week ends Monday and is shown from the Thursday after that.
+ * Week 47 (ends Mon Nov 16) appears Thu Nov 19. Week 48 appears Thu Nov 26.
+ */
+export function latestReleasedWeek(now = new Date()): YearWeek {
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  let cursor = weekOf(new Date(today));
+  for (let i = 0; i < 6; i++) {
+    const { start } = weekRange(cursor.year, cursor.week);
+    const release = new Date(`${start}T00:00:00.000Z`);
+    release.setUTCDate(release.getUTCDate() + 9);
+    if (release.getTime() <= today) return cursor;
+    cursor = addWeeks(cursor, -1);
+  }
+  return cursor;
+}
+
 /** Oldest → newest, ending at `anchor`. */
 export function weeksEndingAt(anchor: YearWeek, count: number): YearWeek[] {
   const out: YearWeek[] = [];
