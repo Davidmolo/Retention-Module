@@ -63,12 +63,13 @@ function recipientsForDepartment(department: string) {
 
 export async function getOverview() {
   await ensureDemoSeed();
-  const [drivers, allResponses, allOccurrences, allCases] = await Promise.all([
-    getGpAdapter().listDrivers({ includeInactive: false }),
+  const [allDrivers, allResponses, allOccurrences, allCases] = await Promise.all([
+    getGpAdapter().listDrivers({ includeInactive: true }),
     retentionStore.listSurveyResponses(),
     retentionStore.listSurveyOccurrences(),
     retentionStore.listRetentionCases(),
   ]);
+  const drivers = allDrivers.filter((d) => d.status === "active");
 
   const activeIds = new Set(drivers.map((d) => d.id));
   const resolutionOccIds = new Set(
@@ -306,6 +307,23 @@ export async function getOverview() {
     },
     charts: { ratingDistribution, issueBreakdown, surveyTrend },
     drivers: rows,
+    resolvedCases: allCases
+      .filter((c) => c.status === "Resolved" || c.status === "Completed")
+      .flatMap((c) => {
+        const driver = allDrivers.find((d) => d.id === c.driverId);
+        if (!driver) return [];
+        return [
+          {
+            id: c.id,
+            driverId: c.driverId,
+            name: driver.name,
+            dispatcher: driver.dispatcher,
+            caseStatus: c.status,
+            resolvedAt: c.resolvedAt ?? null,
+          },
+        ];
+      })
+      .sort((a, b) => (b.resolvedAt || "").localeCompare(a.resolvedAt || "")),
     recentResponses,
     gpMode: getGpMode(),
   };

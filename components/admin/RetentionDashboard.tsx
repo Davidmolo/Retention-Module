@@ -29,6 +29,7 @@ import {
   MESSAGE_TEMPLATES,
   type MessageTemplateId,
 } from "@/lib/retention/messages";
+import { text } from "@/src/constants/text";
 
 const MESSAGE_FOCUS_IDS = new Set<string>(MESSAGE_TEMPLATES.map((t) => t.id));
 
@@ -84,6 +85,14 @@ type Overview = {
     googleReviewSent?: boolean | null;
   }[];
   drivers: DriverRow[];
+  resolvedCases?: {
+    id: string;
+    driverId: string;
+    name: string;
+    dispatcher: string;
+    caseStatus: string;
+    resolvedAt: string | null;
+  }[];
 };
 
 type ViewKey = RetentionView;
@@ -526,27 +535,33 @@ function SecondaryView({
     [data.drivers]
   );
 
-  const resolved = useMemo(
-    () =>
-      data.drivers.filter(
+  const resolved = useMemo(() => {
+    if (data.resolvedCases) return data.resolvedCases;
+    return data.drivers
+      .filter(
         (d) => d.caseStatus === "Resolved" || d.caseStatus === "Completed"
-      ),
-    [data.drivers]
-  );
+      )
+      .map((d) => ({
+        id: d.driverId,
+        driverId: d.driverId,
+        name: d.name,
+        dispatcher: d.dispatcher,
+        caseStatus: d.caseStatus || "Resolved",
+        resolvedAt: null as string | null,
+      }));
+  }, [data.drivers, data.resolvedCases]);
 
   const title = view === "follow-ups" ? "Follow-ups" : "Resolved";
-  const rows = view === "follow-ups" ? followUps : resolved;
   const [page, setPage] = useState(1);
 
   useEffect(() => {
     setPage(1);
   }, [view]);
 
-  const { slice, total, totalPages, safePage, from, to } = usePagedSlice(
-    rows,
-    page,
-    LIST_PAGE_SIZE
-  );
+  const followPaging = usePagedSlice(followUps, page, LIST_PAGE_SIZE);
+  const resolvedPaging = usePagedSlice(resolved, page, LIST_PAGE_SIZE);
+  const { total, totalPages, safePage, from, to } =
+    view === "follow-ups" ? followPaging : resolvedPaging;
 
   useEffect(() => {
     if (safePage !== page) setPage(safePage);
@@ -580,7 +595,7 @@ function SecondaryView({
             </p>
           </div>
           <ul className="divide-y divide-[var(--xxii-line)]">
-            {slice.map((d) => (
+            {followPaging.slice.map((d) => (
               <li key={d.driverId}>
                 <Link
                   href={`/retention/drivers/${d.driverId}`}
@@ -630,12 +645,12 @@ function SecondaryView({
         <section className="xxii-card overflow-hidden">
           <div className="border-b border-[var(--xxii-line)] px-4 py-3 sm:px-5">
             <p className="text-sm text-[var(--xxii-muted)]">
-              Drivers whose retention cases are resolved or completed.
+              {text.retention.resolvedCases}
             </p>
           </div>
           <ul className="divide-y divide-[var(--xxii-line)]">
-            {slice.map((d) => (
-              <li key={d.driverId}>
+            {resolvedPaging.slice.map((d) => (
+              <li key={d.id}>
                 <Link
                   href={`/retention/drivers/${d.driverId}`}
                   onMouseEnter={() => prefetchDriverDetail(d.driverId)}
@@ -643,7 +658,10 @@ function SecondaryView({
                 >
                   <div>
                     <div className="font-semibold text-[var(--xxii-text)]">{d.name}</div>
-                    <div className="text-xs text-[var(--xxii-muted)]">{d.dispatcher}</div>
+                    <div className="text-xs text-[var(--xxii-muted)]">
+                      {d.dispatcher}
+                      {d.resolvedAt ? ` · ${formatDate(d.resolvedAt)}` : ""}
+                    </div>
                   </div>
                   <StatusPill status={d.caseStatus} />
                 </Link>
@@ -651,7 +669,7 @@ function SecondaryView({
             ))}
             {!total && (
               <li className="px-5 py-10 text-center text-sm text-slate-400">
-                No resolved cases yet
+                {text.retention.noResolvedCases}
               </li>
             )}
           </ul>
