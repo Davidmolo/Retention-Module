@@ -33,6 +33,7 @@ export function parseRetentionView(
   search: string = typeof window !== "undefined" ? window.location.search : ""
 ): RetentionView {
   const raw = new URLSearchParams(search).get("view");
+  if (raw === "exit") return "overview";
   if (raw && VIEWS.has(raw) && raw !== "overview") return raw as RetentionView;
   return "overview";
 }

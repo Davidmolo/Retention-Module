@@ -1,5 +1,7 @@
 export const text = {
   retention: {
+    followUps: 'Follow-ups',
+    resolvedTitle: 'Resolved',
     resolvedCases: 'Each case marked resolved, including older ones.',
     noResolvedCases: 'No resolved cases yet',
   },

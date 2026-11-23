@@ -57,7 +57,7 @@ const STEP_ORDER: Step[] = [
 const STAR_VALUES = [1, 2, 3, 4, 5] as const;
 
 const btnClass =
-  "w-full rounded-xl bg-[linear-gradient(135deg,color-mix(in_oklch,var(--xxii-blue)_72%,oklch(0.62_0.13_240)),var(--xxii-blue))] py-3 text-sm font-bold text-white shadow-md shadow-[color-mix(in_oklch,var(--xxii-blue)_22%,transparent)] disabled:pointer-events-none disabled:opacity-40 transition-transform active:scale-[0.98]";
+  "w-full rounded-xl bg-[var(--xxii-blue)] py-3 text-sm font-bold text-white disabled:pointer-events-none disabled:opacity-40";
 
 const easeOut = [0.16, 1, 0.3, 1] as const;
 const easeInOut = [0.4, 0, 0.2, 1] as const;
@@ -84,10 +84,7 @@ const shellInitial = { opacity: 0, y: 8 };
 const shellAnimate = { opacity: 1, y: 0 };
 const shellTransition = { duration: 0.45, ease: easeOut };
 
-const shellStyle = {
-  background:
-    "linear-gradient(165deg, color-mix(in oklch, var(--xxii-blue-soft) 85%, white) 0%, color-mix(in oklch, var(--xxii-blue) 8%, white) 45%, color-mix(in oklch, var(--xxii-blue-soft) 35%, white) 100%)",
-};
+const shellStyle = { background: "var(--xxii-blue-soft)" };
 
 const starHover = { scale: 1.1, y: -1 };
 const starTap = { scale: 0.92 };
@@ -640,7 +637,7 @@ const DeptRow = memo(function DeptRow({
   );
 
   return (
-    <div className="rounded-xl border border-[var(--xxii-line)] bg-[linear-gradient(135deg,var(--xxii-blue-soft),color-mix(in_oklch,var(--muted)_60%,white))] p-3">
+    <div className="rounded-xl border border-[var(--xxii-line)] bg-[var(--xxii-blue-soft)] p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-sm font-bold text-[var(--xxii-text)]">
           {department}
@@ -860,7 +857,7 @@ const ResolutionStep = memo(function ResolutionStep({
         rows={3}
       />
       {error ? (
-        <p className="text-sm font-medium text-rose-600">{error}</p>
+        <p className="text-sm font-medium text-[var(--xxii-risk)]">{error}</p>
       ) : null}
       <button
         type="button"
@@ -992,7 +989,7 @@ const ThanksHigh = memo(function ThanksHigh({
           {GOOGLE_REVIEW_LUNCH_MESSAGE}
         </p>
         {formError ? (
-          <p className="text-sm font-medium text-rose-600">{formError}</p>
+          <p className="text-sm font-medium text-[var(--xxii-risk)]">{formError}</p>
         ) : null}
         <button type="submit" disabled={saving || leaving} className={btnClass}>
           {saving || leaving ? (
@@ -1055,10 +1052,12 @@ const PreviewBanner = memo(function PreviewBanner() {
 
 const SurveyHeader = memo(function SurveyHeader() {
   return (
-    <div className="border-b border-[var(--xxii-line)] bg-[linear-gradient(135deg,var(--xxii-blue-soft),white_70%)] px-5 py-4 text-center">
-      <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-[linear-gradient(135deg,color-mix(in_oklch,var(--xxii-blue)_70%,oklch(0.72_0.12_230)),var(--xxii-blue))] text-[10px] font-extrabold tracking-wider text-white shadow-md shadow-[color-mix(in_oklch,var(--xxii-blue)_25%,transparent)]">
-        XXII
-      </div>
+    <div className="border-b border-[var(--xxii-line)] bg-white px-5 py-4 text-center">
+      <img
+        src="/logo.png"
+        alt="XXII Century"
+        className="mx-auto mb-2 h-8 w-auto"
+      />
       <div className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--xxii-muted)]">
         Driver Feedback
       </div>
