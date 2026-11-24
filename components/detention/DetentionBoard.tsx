@@ -168,6 +168,7 @@ export function DetentionBoard() {
   const [kpis, setKpis] = useState<DetentionKpis | null>(null);
   const [statuses, setStatuses] = useState<string[]>([...DETENTION_STATUSES]);
   const [dispatchers, setDispatchers] = useState<string[]>([]);
+  const [customers, setCustomers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -253,6 +254,9 @@ export function DetentionBoard() {
       if (Array.isArray(json.data.statuses)) setStatuses(json.data.statuses);
       if (Array.isArray(json.data.dispatchers)) {
         setDispatchers(json.data.dispatchers);
+      }
+      if (Array.isArray(json.data.customers)) {
+        setCustomers(json.data.customers);
       }
       const ajson = await analyticsRes.json().catch(() => null);
       if (analyticsRes.ok && ajson?.ok) {
@@ -414,7 +418,7 @@ export function DetentionBoard() {
           <KpiCard
             title="Paid"
             value={String(kpis.paid)}
-            hint={`Collected ${money(kpis.paidAmount ?? 0)} · ${kpis.paidRate ?? 0}% paid`}
+            hint={`Collected ${money(kpis.paidAmount ?? 0)} · uses the received amount once it is entered, otherwise the expected amount`}
             tone="good"
             active={status === "Paid" && !awaitingOnly && !followUpOnly}
             onClick={() =>
@@ -640,6 +644,7 @@ export function DetentionBoard() {
                   <col className="w-[8%]" />
                   <col className="w-[6%]" />
                   <col className="w-[7%]" />
+                  <col className="w-[7%]" />
                   <col className="w-[8%]" />
                   <col className="w-[8%]" />
                 </colgroup>
@@ -655,6 +660,7 @@ export function DetentionBoard() {
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Email date</th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Time</th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Amount</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Received</th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Status</th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Flags</th>
                   </tr>
@@ -727,6 +733,9 @@ export function DetentionBoard() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums">
                         {money(row.amount)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 tabular-nums text-emerald-700">
+                        {row.settledAmount == null ? "—" : money(row.settledAmount)}
                       </td>
                       <td className="px-3 py-3">
                         <DetentionStatusPill status={row.status} />
@@ -818,6 +827,7 @@ export function DetentionBoard() {
       {addOpen ? (
         <ManualDetentionDialog
           dispatchers={dispatchers}
+          customers={customers}
           onClose={() => setAddOpen(false)}
           onCreated={async (id) => {
             setAddOpen(false);

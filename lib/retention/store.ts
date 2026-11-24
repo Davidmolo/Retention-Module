@@ -821,6 +821,21 @@ export const retentionStore = {
     return result.affectedRows === 1;
   },
 
+  async listGoogleReviewSends(): Promise<
+    { driverId: string; surveyResponseId: string; sentAt: string }[]
+  > {
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      `SELECT driver_id, survey_response_id, sent_at
+         FROM retention_google_review_sends
+        ORDER BY sent_at DESC`
+    );
+    return rows.map((r) => ({
+      driverId: fromDriverDbId(r.driver_id),
+      surveyResponseId: String(r.survey_response_id),
+      sentAt: fromDateTimeRequired(r.sent_at),
+    }));
+  },
+
   async listGoogleReviewResponseIds(): Promise<string[]> {
     const [rows] = await getPool().query<RowDataPacket[]>(
       `SELECT survey_response_id FROM retention_google_review_sends`

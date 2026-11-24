@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   Mail,
@@ -72,6 +72,10 @@ export const OverviewPanels = memo(function OverviewPanels({
   onPending?: () => void;
 }) {
   const maxIssue = Math.max(...data.charts.issueBreakdown.map((d) => d.count), 1);
+  const [googleOpen, setGoogleOpen] = useState(false);
+  const [googleDrivers, setGoogleDrivers] = useState<
+    { driverId: string; name: string; sentAt: string }[]
+  >([]);
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-6 overflow-x-hidden">
@@ -114,11 +118,52 @@ export const OverviewPanels = memo(function OverviewPanels({
         <KpiCard
           title="Sent to Google"
           value={String(data.kpis.googleReviewSends ?? 0)}
-          hint="Who went is on each 4 or 5 star response"
+          hint="Drivers we sent to the Google page. We cannot see if they posted the review."
           tone="good"
           icon={<Star size={18} />}
+          onClick={() => {
+            setGoogleOpen(true);
+            void fetch("/api/retention/google-sends")
+              .then((res) => res.json())
+              .then((json) => {
+                if (json.ok) setGoogleDrivers(json.data.drivers || []);
+              });
+          }}
         />
       </div>
+      <SurveyVolume />
+      {googleOpen ? (
+        <section className="xxii-card p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-[var(--xxii-text)]">
+              Sent to the Google page
+            </h3>
+            <button
+              type="button"
+              onClick={() => setGoogleOpen(false)}
+              className="text-sm font-semibold text-[var(--xxii-blue)]"
+            >
+              Close
+            </button>
+          </div>
+          {!googleDrivers.length ? (
+            <p className="text-sm text-[var(--xxii-muted)]">No one yet.</p>
+          ) : (
+            <ul className="divide-y divide-[var(--xxii-line)]">
+              {googleDrivers.map((driver) => (
+                <li key={driver.driverId} className="py-2 text-sm">
+                  <Link
+                    href={`/retention/drivers/${driver.driverId}`}
+                    className="font-semibold text-[var(--xxii-text)] hover:underline"
+                  >
+                    {driver.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <section className="xxii-card min-w-0 overflow-hidden p-4 sm:p-5">
@@ -356,6 +401,72 @@ function GoogleSent({ sent }: { sent?: boolean | null }) {
   if (sent == null) return <span className="text-xs text-slate-400">—</span>;
   if (sent) return <span className="text-xs font-bold text-emerald-700">Sent</span>;
   return <span className="text-xs font-bold text-slate-500">Not sent</span>;
+}
+
+function SurveyVolume() {
+  const [kind, setKind] = useState<"week" | "month">("week");
+  const [key, setKey] = useState("");
+  const [options, setOptions] = useState<string[]>([]);
+  const [counts, setCounts] = useState({ sent: 0, answered: 0, ignored: 0 });
+
+  useEffect(() => {
+    const sp = new URLSearchParams({ kind });
+    if (key) sp.set("key", key);
+    void fetch(`/api/retention/survey-volume?${sp.toString()}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!json.ok) return;
+        setOptions(json.data.options || []);
+        setCounts({
+          sent: json.data.sent || 0,
+          answered: json.data.answered || 0,
+          ignored: json.data.ignored || 0,
+        });
+        if (json.data.key && json.data.key !== key) setKey(json.data.key);
+      });
+  }, [kind, key]);
+
+  return (
+    <section className="xxii-card p-4 sm:p-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-[var(--xxii-text)]">Surveys sent</h3>
+          <p className="mt-0.5 text-xs text-[var(--xxii-muted)]">
+            Pick a week or a month. Weeks are Tuesday–Monday.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <select
+            value={kind}
+            onChange={(e) => {
+              setKey("");
+              setKind(e.target.value === "month" ? "month" : "week");
+            }}
+            className="rounded-lg border border-[var(--xxii-line)] bg-white px-2 py-1 text-sm"
+          >
+            <option value="week">Week</option>
+            <option value="month">Month</option>
+          </select>
+          <select
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            className="rounded-lg border border-[var(--xxii-line)] bg-white px-2 py-1 text-sm"
+          >
+            {options.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+        <div>Sent <span className="font-bold">{counts.sent}</span></div>
+        <div>Answered <span className="font-bold">{counts.answered}</span></div>
+        <div>Ignored <span className="font-bold">{counts.ignored}</span></div>
+      </div>
+    </section>
+  );
 }
 
 function KpiCard({

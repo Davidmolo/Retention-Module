@@ -229,8 +229,11 @@ export function SurveyClient({
           await new Promise((r) => setTimeout(r, 500));
           if (payload.resolutionFeedback) {
             goTo("thanks-resolution");
-          } else if ((payload.overallRating || 0) >= 4) {
+          } else if ((payload.overallRating || 0) === 5) {
             setGoogleUrl(sessionRef.current?.googleReviewUrl ?? null);
+            goTo("thanks-high");
+          } else if ((payload.overallRating || 0) === 4) {
+            setGoogleUrl(null);
             goTo("thanks-high");
           } else {
             goTo("thanks-low");
@@ -887,6 +890,7 @@ const ThanksHigh = memo(function ThanksHigh({
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [phase, setPhase] = useState<"referral" | "google" | "done">("referral");
   const sent = useRef(false);
 
   const goGoogle = useCallback(async () => {
@@ -932,14 +936,48 @@ const ThanksHigh = memo(function ThanksHigh({
             return;
           }
         }
-        await goGoogle();
+        if (googleUrl) setPhase("google");
+        else setPhase("done");
       } catch (err) {
         setSaving(false);
         setFormError((err as Error).message);
       }
     },
-    [firstName, goGoogle, lastName, leaving, phone, preview, relationship, saving, token]
+    [firstName, goGoogle, lastName, leaving, phone, preview, relationship, saving, googleUrl, token]
   );
+
+  if (phase === "done") {
+    return (
+      <div className="space-y-3 py-6 text-center">
+        <CheckCircle2 className="mx-auto text-[var(--xxii-good)]" size={48} />
+        <h2 className="text-xl font-extrabold text-[var(--xxii-text)]">Thank you!</h2>
+        <p className="text-sm text-[var(--xxii-muted)]">Your feedback was received.</p>
+      </div>
+    );
+  }
+
+  if (phase === "google" && googleUrl) {
+    return (
+      <div className="space-y-4 py-6 text-center">
+        <CheckCircle2 className="mx-auto text-[var(--xxii-good)]" size={48} />
+        <h2 className="text-xl font-extrabold text-[var(--xxii-text)]">Thank you!</h2>
+        <p className="text-sm font-bold text-[var(--xxii-text)]">
+          {GOOGLE_REVIEW_LUNCH_MESSAGE}
+        </p>
+        {formError ? (
+          <p className="text-sm font-medium text-[var(--xxii-risk)]">{formError}</p>
+        ) : null}
+        <button
+          type="button"
+          disabled={leaving}
+          onClick={() => void goGoogle()}
+          className={btnClass}
+        >
+          {leaving ? "Opening…" : "Leave a Google review"}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 py-6 text-center">
@@ -985,9 +1023,6 @@ const ThanksHigh = memo(function ThanksHigh({
           className="w-full rounded-xl border border-[var(--xxii-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--xxii-blue)] disabled:opacity-60"
         />
         <p className="text-xs text-[var(--xxii-muted)]">{REFERRAL_DISCLAIMER}</p>
-        <p className="text-center text-sm font-bold text-[var(--xxii-text)]">
-          {GOOGLE_REVIEW_LUNCH_MESSAGE}
-        </p>
         {formError ? (
           <p className="text-sm font-medium text-[var(--xxii-risk)]">{formError}</p>
         ) : null}
@@ -1004,11 +1039,11 @@ const ThanksHigh = memo(function ThanksHigh({
       </form>
       <button
         type="button"
-        disabled={leaving}
-        onClick={() => void goGoogle()}
+        disabled={leaving || saving}
+        onClick={() => setPhase(googleUrl ? "google" : "done")}
         className="text-sm font-semibold text-[var(--xxii-blue)] disabled:opacity-60"
       >
-        Skip and go to Google review
+        Close
       </button>
     </div>
   );

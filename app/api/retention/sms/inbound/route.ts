@@ -1,3 +1,4 @@
+import { recordCampaignReply } from "@/lib/driverComms/campaigns";
 import {
   findDriverIdByPhone,
   logDriverSms,
@@ -141,6 +142,19 @@ export async function POST(req: Request) {
         });
       } catch (e) {
         console.error("[sms:inbound:log]", (e as Error).message);
+      }
+    }
+
+    if (
+      driverId &&
+      body.trim() &&
+      !OPT_OUT_WORDS.has(keyword) &&
+      !OPT_IN_WORDS.has(keyword)
+    ) {
+      try {
+        await recordCampaignReply(driverId, body.trim());
+      } catch (e) {
+        console.error("[sms:inbound:campaign]", (e as Error).message);
       }
     }
 

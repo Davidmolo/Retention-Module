@@ -32,6 +32,9 @@ export type DetentionSummaryFilters = {
   days?: number;
   status?: string;
   dispatcher?: string;
+  customer?: string;
+  /** paid = status Paid, unpaid = anything else. */
+  paid?: "all" | "paid" | "unpaid";
   /** YYYY-MM-DD — match email received date. */
   emailDate?: string;
 };
@@ -73,6 +76,12 @@ function buildSummaryWhere(opts: DetentionSummaryFilters = {}): {
       params.push(...keys);
     }
   }
+  if (opts.customer?.trim() && opts.customer !== "all") {
+    conds.push("TRIM(customer) = ?");
+    params.push(opts.customer.trim());
+  }
+  if (opts.paid === "paid") conds.push("status = 'Paid'");
+  if (opts.paid === "unpaid") conds.push("COALESCE(status, '') <> 'Paid'");
   if (isYmd(opts.emailDate)) {
     conds.push(`${EMAIL_DAY} = ?`);
     params.push(opts.emailDate);
@@ -98,6 +107,17 @@ export async function listDetentionSummaryDispatchers(): Promise<string[]> {
   return uniqueCanonicalDispatchers(
     rows.map((r) => String(r.name || "")).filter(Boolean)
   );
+}
+
+export async function listDetentionSummaryCustomers(): Promise<string[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT DISTINCT TRIM(customer) AS name
+     FROM detentions
+     WHERE customer IS NOT NULL AND TRIM(customer) <> ''
+     ORDER BY name ASC`
+  );
+  return rows.map((r) => String(r.name || "")).filter(Boolean);
 }
 
 export async function getDetentionWeeklySummary(
@@ -348,7 +368,7 @@ export async function listDetentionPeriodClaims(
   const monthSql =
     kind === "month" ? ` AND DATE_FORMAT(${EMAIL_DAY}, '%Y-%m') = ?` : "";
   const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT id, load_number, customer, driver_name, amount, status, load_link,
+    `SELECT id, load_number, customer, dispatcher, driver_name, amount, status, load_link,
             COALESCE(email_date, created_at) AS when_at,
             (SELECT l.id FROM loads l
               WHERE l.gp_load IS NOT NULL
@@ -383,6 +403,9 @@ export async function listDetentionPeriodClaims(
       id: String(r.id),
       loadNumber: r.load_number ? String(r.load_number) : null,
       customer: r.customer ? String(r.customer) : null,
+      dispatcher: r.dispatcher
+        ? canonicalDispatcherName(String(r.dispatcher))
+        : null,
       driverName: r.driver_name ? String(r.driver_name) : null,
       amount: r.amount == null ? null : money(r.amount),
       status,

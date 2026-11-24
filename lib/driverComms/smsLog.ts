@@ -23,6 +23,7 @@ export type SmsSource =
   | "resolution"
   | "manual"
   | "broadcast"
+  | "campaign"
   | "inbound"
   | "legacy_survey"
   | "legacy_occasion";

@@ -29,8 +29,6 @@ import {
   MESSAGE_TEMPLATES,
   type MessageTemplateId,
 } from "@/lib/retention/messages";
-import { text } from "@/src/constants/text";
-
 const MESSAGE_FOCUS_IDS = new Set<string>(MESSAGE_TEMPLATES.map((t) => t.id));
 
 function formatDate(value: string) {
@@ -57,6 +55,9 @@ type DriverRow = {
   focusDepartment: string | null;
   departmentRatings?: { department: string; rating: number }[];
   responseCount: number;
+  surveysSent?: number;
+  surveysAnswered?: number;
+  surveysIgnored?: number;
 };
 
 type Overview = {
@@ -209,21 +210,16 @@ export function RetentionDashboard({
   }
 
   if (view === "reasons") {
-    return <ReasonsSummaryPanel onBack={goOverview} />;
+    return (
+      <ReasonsSummaryPanel
+        onBack={goOverview}
+        resolvedCases={data.resolvedCases ?? []}
+      />
+    );
   }
 
   if (view === "referrals") {
     return <ReferralsPanel onBack={goOverview} />;
-  }
-
-  if (view === "follow-ups") {
-    return (
-      <SecondaryView
-        data={data}
-        onBack={goOverview}
-        onOpenAtRisk={goAtRisk}
-      />
-    );
   }
 
   return (
@@ -267,7 +263,6 @@ export function RetentionDashboard({
         riskOnly={riskOnly}
         onSetView={setView}
       />
-      {!riskOnly && <ResolvedCases data={data} />}
     </div>
   );
 }
@@ -396,6 +391,9 @@ function DriverListPanel({
               <div className="mt-0.5 text-xs text-[var(--xxii-muted)]">
                 {d.driverTypeLabel} · {d.dispatcher}
               </div>
+              <div className="mt-1 text-xs text-[var(--xxii-muted)]">
+                Sent {d.surveysSent ?? 0} · Answered {d.surveysAnswered ?? 0} · Ignored {d.surveysIgnored ?? 0}
+              </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
                 {d.latestOverallRating != null ? (
                   <Stars value={d.latestOverallRating} size="sm" />
@@ -453,6 +451,7 @@ function DriverListPanel({
                       <span className="text-xs text-[var(--xxii-muted)]">
                         {d.dispatcher}
                         {d.repeatedLowRatings ? " · Repeated low" : ""}
+                        {` · Sent ${d.surveysSent ?? 0} · Answered ${d.surveysAnswered ?? 0} · Ignored ${d.surveysIgnored ?? 0}`}
                       </span>
                     </span>
                   </Link>
@@ -510,185 +509,5 @@ function DriverListPanel({
         onPageChange={setPage}
       />
     </section>
-  );
-}
-
-function ResolvedCases({ data }: { data: Overview }) {
-  const resolved = useMemo(() => {
-    if (data.resolvedCases) return data.resolvedCases;
-    return data.drivers
-      .filter(
-        (d) => d.caseStatus === "Resolved" || d.caseStatus === "Completed"
-      )
-      .map((d) => ({
-        id: d.driverId,
-        driverId: d.driverId,
-        name: d.name,
-        dispatcher: d.dispatcher,
-        caseStatus: d.caseStatus || "Resolved",
-        resolvedAt: null as string | null,
-      }));
-  }, [data.drivers, data.resolvedCases]);
-  const [page, setPage] = useState(1);
-  const { slice, total, totalPages, safePage, from, to } = usePagedSlice(
-    resolved,
-    page,
-    LIST_PAGE_SIZE
-  );
-
-  useEffect(() => {
-    if (safePage !== page) setPage(safePage);
-  }, [safePage, page]);
-
-  return (
-    <section className="xxii-card mt-6 overflow-hidden">
-      <div className="border-b border-[var(--xxii-line)] px-4 py-3 sm:px-5">
-        <h3 className="text-sm font-bold text-[var(--xxii-text)]">
-          {text.retention.resolvedTitle}
-        </h3>
-        <p className="mt-0.5 text-sm text-[var(--xxii-muted)]">
-          {text.retention.resolvedCases}
-        </p>
-      </div>
-      <ul className="divide-y divide-[var(--xxii-line)]">
-        {slice.map((d) => (
-          <li key={d.id}>
-            <Link
-              href={`/retention/drivers/${d.driverId}`}
-              onMouseEnter={() => prefetchDriverDetail(d.driverId)}
-              className="flex flex-wrap items-center justify-between gap-2 px-4 py-3.5 hover:bg-[var(--xxii-blue-soft)] sm:px-5"
-            >
-              <div>
-                <div className="font-semibold text-[var(--xxii-text)]">{d.name}</div>
-                <div className="text-xs text-[var(--xxii-muted)]">
-                  {d.dispatcher}
-                  {d.resolvedAt ? ` · ${formatDate(d.resolvedAt)}` : ""}
-                </div>
-              </div>
-              <StatusPill status={d.caseStatus} />
-            </Link>
-          </li>
-        ))}
-        {!total && (
-          <li className="px-5 py-10 text-center text-sm text-[var(--xxii-muted)]">
-            {text.retention.noResolvedCases}
-          </li>
-        )}
-      </ul>
-      <ListPagination
-        page={safePage}
-        totalPages={totalPages}
-        total={total}
-        from={from}
-        to={to}
-        onPageChange={setPage}
-      />
-    </section>
-  );
-}
-
-function SecondaryView({
-  data,
-  onBack,
-  onOpenAtRisk,
-}: {
-  data: Overview;
-  onBack: () => void;
-  onOpenAtRisk: () => void;
-}) {
-  const followUps = useMemo(
-    () =>
-      data.drivers.filter(
-        (d) =>
-          d.caseStatus === "In Progress" ||
-          d.caseStatus === "Open" ||
-          d.atRisk
-      ),
-    [data.drivers]
-  );
-
-  const [page, setPage] = useState(1);
-  const { slice, total, totalPages, safePage, from, to } = usePagedSlice(
-    followUps,
-    page,
-    LIST_PAGE_SIZE
-  );
-
-  useEffect(() => {
-    if (safePage !== page) setPage(safePage);
-  }, [safePage, page]);
-
-  return (
-    <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--xxii-muted)]">
-            Retention
-          </div>
-          <h2 className="mt-1 text-xl font-extrabold tracking-tight text-[var(--xxii-text)]">
-            {text.retention.followUps}
-          </h2>
-        </div>
-        <button
-          type="button"
-          onClick={onBack}
-          className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200"
-        >
-          Back to Overview
-        </button>
-      </div>
-
-        <section className="xxii-card overflow-hidden">
-          <div className="border-b border-[var(--xxii-line)] px-4 py-3 sm:px-5">
-            <p className="text-sm text-[var(--xxii-muted)]">
-              Open and in-progress at-risk cases that need a staff check-in.
-            </p>
-          </div>
-          <ul className="divide-y divide-[var(--xxii-line)]">
-            {slice.map((d) => (
-              <li key={d.driverId}>
-                <Link
-                  href={`/retention/drivers/${d.driverId}`}
-                  onMouseEnter={() => prefetchDriverDetail(d.driverId)}
-                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-3.5 hover:bg-sky-50/40 sm:px-5"
-                >
-                  <div>
-                    <div className="font-semibold text-[var(--xxii-text)]">{d.name}</div>
-                    <div className="text-xs text-[var(--xxii-muted)]">
-                      {d.dispatcher}
-                    </div>
-                    <div className="mt-1">
-                      <DepartmentRatingsCell ratings={d.departmentRatings} />
-                    </div>
-                  </div>
-                  <StatusPill status={d.caseStatus || (d.atRisk ? "Open" : null)} />
-                </Link>
-              </li>
-            ))}
-            {!total && (
-              <li className="px-5 py-10 text-center text-sm text-slate-400">
-                No open follow-ups right now
-              </li>
-            )}
-          </ul>
-          <ListPagination
-            page={safePage}
-            totalPages={totalPages}
-            total={total}
-            from={from}
-            to={to}
-            onPageChange={setPage}
-          />
-          <div className="border-t border-[var(--xxii-line)] px-4 py-3 sm:px-5">
-            <button
-              type="button"
-              onClick={onOpenAtRisk}
-              className="text-sm font-bold text-[var(--xxii-blue)]"
-            >
-              View At Risk list →
-            </button>
-          </div>
-        </section>
-    </div>
   );
 }

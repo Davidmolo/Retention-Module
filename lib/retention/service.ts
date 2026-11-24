@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { getGpAdapter, getGpMode } from "@/lib/adapters/gp";
 import { toAppCalendarDate } from "@/lib/dates";
+import { weekOf } from "@/lib/week";
 import {
   DEPARTMENTS,
   GOOGLE_REVIEW_URL,
@@ -132,6 +133,9 @@ export async function getOverview() {
     nonResponse: boolean;
     repeatedLowRatings: boolean;
     responseCount: number;
+    surveysSent: number;
+    surveysAnswered: number;
+    surveysIgnored: number;
     /** Lowest department rated ≤3 (for filters); full ratings in departmentRatings */
     focusDepartment: string | null;
     departmentRatings: { department: string; rating: number }[];
@@ -185,6 +189,11 @@ export async function getOverview() {
       nonResponse: latestOccurrence?.responseState === "non_response",
       repeatedLowRatings: lowCount >= 2,
       responseCount: driverResponses.length,
+      surveysSent: driverOccurrences.filter(
+        (o) => o.sentAt || o.responseState === "sent" || o.responseState === "reminded" || o.responseState === "completed" || o.responseState === "non_response"
+      ).length,
+      surveysAnswered: driverOccurrences.filter((o) => o.responseState === "completed").length,
+      surveysIgnored: driverOccurrences.filter((o) => o.responseState === "non_response").length,
       focusDepartment:
         latest?.departmentFeedback
           ?.filter((d) => d.rating <= 3)
@@ -1036,7 +1045,13 @@ export async function submitSurvey(
     retentionCase,
     alerts,
     googleChat,
-    googleReviewUrl: branch === "positive" ? GOOGLE_REVIEW_URL : null,
+    googleReviewUrl:
+      overallRating === 5 &&
+      submittedBy !== "admin" &&
+      driver &&
+      (await retentionStore.listGoogleReviewSendsForDriver(driver.id)).length === 0
+        ? GOOGLE_REVIEW_URL
+        : null,
     thankYou:
       branch === "positive"
         ? "Thank you! If you have a moment, please leave us a Google review."
@@ -1114,8 +1129,8 @@ async function highDriverResponse(token: string) {
   const response = await retentionStore.latestResponseForOccurrence(
     occurrence.id
   );
-  if (!response || !isHighOverall(response.overallRating)) {
-    const err = new Error("This is only for a 4 or 5 star survey");
+  if (!response || response.overallRating !== 5) {
+    const err = new Error("The Google review link is only for a 5 star survey");
     (err as Error & { status?: number }).status = 400;
     throw err;
   }
@@ -1205,7 +1220,40 @@ export async function submitDriverReferral(
   return { saved: true };
 }
 
+function referralPhoneKey(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+/** OpenRoad employment status Active means the referred driver was hired. */
+export async function syncHiredReferrals() {
+  const rows = await retentionStore.listDriverReferrals();
+  const open = rows.filter((row) => row.status === "Open");
+  if (!open.length) return { hired: 0 };
+  const drivers = await getGpAdapter().listDrivers({ includeInactive: true });
+  const active = drivers.filter(
+    (driver) => String(driver.status || "").toLowerCase() === "active"
+  );
+  let hired = 0;
+  for (const row of open) {
+    const phone = referralPhoneKey(row.phone);
+    const name = `${row.firstName} ${row.lastName}`.trim().toLowerCase();
+    const byPhone = phone
+      ? active.find((driver) => referralPhoneKey(driver.phone || "") === phone)
+      : null;
+    const byName =
+      !byPhone && name
+        ? active.find((driver) => driver.name.trim().toLowerCase() === name)
+        : null;
+    if (!byPhone && !byName) continue;
+    await setReferralStatus(row.id, "Hired", { automatic: true });
+    hired += 1;
+  }
+  return { hired };
+}
+
 export async function listReferrals() {
+  await syncHiredReferrals();
   const rows = await retentionStore.listDriverReferrals();
   const names = new Map<string, string>();
   const adapter = getGpAdapter();
@@ -1232,10 +1280,19 @@ export async function listReferrals() {
   };
 }
 
-export async function setReferralStatus(id: string, status: string) {
+export async function setReferralStatus(
+  id: string,
+  status: string,
+  opts?: { automatic?: boolean }
+) {
   const { isReferralStatus } = await import("./referral");
+  if (status === "Hired" && !opts?.automatic) {
+    const err = new Error("Hired is set automatically when OpenRoad shows the driver as Active");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
   if (!isReferralStatus(status)) {
-    const err = new Error("Status must be Open, Hired, or Not Hired");
+    const err = new Error("Status must be Open, Hired, or Not interested");
     (err as Error & { status?: number }).status = 400;
     throw err;
   }
@@ -1332,7 +1389,7 @@ function googleReviewSent(
   submittedBy: "driver" | "admin",
   sent: boolean
 ): boolean | null {
-  if (submittedBy === "admin" || rating < 4) return null;
+  if (submittedBy === "admin" || rating !== 5) return null;
   return sent;
 }
 
@@ -1604,4 +1661,53 @@ export async function addNote(input: {
   });
   await bustRetentionCaches(input.driverId);
   return note;
+}
+
+function periodKey(sentAt: string, kind: "week" | "month"): string {
+  const date = new Date(sentAt);
+  if (kind === "month") {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  }
+  const w = weekOf(date);
+  return `${w.year}-W${w.week}`;
+}
+
+export async function getSurveyVolume(kind: "week" | "month", key?: string) {
+  const occurrences = await retentionStore.listSurveyOccurrences();
+  const sentRows = occurrences.filter((o) => o.sentAt);
+  const keys = [
+    ...new Set(sentRows.map((o) => periodKey(o.sentAt as string, kind))),
+  ].sort((a, b) => b.localeCompare(a));
+  const selected = key && keys.includes(key) ? key : keys[0] || "";
+  const rows = sentRows.filter(
+    (o) => periodKey(o.sentAt as string, kind) === selected
+  );
+  return {
+    kind,
+    key: selected,
+    options: keys,
+    sent: rows.length,
+    answered: rows.filter((o) => o.responseState === "completed").length,
+    ignored: rows.filter((o) => o.responseState === "non_response").length,
+  };
+}
+
+export async function listSentToGoogle() {
+  const sends = await retentionStore.listGoogleReviewSends();
+  const drivers = await getGpAdapter().listDrivers({ includeInactive: true });
+  const names = new Map(drivers.map((d) => [d.id, d.name]));
+  const seen = new Set<string>();
+  const rows = [];
+  for (const send of sends) {
+    if (seen.has(send.driverId)) continue;
+    seen.add(send.driverId);
+    rows.push({
+      driverId: send.driverId,
+      name: names.get(send.driverId) || `Driver ${send.driverId}`,
+      sentAt: send.sentAt,
+    });
+  }
+  return { drivers: rows };
 }

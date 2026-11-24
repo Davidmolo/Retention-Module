@@ -55,6 +55,12 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+/** Morning cron starts a few minutes before the previous send finished. */
+function reminderWaitElapsed(lastTouch: number, now: number, afterDays: number) {
+  if (!lastTouch) return false;
+  return now - lastTouch >= afterDays * MS_DAY - 3_600_000;
+}
+
 export type ScheduleResult = {
   driverId: string;
   name: string;
@@ -207,12 +213,10 @@ export async function runSurveyReminders(opts?: {
     // Self-heal: response exists but occurrence was left open → mark completed, no SMS.
     const existing = await retentionStore.findResponseByOccurrenceId(occ.id);
     if (existing) {
-      if (occ.responseState !== "completed") {
-        await retentionStore.updateSurveyOccurrence(occ.id, {
-          responseState: "completed",
-          completedAt: existing.submittedAt || new Date().toISOString(),
-        });
-      }
+      await retentionStore.updateSurveyOccurrence(occ.id, {
+        responseState: "completed",
+        completedAt: existing.submittedAt || new Date().toISOString(),
+      });
       skipped += 1;
       continue;
     }
@@ -229,18 +233,19 @@ export async function runSurveyReminders(opts?: {
 
     // After max reminders: wait another reminder window, then close so cadence can continue.
     if (occ.reminderCount >= maxReminders) {
-      if (!lastTouch || now - lastTouch < afterDays * MS_DAY) {
+      if (!reminderWaitElapsed(lastTouch, now, afterDays)) {
         skipped += 1;
         continue;
       }
       await retentionStore.updateSurveyOccurrence(occ.id, {
         responseState: "non_response",
       });
+      await flagDriverIgnoredSurveys(occ.driverId);
       closed += 1;
       continue;
     }
 
-    if (!lastTouch || now - lastTouch < afterDays * MS_DAY) {
+    if (!reminderWaitElapsed(lastTouch, now, afterDays)) {
       skipped += 1;
       continue;
     }
@@ -277,10 +282,55 @@ export async function runSurveyReminders(opts?: {
     }
   }
 
-  if (reminded > 0 || closed > 0) {
+  const ignoredDrivers = new Set(
+    all
+      .filter((o) => o.responseState === "non_response")
+      .map((o) => o.driverId)
+  );
+  for (const driverId of ignoredDrivers) {
+    await flagDriverIgnoredSurveys(driverId);
+  }
+
+  if (reminded > 0 || closed > 0 || ignoredDrivers.size > 0) {
     const { CACHE_KEYS, cacheDel } = await import("@/lib/cache");
     await cacheDel([CACHE_KEYS.retentionOverview]);
   }
 
   return { reminded, closed, skipped };
+}
+
+const IGNORED_SURVEY_NOTE =
+  "Status changed to At Risk because the two latest surveys were completely ignored, including follow-ups.";
+
+/** Latest two sent surveys are both closed as ignored → At Risk plus one note. */
+export async function flagDriverIgnoredSurveys(driverId: string) {
+  const occurrences = await retentionStore.listSurveyOccurrences(driverId);
+  const sent = occurrences
+    .filter(
+      (o) => (o.surveyKind || "regular") === "regular" && Boolean(o.sentAt)
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.sentAt || b.createdAt).getTime() -
+        new Date(a.sentAt || a.createdAt).getTime()
+    );
+  const latest = sent.slice(0, 2);
+  if (
+    latest.length < 2 ||
+    !latest.every((o) => o.responseState === "non_response")
+  ) {
+    return;
+  }
+  const retentionCase = await retentionStore.upsertRetentionCase(driverId, {
+    atRisk: true,
+    status: "Open",
+  });
+  const notes = await retentionStore.listInternalNotes(driverId);
+  if (notes.some((note) => note.text === IGNORED_SURVEY_NOTE)) return;
+  await retentionStore.addInternalNote({
+    driverId,
+    caseId: retentionCase.id,
+    author: "System",
+    text: IGNORED_SURVEY_NOTE,
+  });
 }

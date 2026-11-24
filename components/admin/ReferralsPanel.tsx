@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { REFERRAL_STATUSES } from "@/lib/retention/referral";
+import { REFERRAL_MANUAL_STATUSES } from "@/lib/retention/referral";
 
 type ReferralRow = {
   id: string;
@@ -105,17 +105,21 @@ export function ReferralsPanel({ onBack }: { onBack: () => void }) {
                   <td className="px-3 py-2">{row.relationship}</td>
                   <td className="px-3 py-2">{row.referrerName}</td>
                   <td className="px-3 py-2">
-                    <select
-                      value={row.status}
-                      onChange={(e) => void setStatus(row.id, e.target.value)}
-                      className="rounded-lg border border-[var(--xxii-line)] bg-white px-2 py-1"
-                    >
-                      {REFERRAL_STATUSES.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
+                    {row.status === "Hired" ? (
+                      <span className="font-semibold text-emerald-700">Hired</span>
+                    ) : (
+                      <select
+                        value={row.status === "Not interested" ? "Not interested" : "Open"}
+                        onChange={(e) => void setStatus(row.id, e.target.value)}
+                        className="rounded-lg border border-[var(--xxii-line)] bg-white px-2 py-1"
+                      >
+                        {REFERRAL_MANUAL_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                   <td className="px-3 py-2">{formatDate(row.createdAt)}</td>
                 </tr>

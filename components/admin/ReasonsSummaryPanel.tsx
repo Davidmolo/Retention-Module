@@ -12,6 +12,7 @@ import {
   usePagedSlice,
 } from "./ListPagination";
 import { SkeletonReasons } from "@/components/ui/skeleton";
+import { text } from "@/src/constants/text";
 
 type NegativeItem = {
   id: string;
@@ -40,6 +41,15 @@ type ReasonsData = {
 
 type DeptFilter = "all" | "overall" | (typeof DEPARTMENTS)[number];
 
+type ResolvedCase = {
+  id: string;
+  driverId: string;
+  name: string;
+  dispatcher: string;
+  caseStatus: string;
+  resolvedAt: string | null;
+};
+
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
     month: "short",
@@ -48,7 +58,13 @@ function formatDate(value: string) {
   });
 }
 
-export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
+export function ReasonsSummaryPanel({
+  onBack,
+  resolvedCases = [],
+}: {
+  onBack: () => void;
+  resolvedCases?: ResolvedCase[];
+}) {
   const [data, setData] = useState<ReasonsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +72,8 @@ export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
   const [q, setQ] = useState("");
   const [commentsOnly, setCommentsOnly] = useState(false);
   const [page, setPage] = useState(1);
+  const [showResolved, setShowResolved] = useState(false);
+  const [resolvedPage, setResolvedPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,10 +127,21 @@ export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
     page,
     LIST_PAGE_SIZE
   );
+  const resolvedPaging = usePagedSlice(
+    resolvedCases,
+    resolvedPage,
+    LIST_PAGE_SIZE
+  );
 
   useEffect(() => {
     if (safePage !== page) setPage(safePage);
   }, [safePage, page]);
+
+  useEffect(() => {
+    if (resolvedPaging.safePage !== resolvedPage) {
+      setResolvedPage(resolvedPaging.safePage);
+    }
+  }, [resolvedPaging.safePage, resolvedPage]);
 
   if (loading && !data) {
     return <SkeletonReasons />;
@@ -335,6 +364,66 @@ export function ReasonsSummaryPanel({ onBack }: { onBack: () => void }) {
           ) : null}
         </section>
       </div>
+
+      <section className="xxii-card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--xxii-line)] px-4 py-3 sm:px-5">
+          <div>
+            <h3 className="text-sm font-bold text-[var(--xxii-text)]">
+              {text.retention.resolvedTitle}
+            </h3>
+            <p className="mt-0.5 text-sm text-[var(--xxii-muted)]">
+              {text.retention.resolvedCases}
+            </p>
+          </div>
+          {resolvedCases.length > 0 && !showResolved ? (
+            <button
+              type="button"
+              onClick={() => setShowResolved(true)}
+              className="rounded-xl bg-[var(--xxii-blue)] px-4 py-2 text-sm font-bold text-white"
+            >
+              {text.retention.viewAllResolved}
+            </button>
+          ) : null}
+        </div>
+        {showResolved ? (
+          <>
+            <ul className="divide-y divide-[var(--xxii-line)]">
+              {resolvedPaging.slice.map((d) => (
+                <li key={d.id}>
+                  <Link
+                    href={`/retention/drivers/${d.driverId}`}
+                    onMouseEnter={() => prefetchDriverDetail(d.driverId)}
+                    className="flex flex-wrap items-center justify-between gap-2 px-4 py-3.5 hover:bg-[var(--xxii-blue-soft)] sm:px-5"
+                  >
+                    <div>
+                      <div className="font-semibold text-[var(--xxii-text)]">
+                        {d.name}
+                      </div>
+                      <div className="text-xs text-[var(--xxii-muted)]">
+                        {d.dispatcher}
+                        {d.resolvedAt ? ` · ${formatDate(d.resolvedAt)}` : ""}
+                      </div>
+                    </div>
+                    <StatusPill status={d.caseStatus} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <ListPagination
+              page={resolvedPaging.safePage}
+              totalPages={resolvedPaging.totalPages}
+              total={resolvedPaging.total}
+              from={resolvedPaging.from}
+              to={resolvedPaging.to}
+              onPageChange={setResolvedPage}
+            />
+          </>
+        ) : !resolvedCases.length ? (
+          <p className="px-5 py-10 text-center text-sm text-[var(--xxii-muted)]">
+            {text.retention.noResolvedCases}
+          </p>
+        ) : null}
+      </section>
     </div>
   );
 }

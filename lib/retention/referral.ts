@@ -6,7 +6,10 @@ export const GOOGLE_REVIEW_LUNCH_MESSAGE =
 export const REFERRAL_DISCLAIMER =
   "*Disclaimer: The referral bonus is payable only if the referred candidate is successfully hired by the company.";
 
-export const REFERRAL_STATUSES = ["Open", "Hired", "Not Hired"] as const;
+export const REFERRAL_STATUSES = ["Open", "Hired", "Not interested"] as const;
+
+/** Statuses Milos can set by hand. Hired is only set from OpenRoad. */
+export const REFERRAL_MANUAL_STATUSES = ["Open", "Not interested"] as const;
 
 export type ReferralStatus = (typeof REFERRAL_STATUSES)[number];
 

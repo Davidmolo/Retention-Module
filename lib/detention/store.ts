@@ -10,7 +10,7 @@ import {
   resolveArCompliance,
   resolveDispatcherCompliance,
 } from "./compliance";
-import { openRoadLoadHref } from "./parseOpenRoadEmail";
+import { isUsableOpenRoadLoadUrl, openRoadLoadHref } from "./parseOpenRoadEmail";
 import {
   DETENTION_STATUSES,
   type Detention,
@@ -339,6 +339,17 @@ export async function listDetentionDispatchers(): Promise<string[]> {
       ORDER BY dispatcher ASC`
   );
   return uniqueCanonicalDispatchers(rows.map((r) => String(r.dispatcher)));
+}
+
+export async function listDetentionCustomers(): Promise<string[]> {
+  const pool = getPool();
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT DISTINCT TRIM(customer) AS name
+       FROM detentions
+      WHERE customer IS NOT NULL AND TRIM(customer) <> ''
+      ORDER BY name ASC`
+  );
+  return rows.map((r) => String(r.name || "")).filter(Boolean);
 }
 
 export async function getDetention(id: string): Promise<Detention | null> {
@@ -967,6 +978,7 @@ export async function createManualDetention(input: {
   emailDate: string;
   timeLabel?: string | null;
   amount: number;
+  loadLink: string;
   actor?: string | null;
 }): Promise<Detention> {
   const customer = input.customer.trim();
@@ -974,6 +986,7 @@ export async function createManualDetention(input: {
   const loadNumber = input.loadNumber.trim().replace(/^#/, "");
   const driverName = input.driverName.trim();
   const emailDate = input.emailDate.trim();
+  const loadLink = input.loadLink.trim();
   if (!customer || !dispatcherName || !loadNumber || !driverName) {
     const err = new Error("Customer, dispatcher, load number, and driver are required");
     (err as Error & { status?: number }).status = 400;
@@ -986,6 +999,13 @@ export async function createManualDetention(input: {
   }
   if (!Number.isFinite(input.amount) || input.amount < 0) {
     const err = new Error("Amount must be a number");
+    (err as Error & { status?: number }).status = 400;
+    throw err;
+  }
+  if (!isUsableOpenRoadLoadUrl(loadLink)) {
+    const err = new Error(
+      "An OpenRoad load link is required before this detention can be added"
+    );
     (err as Error & { status?: number }).status = 400;
     throw err;
   }
@@ -1022,6 +1042,7 @@ export async function createManualDetention(input: {
     emailDate: `${emailDate} 12:00:00`,
     history,
     source: "manual",
+    loadLink,
   });
 
   const pool = getPool();

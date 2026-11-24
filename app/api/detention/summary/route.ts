@@ -4,6 +4,7 @@ import {
   getDetentionDispatcherSummary,
   getDetentionMonthlySummary,
   getDetentionWeeklySummary,
+  listDetentionSummaryCustomers,
   listDetentionSummaryDispatchers,
   type DetentionSummaryFilters,
 } from "@/lib/detention/summary";
@@ -19,21 +20,26 @@ function parseFilters(searchParams: URLSearchParams): DetentionSummaryFilters {
       : Math.max(0, Math.floor(Number(daysRaw)) || 0);
   const status = searchParams.get("status") || undefined;
   const dispatcher = searchParams.get("dispatcher") || undefined;
+  const customer = searchParams.get("customer") || undefined;
+  const paidRaw = searchParams.get("paid");
+  const paid =
+    paidRaw === "paid" || paidRaw === "unpaid" ? paidRaw : undefined;
   const emailDate = searchParams.get("emailDate") || undefined;
-  return { days, status, dispatcher, emailDate };
+  return { days, status, dispatcher, customer, paid, emailDate };
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const filters = parseFilters(searchParams);
-    const [weeks, months, dispatchers, customers, dispatcherOptions] =
+    const [weeks, months, dispatchers, customers, dispatcherOptions, customerOptions] =
       await Promise.all([
       getDetentionWeeklySummary(26, filters),
       getDetentionMonthlySummary(18, filters),
       getDetentionDispatcherSummary(filters),
       getDetentionCustomersBilled(filters),
       listDetentionSummaryDispatchers(),
+      listDetentionSummaryCustomers(),
     ]);
     return ok({
       weeks,
@@ -44,6 +50,7 @@ export async function GET(request: Request) {
       filterOptions: {
         statuses: [...DETENTION_STATUSES],
         dispatchers: dispatcherOptions,
+        customers: customerOptions,
       },
     });
   } catch (error) {

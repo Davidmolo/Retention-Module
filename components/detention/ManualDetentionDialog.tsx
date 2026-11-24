@@ -33,16 +33,19 @@ function Field({
 
 export function ManualDetentionDialog({
   dispatchers,
+  customers,
   onClose,
   onCreated,
 }: {
   dispatchers: string[];
+  customers: string[];
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
   const [customer, setCustomer] = useState("");
   const [dispatcher, setDispatcher] = useState("");
   const [loadNumber, setLoadNumber] = useState("");
+  const [loadLink, setLoadLink] = useState("");
   const [driverName, setDriverName] = useState("");
   const [puLocation, setPuLocation] = useState("");
   const [puAppt, setPuAppt] = useState("");
@@ -66,6 +69,7 @@ export function ManualDetentionDialog({
           customer,
           dispatcher,
           loadNumber,
+          loadLink,
           driverName,
           puLocation,
           puAppt,
@@ -100,7 +104,7 @@ export function ManualDetentionDialog({
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               For a claim that did not come in on an automatic detention email.
-              Email date defaults to today.
+              An OpenRoad load link is required. Email date defaults to today.
             </p>
           </div>
           <button
@@ -117,10 +121,17 @@ export function ManualDetentionDialog({
           <Field label="Customer">
             <input
               required
+              list="manual-detention-customers"
               value={customer}
               onChange={(e) => setCustomer(e.target.value)}
+              placeholder="Select or type a customer"
               className={inputClass}
             />
+            <datalist id="manual-detention-customers">
+              {customers.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </Field>
           <Field label="Dispatcher">
             <input
@@ -141,6 +152,16 @@ export function ManualDetentionDialog({
               required
               value={loadNumber}
               onChange={(e) => setLoadNumber(e.target.value)}
+              className={inputClass}
+            />
+          </Field>
+          <Field label="OpenRoad load link">
+            <input
+              required
+              type="url"
+              value={loadLink}
+              onChange={(e) => setLoadLink(e.target.value)}
+              placeholder="https://app.openroadtms.com/loads/…"
               className={inputClass}
             />
           </Field>

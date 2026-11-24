@@ -28,6 +28,7 @@ import {
   type DetentionPeriodSummary,
   type DetentionRateBar,
 } from "@/lib/detention/types";
+import { DetentionComplianceView } from "@/components/detention/DetentionComplianceView";
 import { SkeletonSummaryCards } from "@/components/ui/skeleton";
 
 function money(n: number) {
@@ -322,7 +323,7 @@ function SummaryTable({
                               claim.loadNumber || "—"
                             )}
                           </div>
-                          <span>{claim.customer || "—"}</span>
+                          <span>{claim.customer || "—"} · {claim.dispatcher || "—"}</span>
                           <span className="text-right">{claim.paid ? "Paid" : "Not paid"} · {claim.amount == null ? "—" : money(claim.amount)}</span>
                         </div>
                       ))
@@ -483,7 +484,7 @@ function SummaryTable({
                             <tr>
                               <th className="py-1 pr-3 font-medium">Load</th>
                               <th className="py-1 pr-3 font-medium">Customer</th>
-                              <th className="py-1 pr-3 font-medium">Driver</th>
+                              <th className="py-1 pr-3 font-medium">Dispatcher</th>
                               <th className="py-1 pr-3 font-medium">Amount</th>
                               <th className="py-1 font-medium">Paid</th>
                             </tr>
@@ -506,7 +507,7 @@ function SummaryTable({
                                   )}
                                 </td>
                                 <td className="py-1.5 pr-3">{claim.customer || "—"}</td>
-                                <td className="py-1.5 pr-3">{claim.driverName || "—"}</td>
+                                <td className="py-1.5 pr-3">{claim.dispatcher || "—"}</td>
                                 <td className="py-1.5 pr-3 tabular-nums">
                                   {claim.amount == null ? "—" : money(claim.amount)}
                                 </td>
@@ -1004,6 +1005,97 @@ function CustomersBilledTable({ rows }: { rows: DetentionPartyRow[] }) {
   );
 }
 
+function weeksInMonth(
+  weeks: DetentionPeriodSummary[],
+  ym: string
+): DetentionPeriodSummary[] {
+  return weeks.filter((week) => (week.hint || "").slice(0, 7) === ym);
+}
+
+function MonthWeekBoard({
+  months,
+  weeks,
+  filterQuery,
+}: {
+  months: DetentionPeriodSummary[];
+  weeks: DetentionPeriodSummary[];
+  filterQuery: string;
+}) {
+  const [openMonth, setOpenMonth] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-3">
+      <div className="xxii-card overflow-hidden">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-base font-semibold text-foreground">By month</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Months first. Open a month to see its weeks, then open a week to
+            see each load. Paid loads still open in OpenRoad.
+          </p>
+        </div>
+        {!months.length ? (
+          <div className="p-6 text-sm text-muted-foreground">No data yet.</div>
+        ) : (
+          <div className="divide-y divide-border">
+            {months.map((month) => {
+              const open = openMonth === month.key;
+              const monthWeeks = weeksInMonth(weeks, month.key);
+              return (
+                <div key={month.key}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenMonth((current) =>
+                        current === month.key ? null : month.key
+                      )
+                    }
+                    className={clsx(
+                      "flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left text-sm hover:bg-slate-50",
+                      month.isCurrent && "bg-sky-50"
+                    )}
+                  >
+                    <ChevronDown
+                      size={14}
+                      className={clsx("text-slate-400", open && "rotate-180")}
+                    />
+                    <span className="min-w-0 flex-1 font-semibold text-[var(--xxii-brand,#1e4d9c)]">
+                      {month.label}
+                      {month.isCurrent ? (
+                        <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-800">
+                          Current month
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="tabular-nums text-xs text-slate-600">
+                      Submitted {month.submitted} · Approved {month.approved} ·
+                      Paid {month.paid} · {money(month.collectedAmount)} ·{" "}
+                      {month.collectionRate}%
+                    </span>
+                  </button>
+                  {open ? (
+                    <div className="border-t border-border bg-slate-50/70 p-3">
+                      <SummaryTable
+                        title="By week"
+                        rows={monthWeeks}
+                        kind="week"
+                        filterQuery={filterQuery}
+                        submittedHint="Total claims received during each week below, including denied."
+                        collectedHint="Total amount collected for those claims."
+                        weekLimitNote="Weeks are Tuesday–Monday, the same as Gross Profit."
+                        currentBadge="Current week"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DetentionSummaryView() {
   const [weeks, setWeeks] = useState<DetentionPeriodSummary[]>([]);
   const [months, setMonths] = useState<DetentionPeriodSummary[]>([]);
@@ -1016,6 +1108,9 @@ export function DetentionSummaryView() {
   const [days, setDays] = useState(90);
   const [status, setStatus] = useState("all");
   const [dispatcher, setDispatcher] = useState("all");
+  const [customer, setCustomer] = useState("all");
+  const [paid, setPaid] = useState("all");
+  const [customerOptions, setCustomerOptions] = useState<string[]>([]);
   const [emailDate, setEmailDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1028,6 +1123,8 @@ export function DetentionSummaryView() {
       sp.set("days", String(days));
       if (status !== "all") sp.set("status", status);
       if (dispatcher !== "all") sp.set("dispatcher", dispatcher);
+      if (customer !== "all") sp.set("customer", customer);
+      if (paid !== "all") sp.set("paid", paid);
       if (emailDate) sp.set("emailDate", emailDate);
       const res = await fetch(`/api/detention/summary?${sp.toString()}`, {
         credentials: "include",
@@ -1042,13 +1139,14 @@ export function DetentionSummaryView() {
       setCustomers(json.data.customers || []);
       const opts = json.data.filterOptions;
       if (opts?.dispatchers?.length) setDispatcherOptions(opts.dispatchers);
+      if (opts?.customers?.length) setCustomerOptions(opts.customers);
       if (opts?.statuses?.length) setStatuses(opts.statuses);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [days, status, dispatcher, emailDate]);
+  }, [days, status, dispatcher, customer, paid, emailDate]);
 
   useEffect(() => {
     void load();
@@ -1058,20 +1156,29 @@ export function DetentionSummaryView() {
     setDays(90);
     setStatus("all");
     setDispatcher("all");
+    setCustomer("all");
+    setPaid("all");
     setEmailDate("");
   };
 
   const filtersActive =
-    days !== 90 || status !== "all" || dispatcher !== "all" || Boolean(emailDate);
+    days !== 90 ||
+    status !== "all" ||
+    dispatcher !== "all" ||
+    customer !== "all" ||
+    paid !== "all" ||
+    Boolean(emailDate);
 
   const filterQuery = useMemo(() => {
     const sp = new URLSearchParams();
     sp.set("days", String(days));
     if (status !== "all") sp.set("status", status);
     if (dispatcher !== "all") sp.set("dispatcher", dispatcher);
+    if (customer !== "all") sp.set("customer", customer);
+    if (paid !== "all") sp.set("paid", paid);
     if (emailDate) sp.set("emailDate", emailDate);
     return sp.toString();
-  }, [days, status, dispatcher, emailDate]);
+  }, [days, status, dispatcher, customer, paid, emailDate]);
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
@@ -1152,6 +1259,31 @@ export function DetentionSummaryView() {
                 ))}
               </select>
             </FilterControl>
+            <FilterControl label="Customer">
+              <select
+                value={customer}
+                onChange={(e) => setCustomer(e.target.value)}
+                className={filterControlClass}
+              >
+                <option value="all">All customers</option>
+                {customerOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </FilterControl>
+            <FilterControl label="Paid">
+              <select
+                value={paid}
+                onChange={(e) => setPaid(e.target.value)}
+                className={filterControlClass}
+              >
+                <option value="all">Paid and unpaid</option>
+                <option value="paid">Paid</option>
+                <option value="unpaid">Not paid</option>
+              </select>
+            </FilterControl>
             <FilterControl label="Email date">
               <div className="flex h-9 items-center gap-1.5">
                 <input
@@ -1187,26 +1319,13 @@ export function DetentionSummaryView() {
         <SkeletonSummaryCards count={3} />
       ) : (
         <>
-          <SummaryTable
-            title="By week"
-            rows={weeks}
-            kind="week"
+          <MonthWeekBoard
+            months={months}
+            weeks={weeks}
             filterQuery={filterQuery}
-            submittedHint="Total claims received during each period listed below, including denied."
-            collectedHint="Total amount collected for those claims."
-            weekLimitNote="Shows the latest 26 Tuesday–Monday weeks (W##, same as Gross Profit) inside the selected filters. When a newer week appears, the oldest drops off the list."
-            currentBadge="Current week"
-          />
-          <SummaryTable
-            title="By month"
-            rows={months}
-            kind="month"
-            filterQuery={filterQuery}
-            submittedHint="Total claims received during each month listed below, including denied."
-            collectedHint="Total amount collected for those claims."
-            currentBadge="Current month"
           />
           <DispatcherTable rows={dispatchers} filterQuery={filterQuery} />
+          <DetentionComplianceView part="dispatcher" />
           <CustomersBilledTable rows={customers} />
         </>
       )}

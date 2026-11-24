@@ -1,9 +1,9 @@
 export const text = {
   retention: {
-    followUps: 'Follow-ups',
     resolvedTitle: 'Resolved',
     resolvedCases: 'Each case marked resolved, including older ones.',
     noResolvedCases: 'No resolved cases yet',
+    viewAllResolved: 'View all',
   },
   runningBalance: {
     title: 'Running balance',

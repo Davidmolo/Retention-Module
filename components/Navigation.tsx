@@ -61,7 +61,6 @@ const RETENTION_CHILDREN: RetentionNavItem[] = [
   { href: '/retention?view=responses', label: 'Responses', view: 'responses' },
   { href: '/retention?view=referrals', label: 'Referrals', view: 'referrals' },
   { href: '/retention?view=at-risk', label: 'At Risk', view: 'at-risk' },
-  { href: '/retention?view=follow-ups', label: 'Follow-ups', view: 'follow-ups' },
   { href: '/retention?view=reasons', label: 'Reasons', view: 'reasons' },
   {
     href: '/retention?view=configure',
@@ -87,6 +86,11 @@ const DRIVER_COMMS_CHILDREN: { href: string; label: string; match: string }[] =
       href: '/driver-comms/broadcast',
       label: 'Broadcast',
       match: '/driver-comms/broadcast',
+    },
+    {
+      href: '/driver-comms/campaigns',
+      label: 'Campaigns',
+      match: '/driver-comms/campaigns',
     },
   ];
 

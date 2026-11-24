@@ -4,6 +4,7 @@ import { canAccessModule, isAdminRole } from "@/lib/roles";
 import {
   createManualDetention,
   getDetentionKpis,
+  listDetentionCustomers,
   listDetentionDispatchers,
   listDetentions,
   type DetentionSort,
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
         ? Number(daysRaw)
         : undefined;
 
-    const [list, kpis, dispatchers] = await Promise.all([
+    const [list, kpis, dispatchers, customers] = await Promise.all([
       listDetentions({
         status,
         search,
@@ -56,6 +57,7 @@ export async function GET(request: Request) {
       }),
       getDetentionKpis(),
       listDetentionDispatchers(),
+      listDetentionCustomers(),
     ]);
 
     return ok({
@@ -67,6 +69,7 @@ export async function GET(request: Request) {
       kpis,
       statuses: DETENTION_STATUSES,
       dispatchers,
+      customers,
     });
   } catch (error) {
     return fail(error);
@@ -110,6 +113,7 @@ export async function POST(request: Request) {
       emailDate?: string;
       timeLabel?: string;
       amount?: number | string;
+      loadLink?: string;
     };
     const amount = Number(body.amount);
     const created = await createManualDetention({
@@ -123,6 +127,7 @@ export async function POST(request: Request) {
       emailDate: String(body.emailDate || todayYmd()),
       timeLabel: body.timeLabel,
       amount,
+      loadLink: String(body.loadLink || ""),
       actor: user.displayName || user.username,
     });
     return ok({ detention: created });

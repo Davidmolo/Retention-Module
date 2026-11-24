@@ -168,7 +168,11 @@ type StatusFilter = "all" | "ok" | "missed" | "pending" | "no_follow_up" | "n/a"
 
 
 
-export function DetentionComplianceView() {
+export function DetentionComplianceView({
+  part = "ar",
+}: {
+  part?: "dispatcher" | "ar";
+}) {
   const [groups, setGroups] = useState<DetentionComplianceGroup[]>([]);
   const [weeks, setWeeks] = useState<DetentionComplianceWeek[]>([]);
   const [ar, setAr] = useState<DetentionComplianceGroup | null>(null);
@@ -306,32 +310,36 @@ export function DetentionComplianceView() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground sm:text-2xl">
-            Dispatcher compliance
+            {part === "dispatcher" ? "Dispatcher compliance" : "AR compliance"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pick a dispatcher on the left — full detention details stay on the
-            right. Denied claims are not real detentions, so they are left out
-            of these totals.
+            {part === "dispatcher"
+              ? "Pick a dispatcher on the left — full detention details stay on the right. Denied claims are not real detentions, so they are left out of these totals."
+              : "AR has 48 hours to reply after the dispatcher or Art replies."}
           </p>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => exportUnanswered(groups)}
-            className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Export unanswered
-          </button>
-          <Link
-            href="/detention"
-            className="text-sm font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
-          >
-            ← Back to board
-          </Link>
+          {part === "dispatcher" ? (
+            <button
+              type="button"
+              onClick={() => exportUnanswered(groups)}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Export unanswered
+            </button>
+          ) : null}
+          {part === "ar" ? (
+            <Link
+              href="/detention"
+              className="text-sm font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
+            >
+              ← Back to board
+            </Link>
+          ) : null}
         </div>
       </div>
 
-      {!loading && weeks.length ? (
+      {part === "dispatcher" && !loading && weeks.length ? (
         <div className="xxii-card overflow-hidden">
           <div className="border-b border-border px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-900">
@@ -392,7 +400,7 @@ export function DetentionComplianceView() {
         </div>
       ) : null}
 
-      {!loading && groups.length ? (
+      {part === "dispatcher" && !loading && groups.length ? (
         <section className="xxii-card overflow-hidden">
           <div className="border-b border-border px-4 py-3">
             <h2 className="text-base font-semibold text-foreground">
@@ -763,7 +771,7 @@ export function DetentionComplianceView() {
         </section>
       ) : null}
 
-      {!loading && ar ? (
+      {part === "ar" && !loading && ar ? (
         <ArComplianceSection group={ar} filter={arFilter} onFilter={setArFilter} />
       ) : null}
     </div>

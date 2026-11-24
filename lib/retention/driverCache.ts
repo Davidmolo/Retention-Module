@@ -4,7 +4,7 @@ const driverCache = new Map<string, { at: number; data: Payload }>();
 let overviewCache: { at: number; data: Payload; version: number } | null = null;
 
 /** Bump when overview payload shape / semantics change so stale client caches drop. */
-const OVERVIEW_CACHE_VERSION = 5;
+const OVERVIEW_CACHE_VERSION = 6;
 
 const TTL_MS = 120_000;
 

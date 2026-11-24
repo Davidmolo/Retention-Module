@@ -106,6 +106,7 @@ export type DetentionPeriodClaim = {
   id: string;
   loadNumber: string | null;
   customer: string | null;
+  dispatcher: string | null;
   driverName: string | null;
   amount: number | null;
   status: string;
