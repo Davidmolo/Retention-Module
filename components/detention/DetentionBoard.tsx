@@ -151,7 +151,7 @@ function KpiCard({
         {value}
       </div>
       {hint ? (
-        <div className="mt-1 truncate text-xs text-slate-500" title={hint}>
+        <div className="mt-1 text-xs text-slate-500" title={hint}>
           {hint}
         </div>
       ) : null}
@@ -377,7 +377,7 @@ export function DetentionBoard() {
       </div>
 
       {kpis ? (
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
           <KpiCard
             title="Open"
             value={String(kpis.open)}
@@ -416,9 +416,23 @@ export function DetentionBoard() {
             }
           />
           <KpiCard
-            title="Paid"
-            value={String(kpis.paid)}
-            hint={`Collected ${money(kpis.paidAmount ?? 0)} · uses the received amount once it is entered, otherwise the expected amount`}
+            title="Expected"
+            value={money(kpis.paidExpected ?? 0)}
+            hint={`${kpis.paid} paid`}
+            tone="good"
+            active={status === "Paid" && !awaitingOnly && !followUpOnly}
+            onClick={() =>
+              applyKpiFilter(
+                status === "Paid" && !awaitingOnly && !followUpOnly
+                  ? "open"
+                  : "paid"
+              )
+            }
+          />
+          <KpiCard
+            title="Received"
+            value={money(kpis.paidReceived ?? 0)}
+            hint={`${kpis.paid} paid`}
             tone="good"
             active={status === "Paid" && !awaitingOnly && !followUpOnly}
             onClick={() =>

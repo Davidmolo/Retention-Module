@@ -54,6 +54,7 @@ export async function getDetentionKpisForWindow(
        SUM(${RCVD}) AS received_amount,
        SUM(CASE WHEN status IN ('Paid','Denied') THEN ${AMT} ELSE 0 END) AS decided_amount,
        SUM(CASE WHEN status = 'Paid' THEN ${AMT} ELSE 0 END) AS paid_billed_amount,
+       SUM(CASE WHEN status = 'Paid' THEN COALESCE(settled_amount, 0) ELSE 0 END) AS paid_received,
        SUM(${MINS}) AS total_mins
      FROM detentions
      WHERE ${win.sql}`,
@@ -72,6 +73,8 @@ export async function getDetentionKpisForWindow(
     paid: Number(r.paid_count || 0),
     openAmount: money(r.open_amount),
     paidAmount: money(r.paid_amount),
+    paidExpected: money(r.paid_billed_amount),
+    paidReceived: money(r.paid_received),
     paidRate:
       total > 0
         ? Math.round((Number(r.paid_count || 0) / total) * 1000) / 10

@@ -203,6 +203,10 @@ export type DetentionKpis = {
   openAmount: number;
   /** Sum collected on Paid claims (settled amount when set, else claim amount). */
   paidAmount: number;
+  /** Expected amount on Paid claims. */
+  paidExpected: number;
+  /** Received amount entered on Paid claims. Missing received counts as 0. */
+  paidReceived: number;
   /** Paid count ÷ all detentions, one decimal. */
   paidRate: number;
   /** Art Ops Tasks parity (windowed — usually last 90 days). */

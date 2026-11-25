@@ -38,6 +38,7 @@ import {
 import { DISPATCHER_UNANSWERED_FINE } from "@/lib/detention/compliance";
 import { gmailSearchUrl } from "@/lib/detention/gmailLinks";
 import { SkeletonSummaryCards } from "@/components/ui/skeleton";
+import { weekOf, weekRange } from "@/lib/week";
 
 function money(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -602,7 +603,7 @@ type DispatcherSortKey =
   | "dispatcher"
   | "submitted"
   | "approved"
-  | "submittedAmount"
+  | "approvedAmount"
   | "paid"
   | "collectedAmount"
   | "collectionRate"
@@ -639,12 +640,42 @@ function complianceFor(
   };
 }
 
+function emailWeekRank(iso: string | null): number {
+  if (!iso) return 0;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 0;
+  const week = weekOf(date);
+  return week.year * 100 + week.week;
+}
+
+function fineWeekOf(iso: string | null): { key: string; label: string; rank: number } | null {
+  const rank = emailWeekRank(iso);
+  if (!rank) return null;
+  const year = Math.floor(rank / 100);
+  const week = rank % 100;
+  const range = weekRange(year, week);
+  const day = (ymd: string) => {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  };
+  return {
+    key: `${year}-W${week}`,
+    label: `W${week} · ${day(range.start)}–${day(range.end)}`,
+    rank,
+  };
+}
+
 function DispatcherEmails({
   items,
 }: {
   items: DetentionComplianceItem[];
 }) {
   const [which, setWhich] = useState<"all" | "answered" | "missed">("all");
+  const [earlier, setEarlier] = useState(false);
   const shown = items.filter((item) => {
     if (which === "missed") return item.dispatcherCompliance === "missed";
     if (which === "answered") {
@@ -656,6 +687,15 @@ function DispatcherEmails({
     }
     return true;
   });
+  const latestWeek = shown.reduce(
+    (best, item) => Math.max(best, emailWeekRank(item.emailDate)),
+    0
+  );
+  const visible =
+    earlier || !latestWeek
+      ? shown
+      : shown.filter((item) => emailWeekRank(item.emailDate) === latestWeek);
+  const earlierCount = shown.length - visible.length;
   return (
     <div className="mt-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -698,7 +738,7 @@ function DispatcherEmails({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {shown.map((item) => {
+              {visible.map((item) => {
                 const thread = gmailSearchUrl({
                   loadNumber: item.loadNumber,
                   shipmentNumber: item.shipmentNumber,
@@ -748,6 +788,15 @@ function DispatcherEmails({
           </table>
         </div>
       )}
+      {earlierCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => setEarlier((open) => !open)}
+          className="mt-2 text-xs font-semibold text-[var(--xxii-brand,#1e4d9c)] hover:underline"
+        >
+          {earlier ? "Hide earlier weeks" : `Earlier weeks (${earlierCount})`}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -770,6 +819,34 @@ function DispatcherTable({
     {}
   );
   const [trendError, setTrendError] = useState<string | null>(null);
+  const [fineWeek, setFineWeek] = useState("");
+
+  const fineWeeks = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; rank: number }>();
+    for (const group of compliance) {
+      for (const item of group.items) {
+        const week = fineWeekOf(item.emailDate);
+        if (week) map.set(week.key, week);
+      }
+    }
+    return [...map.values()].sort((a, b) => b.rank - a.rank);
+  }, [compliance]);
+  const selectedFineWeek = fineWeeks.some((week) => week.key === fineWeek)
+    ? fineWeek
+    : fineWeeks[0]?.key || "";
+
+  const unansweredFine = (name: string) => {
+    const group = compliance.find(
+      (g) => g.dispatcher.toLowerCase() === name.toLowerCase()
+    );
+    if (!group || !selectedFineWeek) return 0;
+    const missed = group.items.filter(
+      (item) =>
+        item.dispatcherCompliance === "missed" &&
+        fineWeekOf(item.emailDate)?.key === selectedFineWeek
+    ).length;
+    return missed * DISPATCHER_UNANSWERED_FINE;
+  };
 
   useEffect(() => {
     setOpenName(null);
@@ -817,6 +894,10 @@ function DispatcherTable({
       compareDispatcher(a, b, sortKey, sortDir)
     );
   }, [rows, q, sortKey, sortDir]);
+  const fineTotal = filtered.reduce(
+    (sum, row) => sum + unansweredFine(row.dispatcher),
+    0
+  );
 
   return (
     <div className="xxii-card overflow-hidden">
@@ -826,24 +907,44 @@ function DispatcherTable({
             By dispatcher
           </h2>
           <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
-            Submitted is every claim received. Detention Approved leaves out
-            Denied — those are not real detentions. Rate % is paid claims
-            divided by detention approved. Click a name for the monthly rate,
-            then a month for that month&apos;s weeks.
+            Submitted is every claim received. Approved $ and Detention
+            Approved leave out Denied. Rate % is paid claims divided by
+            detention approved. Fine is $25 for each unanswered email in the
+            selected week. Click a name for the monthly rate, then a month
+            for that month&apos;s weeks.
           </p>
         </div>
         {rows.length ? (
-          <div className="relative w-full shrink-0 sm:w-56">
-            <Search
-              size={14}
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Find dispatcher…"
-              className="w-full rounded-lg border border-border bg-background py-1.5 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-[var(--xxii-brand,#1e4d9c)]"
-            />
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <label className="flex items-center gap-2 text-xs text-slate-600">
+              Fines
+              <select
+                value={selectedFineWeek}
+                onChange={(e) => setFineWeek(e.target.value)}
+                className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+              >
+                {fineWeeks.map((week) => (
+                  <option key={week.key} value={week.key}>
+                    {week.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-sm font-semibold tabular-nums text-rose-700">
+              {money(fineTotal)}
+            </span>
+            <div className="relative w-full shrink-0 sm:w-56">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Find dispatcher…"
+                className="w-full rounded-lg border border-border bg-background py-1.5 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-[var(--xxii-brand,#1e4d9c)]"
+              />
+            </div>
           </div>
         ) : null}
       </div>
@@ -879,15 +980,10 @@ function DispatcherTable({
                   <div><dt className="text-slate-500">Answered</dt><dd>{complianceFor(compliance, r.dispatcher).answered}</dd></div>
                   <div><dt className="text-slate-500">Not answered</dt><dd>{complianceFor(compliance, r.dispatcher).notAnswered}</dd></div>
                   <div><dt className="text-slate-500">Compliance</dt><dd>{complianceFor(compliance, r.dispatcher).rate}%</dd></div>
+                  <div><dt className="text-slate-500">Fine</dt><dd className="font-semibold text-rose-700">{money(unansweredFine(r.dispatcher))}</dd></div>
                 </dl>
                 {open ? (
                   <div className="mt-2 space-y-2 border-t border-border pt-2">
-                    {trendError ? <p className="text-sm text-rose-600">{trendError}</p> : !trend ? <p className="text-sm text-slate-500">Loading…</p> : trend.months.length === 0 ? <p className="text-sm text-slate-500">No approved detentions in this range.</p> : trend.months.map((month) => (
-                      <div key={month.key}>
-                        <RateBar bar={month} open={openMonth === month.key} onClick={() => setOpenMonth((current) => current === month.key ? null : month.key)} />
-                        {openMonth === month.key ? <div className="mt-1 space-y-1 pl-2">{month.weeks.map((week) => <RateBar key={week.key} bar={week} />)}</div> : null}
-                      </div>
-                    ))}
                     <DispatcherEmails
                       items={
                         compliance.find(
@@ -897,6 +993,13 @@ function DispatcherTable({
                         )?.items || []
                       }
                     />
+                    <p className="text-xs font-semibold text-slate-500">Collected</p>
+                    {trendError ? <p className="text-sm text-rose-600">{trendError}</p> : !trend ? <p className="text-sm text-slate-500">Loading…</p> : trend.months.length === 0 ? <p className="text-sm text-slate-500">No approved detentions in this range.</p> : trend.months.map((month) => (
+                      <div key={month.key}>
+                        <RateBar bar={month} open={openMonth === month.key} onClick={() => setOpenMonth((current) => current === month.key ? null : month.key)} />
+                        {openMonth === month.key ? <div className="mt-1 space-y-1 pl-2">{month.weeks.map((week) => <RateBar key={week.key} bar={week} />)}</div> : null}
+                      </div>
+                    ))}
                   </div>
                 ) : null}
               </div>
@@ -917,7 +1020,8 @@ function DispatcherTable({
               <col className="w-[9%]" />
               <col className="w-[6%]" />
               <col className="w-[6%]" />
-              <col className="w-[6%]" />
+              <col className="w-[7%]" />
+              <col className="w-[7%]" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -945,11 +1049,12 @@ function DispatcherTable({
                   title="Real detentions. Denied is excluded. This is the total the rate uses."
                 />
                 <SortTh
-                  label="Submitted $"
-                  col="submittedAmount"
+                  label="Approved $"
+                  col="approvedAmount"
                   sortKey={sortKey}
                   sortDir={sortDir}
                   onSort={onSort}
+                  title="Amount of real detentions. Denied is left out."
                 />
                 <SortTh
                   label="Paid"
@@ -991,6 +1096,9 @@ function DispatcherTable({
                 <th className="px-3 py-3 font-bold">Answered</th>
                 <th className="px-3 py-3 font-bold">Not answered</th>
                 <th className="px-3 py-3 font-bold">Compliance %</th>
+                <th className="px-3 py-3 font-bold" title="Unanswered emails in the selected week, $25 each">
+                  Fine
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -1026,7 +1134,7 @@ function DispatcherTable({
                     {r.approved}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
-                    {money(r.submittedAmount)}
+                    {money(r.approvedAmount)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
                     {r.paid}
@@ -1052,10 +1160,25 @@ function DispatcherTable({
                   <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
                     {complianceFor(compliance, r.dispatcher).rate}%
                   </td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums text-rose-700 sm:px-4">
+                    {money(unansweredFine(r.dispatcher))}
+                  </td>
                 </tr>
                 {open ? (
                   <tr className="bg-slate-50/80">
-                    <td colSpan={12} className="px-4 py-3">
+                    <td colSpan={13} className="px-4 py-3">
+                      <DispatcherEmails
+                        items={
+                          compliance.find(
+                            (g) =>
+                              g.dispatcher.toLowerCase() ===
+                              r.dispatcher.toLowerCase()
+                          )?.items || []
+                        }
+                      />
+                      <p className="mb-2 mt-4 text-xs font-semibold text-slate-500">
+                        Collected
+                      </p>
                       {trendError ? (
                         <p className="text-sm text-rose-600">{trendError}</p>
                       ) : !trend ? (
@@ -1088,15 +1211,6 @@ function DispatcherTable({
                           ))}
                         </div>
                       )}
-                      <DispatcherEmails
-                        items={
-                          compliance.find(
-                            (g) =>
-                              g.dispatcher.toLowerCase() ===
-                              r.dispatcher.toLowerCase()
-                          )?.items || []
-                        }
-                      />
                     </td>
                   </tr>
                 ) : null}
@@ -1296,10 +1410,18 @@ function MonthWeekBoard({
                     </span>
                     <span className="tabular-nums text-xs text-slate-600">
                       Submitted {month.submitted} · Approved {month.approved} ·
-                      Paid {month.paid} · {money(month.collectedAmount)} ·{" "}
-                      {month.collectionRate}%
+                      Paid {month.paid} · {money(month.collectedAmount)}
                     </span>
                   </button>
+                  <div className="px-4 pb-3">
+                    <RateBar
+                      bar={{
+                        key: month.key,
+                        label: "Collected",
+                        rate: month.collectionRate,
+                      }}
+                    />
+                  </div>
                   {open ? (
                     <div className="border-t border-border bg-slate-50/70 p-3">
                       <SummaryTable
