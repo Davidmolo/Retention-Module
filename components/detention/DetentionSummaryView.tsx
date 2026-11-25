@@ -15,6 +15,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   ChevronDown,
+  ExternalLink,
   Filter,
   Search,
 } from "lucide-react";
@@ -25,11 +26,17 @@ import {
   type DetentionDispatcherTrend,
   type DetentionPartyRow,
   type DetentionComplianceGroup,
+  type DetentionComplianceItem,
   type DetentionPeriodClaim,
   type DetentionPeriodSummary,
   type DetentionRateBar,
 } from "@/lib/detention/types";
-import { DetentionComplianceView } from "@/components/detention/DetentionComplianceView";
+import {
+  ComplianceMark,
+  DetentionComplianceView,
+} from "@/components/detention/DetentionComplianceView";
+import { DISPATCHER_UNANSWERED_FINE } from "@/lib/detention/compliance";
+import { gmailSearchUrl } from "@/lib/detention/gmailLinks";
 import { SkeletonSummaryCards } from "@/components/ui/skeleton";
 
 function money(n: number) {
@@ -632,6 +639,119 @@ function complianceFor(
   };
 }
 
+function DispatcherEmails({
+  items,
+}: {
+  items: DetentionComplianceItem[];
+}) {
+  const [which, setWhich] = useState<"all" | "answered" | "missed">("all");
+  const shown = items.filter((item) => {
+    if (which === "missed") return item.dispatcherCompliance === "missed";
+    if (which === "answered") {
+      return (
+        item.dispatcherCompliance === "ok" ||
+        item.dispatcherCompliance === "pending" ||
+        item.dispatcherCompliance === "no_follow_up"
+      );
+    }
+    return true;
+  });
+  return (
+    <div className="mt-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-slate-500">Detention emails</span>
+        {(
+          [
+            ["all", "All"],
+            ["answered", "Answered"],
+            ["missed", "Not answered"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setWhich(key)}
+            className={clsx(
+              "rounded-full px-2 py-0.5 text-xs font-semibold",
+              which === key
+                ? "bg-[var(--xxii-brand,#1e4d9c)] text-white"
+                : "bg-white text-slate-600 ring-1 ring-slate-200"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {!shown.length ? (
+        <p className="text-sm text-slate-500">No detention emails for this filter.</p>
+      ) : (
+        <div className="max-h-80 overflow-auto rounded-lg border border-border bg-white">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-slate-50 text-slate-500">
+              <tr>
+                <th className="px-3 py-2 font-medium">Email date</th>
+                <th className="px-3 py-2 font-medium">Customer / Load</th>
+                <th className="px-3 py-2 font-medium">Amount</th>
+                <th className="px-3 py-2 font-medium">Compliance</th>
+                <th className="px-3 py-2 font-medium">Fine</th>
+                <th className="px-3 py-2 font-medium">Thread</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {shown.map((item) => {
+                const thread = gmailSearchUrl({
+                  loadNumber: item.loadNumber,
+                  shipmentNumber: item.shipmentNumber,
+                });
+                return (
+                  <tr key={item.id}>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {item.emailDate
+                        ? new Date(item.emailDate).toLocaleDateString()
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{item.customer || "—"}</div>
+                      <div className="text-slate-500">
+                        Load {item.loadNumber || "—"}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 tabular-nums">
+                      {item.amount == null ? "—" : money(item.amount)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <ComplianceMark value={item.dispatcherCompliance} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 tabular-nums">
+                      {item.dispatcherCompliance === "missed"
+                        ? money(DISPATCHER_UNANSWERED_FINE)
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {thread ? (
+                        <a
+                          href={thread}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 font-medium text-[var(--xxii-brand,#1e4d9c)] hover:underline"
+                        >
+                          Thread <ExternalLink size={12} />
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DispatcherTable({
   rows,
   filterQuery,
@@ -768,6 +888,15 @@ function DispatcherTable({
                         {openMonth === month.key ? <div className="mt-1 space-y-1 pl-2">{month.weeks.map((week) => <RateBar key={week.key} bar={week} />)}</div> : null}
                       </div>
                     ))}
+                    <DispatcherEmails
+                      items={
+                        compliance.find(
+                          (g) =>
+                            g.dispatcher.toLowerCase() ===
+                            r.dispatcher.toLowerCase()
+                        )?.items || []
+                      }
+                    />
                   </div>
                 ) : null}
               </div>
@@ -959,6 +1088,15 @@ function DispatcherTable({
                           ))}
                         </div>
                       )}
+                      <DispatcherEmails
+                        items={
+                          compliance.find(
+                            (g) =>
+                              g.dispatcher.toLowerCase() ===
+                              r.dispatcher.toLowerCase()
+                          )?.items || []
+                        }
+                      />
                     </td>
                   </tr>
                 ) : null}

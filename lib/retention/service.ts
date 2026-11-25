@@ -1675,8 +1675,16 @@ function periodKey(sentAt: string, kind: "week" | "month"): string {
 }
 
 export async function getSurveyVolume(kind: "week" | "month", key?: string) {
-  const occurrences = await retentionStore.listSurveyOccurrences();
-  const sentRows = occurrences.filter((o) => o.sentAt);
+  const [occurrences, drivers] = await Promise.all([
+    retentionStore.listSurveyOccurrences(),
+    getGpAdapter().listDrivers({ includeInactive: true }),
+  ]);
+  const hidden = new Set(
+    drivers.filter((d) => d.status !== "active").map((d) => String(d.id))
+  );
+  const sentRows = occurrences.filter(
+    (o) => o.sentAt && !hidden.has(String(o.driverId))
+  );
   const keys = [
     ...new Set(sentRows.map((o) => periodKey(o.sentAt as string, kind))),
   ].sort((a, b) => b.localeCompare(a));
@@ -1684,7 +1692,6 @@ export async function getSurveyVolume(kind: "week" | "month", key?: string) {
   const rows = sentRows.filter(
     (o) => periodKey(o.sentAt as string, kind) === selected
   );
-  const drivers = await getGpAdapter().listDrivers({ includeInactive: true });
   const names = new Map(drivers.map((d) => [String(d.id), d.name]));
   const people = (list: typeof rows) => {
     const seen = new Set<string>();

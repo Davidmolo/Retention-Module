@@ -101,7 +101,7 @@ function compliancePct(ok: number, total: number, na: number) {
   return Math.round((ok / scored) * 1000) / 10;
 }
 
-function ComplianceMark({
+export function ComplianceMark({
   value,
   audience = "dispatcher",
 }: {

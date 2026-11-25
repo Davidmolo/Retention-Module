@@ -437,7 +437,9 @@ export async function getDispatcherRateTrend(
 
   const months = new Map<
     string,
-    { approved: number; paid: number; weeks: Map<string, { approved: number; paid: number }> }
+    {
+      weeks: Map<string, { approved: number; paid: number; unpaid: number }>;
+    }
   >();
 
   for (const r of rows) {
@@ -445,31 +447,32 @@ export async function getDispatcherRateTrend(
     if (!ym) continue;
     const d = new Date(r.when_at);
     if (Number.isNaN(d.getTime())) continue;
+    const status = String(r.status || "");
+    if (status !== "Approved" && status !== "Paid") continue;
     const w = weekOf(d);
     const weekKey = `${w.year}-W${w.week}`;
     let month = months.get(ym);
     if (!month) {
-      month = { approved: 0, paid: 0, weeks: new Map() };
+      month = { weeks: new Map() };
       months.set(ym, month);
     }
     let week = month.weeks.get(weekKey);
     if (!week) {
-      week = { approved: 0, paid: 0 };
+      week = { approved: 0, paid: 0, unpaid: 0 };
       month.weeks.set(weekKey, week);
     }
-    const paid = String(r.status || "") === "Paid";
-    month.approved += 1;
     week.approved += 1;
-    if (paid) {
-      month.paid += 1;
-      week.paid += 1;
-    }
+    if (status === "Paid") week.paid += 1;
+    else week.unpaid += 1;
   }
 
   const monthBars = [...months.entries()]
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([ym, month]) => {
-      const weeks: DetentionRateBar[] = [...month.weeks.entries()]
+      const counted = [...month.weeks.entries()].filter(
+        ([, week]) => week.unpaid > 0
+      );
+      const weeks: DetentionRateBar[] = counted
         .sort((a, b) => b[0].localeCompare(a[0]))
         .map(([weekKey, week]) => {
           const match = /^(\d{4})-W(\d+)$/.exec(weekKey);
@@ -483,13 +486,16 @@ export async function getDispatcherRateTrend(
             rate: collectionRate(week.paid, week.approved),
           };
         });
+      const paid = counted.reduce((sum, [, week]) => sum + week.paid, 0);
+      const approved = counted.reduce((sum, [, week]) => sum + week.approved, 0);
       return {
         key: ym,
         label: monthLabel(ym),
-        rate: collectionRate(month.paid, month.approved),
+        rate: collectionRate(paid, approved),
         weeks,
       };
-    });
+    })
+    .filter((month) => month.weeks.length > 0);
 
   return { months: monthBars };
 }
