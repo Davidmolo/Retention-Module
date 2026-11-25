@@ -408,6 +408,11 @@ function SurveyVolume() {
   const [key, setKey] = useState("");
   const [options, setOptions] = useState<string[]>([]);
   const [counts, setCounts] = useState({ sent: 0, answered: 0, ignored: 0 });
+  const [people, setPeople] = useState({
+    sent: [] as { driverId: string; name: string }[],
+    answered: [] as { driverId: string; name: string }[],
+    ignored: [] as { driverId: string; name: string }[],
+  });
 
   useEffect(() => {
     const sp = new URLSearchParams({ kind });
@@ -421,6 +426,11 @@ function SurveyVolume() {
           sent: json.data.sent || 0,
           answered: json.data.answered || 0,
           ignored: json.data.ignored || 0,
+        });
+        setPeople({
+          sent: json.data.sentDrivers || [],
+          answered: json.data.answeredDrivers || [],
+          ignored: json.data.ignoredDrivers || [],
         });
         if (json.data.key && json.data.key !== key) setKey(json.data.key);
       });
@@ -460,10 +470,29 @@ function SurveyVolume() {
           </select>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-        <div>Sent <span className="font-bold">{counts.sent}</span></div>
-        <div>Answered <span className="font-bold">{counts.answered}</span></div>
-        <div>Ignored <span className="font-bold">{counts.ignored}</span></div>
+      <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+        {(
+          [
+            ["Sent", counts.sent, people.sent],
+            ["Answered", counts.answered, people.answered],
+            ["Ignored", counts.ignored, people.ignored],
+          ] as const
+        ).map(([label, count, list]) => (
+          <div key={label}>
+            <div>
+              {label} <span className="font-bold">{count}</span>
+            </div>
+            <ul className="mt-1 max-h-40 space-y-0.5 overflow-auto text-xs text-[var(--xxii-muted)]">
+              {list.map((driver) => (
+                <li key={driver.driverId}>
+                  <Link href={`/retention/drivers/${driver.driverId}`} className="hover:underline">
+                    {driver.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
     </section>
   );

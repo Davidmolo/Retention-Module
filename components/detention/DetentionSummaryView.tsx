@@ -24,6 +24,7 @@ import {
   type DetentionDispatcherSummary,
   type DetentionDispatcherTrend,
   type DetentionPartyRow,
+  type DetentionComplianceGroup,
   type DetentionPeriodClaim,
   type DetentionPeriodSummary,
   type DetentionRateBar,
@@ -202,11 +203,17 @@ function SummaryTable({
     Record<string, DetentionPeriodClaim[]>
   >({});
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [loadCustomer, setLoadCustomer] = useState("all");
+  const [loadDispatcher, setLoadDispatcher] = useState("all");
+  const [loadPaid, setLoadPaid] = useState("all");
 
   useEffect(() => {
     setOpenKey(null);
     setClaimsByKey({});
     setClaimError(null);
+    setLoadCustomer("all");
+    setLoadDispatcher("all");
+    setLoadPaid("all");
   }, [filterQuery]);
 
   const togglePeriod = async (key: string) => {
@@ -246,6 +253,40 @@ function SummaryTable({
     if (!userSorted) return rows;
     return [...rows].sort((a, b) => comparePeriod(a, b, sortKey, sortDir));
   }, [rows, userSorted, sortKey, sortDir]);
+
+  const shownClaims = (claims: DetentionPeriodClaim[]) => {
+    if (kind !== "week") return claims;
+    return claims.filter((claim) => {
+      if (loadCustomer !== "all" && (claim.customer || "") !== loadCustomer) return false;
+      if (loadDispatcher !== "all" && (claim.dispatcher || "") !== loadDispatcher) return false;
+      if (loadPaid === "paid" && !claim.paid) return false;
+      if (loadPaid === "unpaid" && claim.paid) return false;
+      return true;
+    });
+  };
+
+  const loadFilters = (claims: DetentionPeriodClaim[]) => {
+    if (kind !== "week") return null;
+    const customers = [...new Set(claims.map((c) => c.customer || "").filter(Boolean))].sort();
+    const dispatchers = [...new Set(claims.map((c) => c.dispatcher || "").filter(Boolean))].sort();
+    return (
+      <div className="mb-2 flex flex-wrap gap-2">
+        <select value={loadCustomer} onChange={(e) => setLoadCustomer(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-xs">
+          <option value="all">All customers</option>
+          {customers.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={loadDispatcher} onChange={(e) => setLoadDispatcher(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-xs">
+          <option value="all">All dispatchers</option>
+          {dispatchers.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <select value={loadPaid} onChange={(e) => setLoadPaid(e.target.value)} className="rounded border border-border bg-background px-2 py-1 text-xs">
+          <option value="all">Paid and unpaid</option>
+          <option value="paid">Paid</option>
+          <option value="unpaid">Not paid</option>
+        </select>
+      </div>
+    );
+  };
 
   return (
     <div className="xxii-card overflow-hidden">
@@ -312,7 +353,12 @@ function SummaryTable({
                     ) : claims.length === 0 ? (
                       <p className="text-sm text-slate-500">No approved detentions.</p>
                     ) : (
-                      claims.map((claim) => (
+                      <>
+                      {loadFilters(claims)}
+                      {shownClaims(claims).length === 0 ? (
+                        <p className="text-sm text-slate-500">No loads match these filters.</p>
+                      ) : null}
+                      {shownClaims(claims).map((claim) => (
                         <div key={claim.id} className="grid grid-cols-2 gap-1 text-xs">
                           <div className="col-span-2 font-medium">
                             {claim.paid && claim.loadLink ? (
@@ -326,7 +372,8 @@ function SummaryTable({
                           <span>{claim.customer || "—"} · {claim.dispatcher || "—"}</span>
                           <span className="text-right">{claim.paid ? "Paid" : "Not paid"} · {claim.amount == null ? "—" : money(claim.amount)}</span>
                         </div>
-                      ))
+                      ))}
+                      </>
                     )}
                   </div>
                 ) : null}
@@ -479,6 +526,11 @@ function SummaryTable({
                           No approved detentions.
                         </p>
                       ) : (
+                        <>
+                        {loadFilters(claims)}
+                        {shownClaims(claims).length === 0 ? (
+                          <p className="mb-2 text-sm text-slate-500">No loads match these filters.</p>
+                        ) : null}
                         <table className="w-full text-left text-xs">
                           <thead className="text-slate-500">
                             <tr>
@@ -490,7 +542,7 @@ function SummaryTable({
                             </tr>
                           </thead>
                           <tbody>
-                            {claims.map((claim) => (
+                            {shownClaims(claims).map((claim) => (
                               <tr key={claim.id} className="border-t border-slate-200">
                                 <td className="py-1.5 pr-3">
                                   {claim.paid && claim.loadLink ? (
@@ -522,6 +574,7 @@ function SummaryTable({
                             ))}
                           </tbody>
                         </table>
+                        </>
                       )}
                     </td>
                   </tr>
@@ -562,11 +615,30 @@ function compareDispatcher(
   return mul * ((a[key] as number) - (b[key] as number));
 }
 
+function complianceFor(
+  groups: DetentionComplianceGroup[],
+  name: string
+) {
+  const group = groups.find(
+    (g) => g.dispatcher.toLowerCase() === name.toLowerCase()
+  );
+  const answered = group ? group.ok + group.pending + group.noFollowUp : 0;
+  const notAnswered = group?.missed ?? 0;
+  const base = answered + notAnswered;
+  return {
+    answered,
+    notAnswered,
+    rate: base ? Math.round((answered / base) * 1000) / 10 : 0,
+  };
+}
+
 function DispatcherTable({
   rows,
   filterQuery,
+  compliance,
 }: {
   rows: DetentionDispatcherSummary[];
+  compliance: DetentionComplianceGroup[];
   filterQuery: string;
 }) {
   const [q, setQ] = useState("");
@@ -684,6 +756,9 @@ function DispatcherTable({
                   <div><dt className="text-slate-500">Paid</dt><dd>{r.paid}</dd></div>
                   <div><dt className="text-slate-500">Collected</dt><dd className="font-semibold text-emerald-700">{money(r.collectedAmount)}</dd></div>
                   <div><dt className="text-slate-500">Open</dt><dd>{r.open} · {money(r.openAmount)}</dd></div>
+                  <div><dt className="text-slate-500">Answered</dt><dd>{complianceFor(compliance, r.dispatcher).answered}</dd></div>
+                  <div><dt className="text-slate-500">Not answered</dt><dd>{complianceFor(compliance, r.dispatcher).notAnswered}</dd></div>
+                  <div><dt className="text-slate-500">Compliance</dt><dd>{complianceFor(compliance, r.dispatcher).rate}%</dd></div>
                 </dl>
                 {open ? (
                   <div className="mt-2 space-y-2 border-t border-border pt-2">
@@ -702,15 +777,18 @@ function DispatcherTable({
         <div className="hidden max-h-[min(50dvh,36rem)] overflow-auto xl:block">
           <table className="w-full table-fixed text-left text-xs">
             <colgroup>
-              <col className="w-[16%]" />
-              <col className="w-[10%]" />
               <col className="w-[14%]" />
-              <col className="w-[11%]" />
-              <col className="w-[7%]" />
-              <col className="w-[12%]" />
               <col className="w-[8%]" />
+              <col className="w-[11%]" />
+              <col className="w-[9%]" />
+              <col className="w-[6%]" />
               <col className="w-[10%]" />
-              <col className="w-[12%]" />
+              <col className="w-[7%]" />
+              <col className="w-[8%]" />
+              <col className="w-[9%]" />
+              <col className="w-[6%]" />
+              <col className="w-[6%]" />
+              <col className="w-[6%]" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -781,6 +859,9 @@ function DispatcherTable({
                   sortDir={sortDir}
                   onSort={onSort}
                 />
+                <th className="px-3 py-3 font-bold">Answered</th>
+                <th className="px-3 py-3 font-bold">Not answered</th>
+                <th className="px-3 py-3 font-bold">Compliance %</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -833,10 +914,19 @@ function DispatcherTable({
                   <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
                     {money(r.openAmount)}
                   </td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums text-emerald-700 sm:px-4">
+                    {complianceFor(compliance, r.dispatcher).answered}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums text-rose-700 sm:px-4">
+                    {complianceFor(compliance, r.dispatcher).notAnswered}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 tabular-nums sm:px-4">
+                    {complianceFor(compliance, r.dispatcher).rate}%
+                  </td>
                 </tr>
                 {open ? (
                   <tr className="bg-slate-50/80">
-                    <td colSpan={9} className="px-4 py-3">
+                    <td colSpan={12} className="px-4 py-3">
                       {trendError ? (
                         <p className="text-sm text-rose-600">{trendError}</p>
                       ) : !trend ? (
@@ -1112,6 +1202,7 @@ export function DetentionSummaryView() {
   const [paid, setPaid] = useState("all");
   const [customerOptions, setCustomerOptions] = useState<string[]>([]);
   const [emailDate, setEmailDate] = useState("");
+  const [compliance, setCompliance] = useState<DetentionComplianceGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -1141,6 +1232,15 @@ export function DetentionSummaryView() {
       if (opts?.dispatchers?.length) setDispatcherOptions(opts.dispatchers);
       if (opts?.customers?.length) setCustomerOptions(opts.customers);
       if (opts?.statuses?.length) setStatuses(opts.statuses);
+      try {
+        const complianceRes = await fetch("/api/detention/compliance", {
+          credentials: "include",
+        });
+        const complianceJson = await complianceRes.json();
+        if (complianceJson.ok) setCompliance(complianceJson.data.groups || []);
+      } catch {
+        setCompliance([]);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1324,8 +1424,12 @@ export function DetentionSummaryView() {
             weeks={weeks}
             filterQuery={filterQuery}
           />
-          <DispatcherTable rows={dispatchers} filterQuery={filterQuery} />
-          <DetentionComplianceView part="dispatcher" />
+          <DispatcherTable
+            rows={dispatchers}
+            filterQuery={filterQuery}
+            compliance={compliance}
+          />
+          <DetentionComplianceView part="dispatcher" trajectoryOnly />
           <CustomersBilledTable rows={customers} />
         </>
       )}

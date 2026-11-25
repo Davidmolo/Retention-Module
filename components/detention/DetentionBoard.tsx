@@ -659,7 +659,7 @@ export function DetentionBoard() {
                     <th className="px-3 py-3 font-medium whitespace-nowrap">DEL</th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Email date</th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Time</th>
-                    <th className="px-3 py-3 font-medium whitespace-nowrap">Amount</th>
+                    <th className="px-3 py-3 font-medium whitespace-nowrap">Expected</th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Received</th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Status</th>
                     <th className="px-3 py-3 font-medium whitespace-nowrap">Flags</th>

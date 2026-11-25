@@ -36,7 +36,7 @@ const retentionLinks: { view: RetentionView; label: string }[] = [
   { view: "responses", label: "Responses" },
   { view: "referrals", label: "Referrals" },
   { view: "at-risk", label: "At Risk" },
-  { view: "reasons", label: "Reasons" },
+  { view: "reasons", label: "Summary" },
   { view: "configure", label: "Configuration" },
 ];
 

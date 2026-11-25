@@ -1684,13 +1684,31 @@ export async function getSurveyVolume(kind: "week" | "month", key?: string) {
   const rows = sentRows.filter(
     (o) => periodKey(o.sentAt as string, kind) === selected
   );
+  const drivers = await getGpAdapter().listDrivers({ includeInactive: true });
+  const names = new Map(drivers.map((d) => [String(d.id), d.name]));
+  const people = (list: typeof rows) => {
+    const seen = new Set<string>();
+    const out: { driverId: string; name: string }[] = [];
+    for (const row of list) {
+      const driverId = String(row.driverId);
+      if (seen.has(driverId)) continue;
+      seen.add(driverId);
+      out.push({ driverId, name: names.get(driverId) || `Driver ${driverId}` });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  };
+  const answeredRows = rows.filter((o) => o.responseState === "completed");
+  const ignoredRows = rows.filter((o) => o.responseState === "non_response");
   return {
     kind,
     key: selected,
     options: keys,
     sent: rows.length,
-    answered: rows.filter((o) => o.responseState === "completed").length,
-    ignored: rows.filter((o) => o.responseState === "non_response").length,
+    answered: answeredRows.length,
+    ignored: ignoredRows.length,
+    sentDrivers: people(rows),
+    answeredDrivers: people(answeredRows),
+    ignoredDrivers: people(ignoredRows),
   };
 }
 

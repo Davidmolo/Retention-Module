@@ -23,6 +23,9 @@ yarn-error.log*
 # generated gross profit sheets
 /data/generated
 
+# files attached to a scheduled driver campaign
+/data/campaign-media
+
 # files downloaded from the SFTP server
 /data/sftp-incoming
 

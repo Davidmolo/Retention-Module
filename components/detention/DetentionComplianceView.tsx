@@ -170,8 +170,10 @@ type StatusFilter = "all" | "ok" | "missed" | "pending" | "no_follow_up" | "n/a"
 
 export function DetentionComplianceView({
   part = "ar",
+  trajectoryOnly = false,
 }: {
   part?: "dispatcher" | "ar";
+  trajectoryOnly?: boolean;
 }) {
   const [groups, setGroups] = useState<DetentionComplianceGroup[]>([]);
   const [weeks, setWeeks] = useState<DetentionComplianceWeek[]>([]);
@@ -307,7 +309,7 @@ export function DetentionComplianceView({
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      {trajectoryOnly ? null : <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-foreground sm:text-2xl">
             {part === "dispatcher" ? "Dispatcher compliance" : "AR compliance"}
@@ -337,7 +339,7 @@ export function DetentionComplianceView({
             </Link>
           ) : null}
         </div>
-      </div>
+      </div>}
 
       {part === "dispatcher" && !loading && weeks.length ? (
         <div className="xxii-card overflow-hidden">
@@ -400,7 +402,7 @@ export function DetentionComplianceView({
         </div>
       ) : null}
 
-      {part === "dispatcher" && !loading && groups.length ? (
+      {part === "dispatcher" && !trajectoryOnly && !loading && groups.length ? (
         <section className="xxii-card overflow-hidden">
           <div className="border-b border-border px-4 py-3">
             <h2 className="text-base font-semibold text-foreground">

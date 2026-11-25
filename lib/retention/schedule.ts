@@ -55,10 +55,12 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-/** Morning cron starts a few minutes before the previous send finished. */
+/** Calendar days, so the morning job still sends if it starts before the exact hour. */
 function reminderWaitElapsed(lastTouch: number, now: number, afterDays: number) {
   if (!lastTouch) return false;
-  return now - lastTouch >= afterDays * MS_DAY - 3_600_000;
+  const lastDay = Math.floor(lastTouch / MS_DAY);
+  const today = Math.floor(now / MS_DAY);
+  return today - lastDay >= afterDays;
 }
 
 export type ScheduleResult = {
@@ -185,6 +187,12 @@ export async function runSurveyReminders(opts?: {
   reminderAfterDays?: number;
   maxReminders?: number;
 }): Promise<{ reminded: number; closed: number; skipped: number }> {
+  const { sendDueCampaigns } = await import("@/lib/driverComms/campaigns");
+  try {
+    await sendDueCampaigns();
+  } catch (error) {
+    console.error("[campaigns] due send", (error as Error).message);
+  }
   const afterDays = opts?.reminderAfterDays ?? SURVEY_REMINDER_AFTER_DAYS;
   const maxReminders = opts?.maxReminders ?? MAX_SURVEY_REMINDERS;
   const all = await retentionStore.listSurveyOccurrences();

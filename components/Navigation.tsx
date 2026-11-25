@@ -61,7 +61,7 @@ const RETENTION_CHILDREN: RetentionNavItem[] = [
   { href: '/retention?view=responses', label: 'Responses', view: 'responses' },
   { href: '/retention?view=referrals', label: 'Referrals', view: 'referrals' },
   { href: '/retention?view=at-risk', label: 'At Risk', view: 'at-risk' },
-  { href: '/retention?view=reasons', label: 'Reasons', view: 'reasons' },
+  { href: '/retention?view=reasons', label: 'Summary', view: 'reasons' },
   {
     href: '/retention?view=configure',
     label: 'Configuration',
